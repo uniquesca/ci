@@ -26,19 +26,19 @@ on:
         required: false
         default: 'coverage.svg'
         type: string
-      exec_bit_check:
-        description: 'Whether execution bit check should be performed'
+      shellcheck:
+        description: 'Whether shellcheck should be executed'
         required: false
         default: false
         type: boolean
-      exec_bit_check_paths:
-        description: 'Paths to use for checking files for executability, split by comma. Use . (dot) to include 
+      shellcheck_paths:
+        description: 'Paths to use for running shellcheck and exec-bit checker, split by comma. Use . (dot) to include 
           root directory. Example: "module, vendor/bin" or "., node_modules"'
         required: false
         default: ''
         type: string
-      exec_bit_check_extensions:
-        description: 'File extensions to check for executability, split by comma. Example: "sh, php"'
+      shellcheck_extensions:
+        description: 'File extensions to check for shellcheck and exec-bit checker, split by comma. Example: "sh, php"'
         required: false
         default: 'sh'
         type: string
@@ -154,6 +154,13 @@ jobs:
 #          else
 #            echo "No Psalm configuration file found, skipping code check."
 #          fi
+
+      - name: Run Shellcheck
+        run: |
+          if [-f ".shellcheckrc"]; then
+            sudo apt-get install shellcheck -y
+            shellcheck
+          fi
 
       - name: Debug
         run: chmod -x ./* -Rf
