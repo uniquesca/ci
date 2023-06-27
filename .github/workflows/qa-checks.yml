@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - id: matrix
-        uses: uniquesca/ci/prepare-ci-matrix@2
+        uses: uniquesca/ci/prepare-ci-matrix@main
 
   qa:
     name: Run QA checks
@@ -96,14 +96,14 @@ jobs:
 
       - name: Import database dump
         if: inputs.use_db == true && env.phpunit_present == 1
-        uses: uniquesca/ci/mysql-import@2
+        uses: uniquesca/ci/mysql-import@main
         with:
           dump_file_path: ${{ inputs.db_dump_file }}
           db_name: 'phpunit'
 
       - name: Set up PHPUnit environment file
         if: env.phpunit_present == 1
-        uses: uniquesca/ci/prepare-environment@2
+        uses: uniquesca/ci/prepare-environment@main
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"
@@ -111,7 +111,7 @@ jobs:
 
       - name: Set up default environment file
         if: env.phpunit_present == 1
-        uses: uniquesca/ci/prepare-environment@2
+        uses: uniquesca/ci/prepare-environment@main
         with:
           env_variables: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 

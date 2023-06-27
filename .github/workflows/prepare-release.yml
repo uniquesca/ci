@@ -71,10 +71,21 @@ jobs:
 
       - name: Update changelog file
         if: ${{ inputs.generate_changelog == true }}
-        uses: uniquesca/ci/update-changelog@2
+        uses: uniquesca/ci/update-changelog@main
         with:
           changelog_path: ${{ inputs.changelog_path }}
           target_version: ${{ inputs.version }}
+
+      - name: Migrate DB dump
+        if: ${{ inputs.update_db == true }}
+        uses: uniquesca/ci/migrate-db-dump@main
+        with:
+          db_dump_file: ${{ inputs.db_dump_path }}
+          migration_command: ${{ inputs.migration_command }}
+
+      - name: Debug DB dump
+        if: ${{ inputs.update_db == true }}
+        run: cat ${{ inputs.db_dump_path }}
 
       - name: Cache Composer dependencies
         id: cache-composer
@@ -91,17 +102,6 @@ jobs:
         run: |
           php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           php composer.phar install
-
-      - name: Init database
-        if: ${{ inputs.update_db == true }}
-        uses: uniquesca/ci/migrate-db-dump@2
-        with:
-          db_dump_file: ${{ inputs.db_dump_path }}
-          migration_command: ${{ inputs.migration_command }}
-
-      - name: Debug DB dump
-        if: ${{ inputs.update_db == true }}
-        run: cat ${{ inputs.db_dump_path }}
 
       - name: Get NPM cache directory
         id: npm-cache-dir

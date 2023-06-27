@@ -12,26 +12,28 @@ runs:
   using: "composite"
   steps:
     - name: Init MySQL
+      shell: bash
       run: |
         sudo service mysql start
         mysql -u root -proot --execute="CREATE DATABASE mysql_migration_db;"
 
     - name: Import DB
-      uses: uniquesca/ci/mysql-import@2
+      uses: uniquesca/ci/mysql-import@main
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: mysql_migration_db
 
     - name: Set up environment
-      uses: uniquesca/ci/prepare-environment@2
+      uses: uniquesca/ci/prepare-environment@main
       with:
         env_variables: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"localhost","db.port":"3306"}'
 
     - name: Run DB migration
+      shell: bash
       run: ${{ inputs.migration_command }}
 
     - name: Export DB
-      uses: uniquesca/ci/mysql-export@2
+      uses: uniquesca/ci/mysql-export@main
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: mysql_migration_db
