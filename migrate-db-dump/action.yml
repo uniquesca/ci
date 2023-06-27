@@ -17,7 +17,7 @@ runs:
         mysql -u root -proot --execute="CREATE DATABASE mysql_migration_db;"
 
     - name: Import DB
-      uses: uniquesca/ci/mysql-import@main
+      uses: uniquesca/ci/mysql-import@2
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: mysql_migration_db
@@ -31,7 +31,7 @@ runs:
       run: ${{ inputs.migration_command }}
 
     - name: Export DB
-      uses: uniquesca/ci/mysql-export@main
+      uses: uniquesca/ci/mysql-export@2
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: mysql_migration_db
