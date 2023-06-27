@@ -96,7 +96,7 @@ jobs:
 
       - name: Import database dump
         if: inputs.use_db == true && env.phpunit_present == 1
-        uses: uniquesca/ci/mysql-import@main
+        uses: uniquesca/ci/mysql-import@2
         with:
           dump_file_path: ${{ inputs.db_dump_file }}
           db_name: 'phpunit'
