@@ -12,6 +12,7 @@ runs:
   using: "composite"
   steps:
     - name: Init MySQL
+      shell: bash
       run: |
         sudo service mysql start
         mysql -u root -proot --execute="CREATE DATABASE mysql_migration_db;"
@@ -28,6 +29,7 @@ runs:
         env_variables: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"localhost","db.port":"3306"}'
 
     - name: Run DB migration
+      shell: bash
       run: ${{ inputs.migration_command }}
 
     - name: Export DB
