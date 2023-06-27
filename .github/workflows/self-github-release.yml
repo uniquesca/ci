@@ -12,7 +12,7 @@ jobs:
       - id: get_version
         run: echo "version=$(echo ${GITHUB_REF#refs/tags/})" >> "$GITHUB_OUTPUT"
 
-      - uses: uniquesca/continuous-integration/publish-github-release@main
+      - uses: uniquesca/ci/publish-github-release@main
         with:
           release_version: ${{ steps.get_version.outputs.version }}
           repo_token: ${{ secrets.PUBLIC_ACCESS_TOKEN }}

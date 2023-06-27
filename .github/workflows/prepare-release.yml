@@ -71,7 +71,7 @@ jobs:
 
       - name: Update changelog file
         if: ${{ inputs.generate_changelog == true }}
-        uses: uniquesca/continuous-integration/update-changelog@main
+        uses: uniquesca/ci/update-changelog@main
         with:
           changelog_path: ${{ inputs.changelog_path }}
           target_version: ${{ inputs.version }}
@@ -94,7 +94,7 @@ jobs:
 
       - name: Init database
         if: ${{ inputs.update_db == true }}
-        uses: uniquesca/continuous-integration/migrate-db-dump@2
+        uses: uniquesca/ci/migrate-db-dump@2
         with:
           db_dump_file: ${{ inputs.db_dump_path }}
           migration_command: ${{ inputs.migration_command }}

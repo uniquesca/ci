@@ -34,7 +34,7 @@ runs:
       shell: bash
 
     - name: Generate changelog for the release
-      uses: uniquesca/continuous-integration/update-changelog@main
+      uses: uniquesca/ci/update-changelog@main
       with:
         mode: 'raw'
         offset: 1
