@@ -1,29 +1,47 @@
 import core from "@actions/core";
 import fs from "fs";
 import process from "process";
+import {CiEnvironment} from "../src/classes/CiEnvironment.js";
+import {CiEnvVariableMapper} from "../src/classes/CiEnvVariableMapper.js";
 
-const configStub = core.getInput('config_stub_file');
-const config = core.getInput('config_file');
-const replacements = core.getInput('environment_variables');
-const environment_token_format = core.getInput('environment_token_format');
-const config_file_encoding = core.getInput('config_file_encoding');
+// Retrieving environment from the file
+const env = CiEnvironment.fromEnvironmentFile();
 
-const replacementsParsed = JSON.parse(replacements);
-if (!replacementsParsed) {
-    replacementsParsed = {};
+// Checking config file path - firstly from intput, then - from environment file
+let config = core.getInput('env_file');
+if (!config || config == '') {
+    config = env.env_file;
+}
+if (!config || config == '') {
+    throw new Error('Environment file path is not defined!');
 }
 
-if (configStub !== '') {
+// Copying stub file if exists - firstly from intput, then - from environment file
+let configStub = core.getInput('env_file_stub');
+if (!configStub || configStub == '') {
+    configStub = env.env_file_stub;
+}
+if (configStub !== '' && fs.existsSync(configStub)) {
     fs.copyFileSync(configStub, config);
+    core.info("Copied config stub " + configStub + " into " + config);
 }
 
-let configContent = fs.readFileSync(config, config_file_encoding);
+// Preparing replacements
+const variables = core.getInput('env_variables');
+let variablesParsed = JSON.parse(variables);
+if (!variablesParsed) {
+    variablesParsed = {};
+}
+const envMapper = new CiEnvVariableMapper(variablesParsed, env);
+variablesParsed = envMapper.map();
 
-for (const key of Object.keys(replacementsParsed)) {
-    let value = replacementsParsed[key];
-    const patternRegex = new RegExp(environment_token_format);
-    const pattern = environment_token_format.replace('$token', key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(pattern, 'g');
+let configContent = fs.readFileSync(config, 'utf8');
+
+for (const key of Object.keys(variablesParsed)) {
+    let value = variablesParsed[key];
+    // Process was simplified, no need for the below part
+    const patternRegex = '[\${ ]*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\$} ]*';
+    const regex = new RegExp(patternRegex, 'g');
     configContent = configContent.replaceAll(regex, value);
 }
 

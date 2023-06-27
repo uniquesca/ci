@@ -1,25 +1,15 @@
 name: Prepare environment config
 
 inputs:
-  config_stub_file:
-    description: 'Config stub file to copy into an actual environment config file. If empty, no copy will be performed.'
+  env_file:
+    description: 'Path to environment file. This has higher priority than the one defined in the CI environment config.'
     required: false
-    default: ''
-  config_file:
-    description: 'Environment config file to set up.'
+  env_file_stub:
+    description: 'Path to environment stub file. This has higher priority than the one defined in the CI environment config.'
+    required: false
+  env_variables:
+    description: 'JSON string object with information about variables and mappings. See more in the documentation.'
     required: true
-  config_file_encoding:
-    description: 'Encoding for the environment config file.'
-    required: false
-    default: 'utf8'
-  environment_variables:
-    description: 'JSON string containing an object, where keysa are variable names, and values are values to replace them with.'
-    required: true
-  environment_token_format:
-    description: 'Format for the token name used, use $token to replace with actual token name'
-    required: false
-    default: '\\${{[ ]*$token[ ]*}}'
-
 
 runs:
   using: 'node16'

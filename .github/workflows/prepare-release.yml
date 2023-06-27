@@ -71,7 +71,7 @@ jobs:
 
       - name: Update changelog file
         if: ${{ inputs.generate_changelog == true }}
-        uses: uniquesca/continuous-integration/update-changelog@main
+        uses: uniquesca/ci/update-changelog@2
         with:
           changelog_path: ${{ inputs.changelog_path }}
           target_version: ${{ inputs.version }}
@@ -94,27 +94,10 @@ jobs:
 
       - name: Init database
         if: ${{ inputs.update_db == true }}
-        run: |
-          sudo service mysql start
-          mysql -u root -proot --execute="CREATE DATABASE mysql_test;"
-
-      - name: Import DB
-        uses: uniquesca/continuous-integration/mysql-import@main
-        if: ${{ inputs.update_db == true }}
+        uses: uniquesca/ci/migrate-db-dump@2
         with:
-          dump_file_path: ${{ inputs.db_dump_path }}
-          db_name: mysql_test
-
-      - name: Run DB migration
-        if: ${{ inputs.update_db == true }}
-        run: ${{ inputs.migration_command }}
-
-      - name: Export DB
-        uses: uniquesca/continuous-integration/mysql-export@main
-        if: ${{ inputs.update_db == true }}
-        with:
-          dump_file_path: ${{ inputs.db_dump_path }}
-          db_name: mysql_test
+          db_dump_file: ${{ inputs.db_dump_path }}
+          migration_command: ${{ inputs.migration_command }}
 
       - name: Debug DB dump
         if: ${{ inputs.update_db == true }}

@@ -1,0 +1,9 @@
+name: Prepare CI matrix
+
+outputs:
+  matrix:
+    description: 'Matrix retrieved from _ci_environment.json file and compatible with Uniques CI framework'
+
+runs:
+  using: 'node16'
+  main: 'index.js'

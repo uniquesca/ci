@@ -1,0 +1,37 @@
+name: Migrate DB Dump
+
+inputs:
+  db_dump_path:
+    description: 'Path to the database dump file'
+    required: true
+  migration_command:
+    description: 'DB migration command'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Init MySQL
+      run: |
+        sudo service mysql start
+        mysql -u root -proot --execute="CREATE DATABASE mysql_migration_db;"
+
+    - name: Import DB
+      uses: uniquesca/ci/mysql-import@2
+      with:
+        dump_file_path: ${{ inputs.db_dump_path }}
+        db_name: mysql_migration_db
+
+    - name: Set up environment
+      uses: uniquesca/ci/prepare-environment@2
+      with:
+        env_variables: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"localhost","db.port":"3306"}'
+
+    - name: Run DB migration
+      run: ${{ inputs.migration_command }}
+
+    - name: Export DB
+      uses: uniquesca/ci/mysql-export@2
+      with:
+        dump_file_path: ${{ inputs.db_dump_path }}
+        db_name: mysql_migration_db

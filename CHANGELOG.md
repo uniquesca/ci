@@ -95,3 +95,13 @@
 
 * Fix: fixed PHP setup code for `qa-checks` (5eee0d8 by George Shestayev)
 * New: introduced `prepare-environment` action which parses JSON object and replaces variables in application config (8e9c359 by George Shestayev)
+
+## v2.0.0
+
+* BREAKING: `qa-checks` workflow updated to use `prepare-environment` and `prepare-ci-matrix` actions - ci.json has to be migrated to `_ci_environment.json`
+* BREAKING: repository is renamed to uniquesca/ci
+* New: introduced `prepare-environment` action which parses JSON object and replaces variables in application config
+* New: introduced `prepare-ci-matrix action` allowing to retrieve CI-related environment information from `_ci_environment.json` file
+* New: introduced `migrate-db-dump` action allowing to import, migrate and export DB dump
+* New: added CI-related classes for better CI framework structure
+* Update: `prepare-release` workflow update to use `migrate-db-dump` action

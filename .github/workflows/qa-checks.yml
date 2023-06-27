@@ -36,18 +36,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - run: sudo apt-get install jq -y
-
-      - name: Get CI configuration from ci.json file
-        id: matrix
-        run: echo "matrix=$(cat ci.json | jq -c .)" >> $GITHUB_OUTPUT
+      - id: matrix
+        uses: uniquesca/ci/prepare-ci-matrix@2
 
   qa:
     name: Run QA checks
-    needs: [matrix]
+    needs: [ matrix ]
     runs-on: ${{ matrix.setup.os }}
     env:
-      phpunit_executed: false
+      phpunit_present: 0
     strategy:
       fail-fast: false
       matrix:
@@ -61,19 +58,6 @@ jobs:
           ini-values: xdebug.mode="coverage"
 
       - uses: actions/checkout@v3
-
-      - name: Set up MySQL
-        if: ${{ inputs.use_db == true }}
-        run: |
-          sudo systemctl start mysql.service
-          mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
-
-      - name: Import database dump
-        if: ${{ inputs.use_db == true }}
-        uses: uniquesca/continuous-integration/mysql-import@main
-        with:
-          dump_file_path: ${{ inputs.db_dump_file }}
-          db_name: 'phpunit'
 
       - name: Cache Composer dependencies
         id: cache-composer
@@ -93,30 +77,50 @@ jobs:
           php -r "unlink('composer-setup.php');"
           php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           php composer.phar install
-      
-      - name: Prepare PHPUnit config
+
+      - name: Check if we have PHPUnit
         run: |
-          if [ -f "phpunit.xml.dist" ]; then
-            cp phpunit.xml.dist phpunit.xml
-          fi
-        
-          if [ -f "phpunit.xml" ]; then
-            sed -i 's/name="db_username" value=""/name="db_username" value="root"/' phpunit.xml
-            sed -i 's/name="db_password" value=""/name="db_password" value="root"/' phpunit.xml
-            sed -i 's/name="db_name" value=""/name="db_name" value="phpunit"/' phpunit.xml
-          fi
-          
-      - name: Run PHPUnit
-        run: |
-          if [ -f "phpunit.xml" ]; then
-            ./vendor/bin/phpunit --configuration phpunit.xml
-            echo "phpunit_executed=true" >> $GITHUB_ENV
+          if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
+            echo "phpunit_present=1" >> $GITHUB_ENV
           else
             echo "No PHPUnit configuration file found, skipping tests."
           fi
-      
+
+      - run: echo ${{ env.phpunit_present }}
+
+      - name: Set up MySQL
+        if: inputs.use_db == true && env.phpunit_present == 1
+        run: |
+          sudo systemctl start mysql.service
+          mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
+
+      - name: Import database dump
+        if: inputs.use_db == true && env.phpunit_present == 1
+        uses: uniquesca/ci/mysql-import@2
+        with:
+          dump_file_path: ${{ inputs.db_dump_file }}
+          db_name: 'phpunit'
+
+      - name: Set up PHPUnit environment file
+        if: env.phpunit_present == 1
+        uses: uniquesca/ci/prepare-environment@2
+        with:
+          env_file: "phpunit.xml"
+          env_file_stub: "phpunit.xml.dist"
+          env_variables: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+
+      - name: Set up default environment file
+        if: env.phpunit_present == 1
+        uses: uniquesca/ci/prepare-environment@2
+        with:
+          env_variables: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+
+      - name: Run PHPUnit
+        if: env.phpunit_present == 1
+        run: ./vendor/bin/phpunit --configuration phpunit.xml
+
       - name: Generate coverage badge
-        if: ${{ env.phpunit_executed == 'true' && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
+        if: ${{ env.phpunit_present == 1 && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
         uses: timkrase/phpunit-coverage-badge@v1.2.1
         with:
           coverage_badge_path: ${{ inputs.coverage_badge_file }}
