@@ -6,6 +6,7 @@ export class CiJob {
         version: "8.1",
         extensions: ""
     });
+    default: false;
 
     constructor(input) {
         const copy = {...input};

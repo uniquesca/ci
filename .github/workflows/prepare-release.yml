@@ -50,9 +50,30 @@ on:
         default: ''
 
 jobs:
-  prepare-release:
+  get-environment:
+    name: Get environment info
     runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.env.outputs.env }}
     steps:
+      - uses: actions/checkout@v3
+      - id: env
+        uses: uniquesca/ci/get-default-ci-environment@feature/officio-monorepo
+
+  prepare-release:
+    needs: [ get-environment ]
+    strategy:
+      matrix:
+        env: ${{ fromJSON(needs.get-environment.outputs.env) }}
+    runs-on: ${{ matrix.env.os }}
+    steps:
+      - name: Set up environment
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.env.php.version }}
+          extensions: ${{ matrix.env.php.extensions }}
+          ini-values: xdebug.mode="coverage"
+
       - name: Checkout
         uses: actions/checkout@v3
         with:
