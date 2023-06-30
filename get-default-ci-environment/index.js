@@ -33,7 +33,7 @@ try {
     } else {
         // Add php xdebug extension as it's necessary for coverage
         if (job.php.extensions.indexOf("xdebug") === -1) {
-            job.extensions = env.job_matrix[key].php.extensions + ' xdebug';
+            job.extensions = job.php.extensions + ' xdebug';
         }
     }
     core.setOutput("env", JSON.stringify([job]));
