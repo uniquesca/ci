@@ -98,7 +98,7 @@ jobs:
             ${{ runner.os }}-composer-ci-prepare-release-
 
       - name: Install Composer dependencies
-        if: ${{ inputs.update_db == true }}
+        if: steps.cache-composer.outputs.cache-hit != 'true'
         run: |
           php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           php composer.phar install
