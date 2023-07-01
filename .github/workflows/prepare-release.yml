@@ -124,12 +124,6 @@ jobs:
           php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           php composer.phar install
 
-      - name: Update interdependencies in case it's a monorepo
-        run: |
-          if [ -f "_ci_monorepo.json" ]; then
-            ./vendor/bin/monorepo-builder bump-interdependency "~${{ inputs.version }}"
-          fi
-
       - name: Get NPM cache directory
         id: npm-cache-dir
         shell: bash
