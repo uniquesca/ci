@@ -126,7 +126,7 @@ jobs:
 
       - name: Version bump if possible
         run: |
-          if [-f "officio.phar" ]; then
+          if [ -f "officio.phar" ]; then
             chmod +x officio.phar
             ./officio.phar bump_version ${{ inputs.version }}
           fi
