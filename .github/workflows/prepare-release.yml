@@ -124,6 +124,13 @@ jobs:
           php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           php composer.phar install
 
+      - name: Version bump if possible
+        run: |
+          if [-f "officio.phar" ]; then
+            chmod +x officio.phar
+            ./officio.phar bump_version ${{ inputs.version }}
+          fi
+
       - name: Get NPM cache directory
         id: npm-cache-dir
         shell: bash
