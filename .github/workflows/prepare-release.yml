@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - id: env
-        uses: uniquesca/ci/get-default-ci-environment@feature/officio-monorepo
+        uses: uniquesca/ci/get-default-ci-environment@main
 
   prepare-release:
     needs: [ get-environment ]
