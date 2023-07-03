@@ -43,9 +43,10 @@ for (const key of Object.keys(variablesParsed)) {
     const patternRegex = '[\${ ]*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\$} ]*';
     const regex = new RegExp(patternRegex, 'g');
     configContent = configContent.replaceAll(regex, value);
-    core.debug('Processed environment file content:');
-    core.debug(configContent);
 }
+
+core.debug('Processed environment file content:');
+core.debug(configContent);
 
 fs.writeFileSync(config, configContent);
 
