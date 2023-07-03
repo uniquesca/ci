@@ -86,8 +86,6 @@ jobs:
             echo "No PHPUnit configuration file found, skipping tests."
           fi
 
-      - run: echo ${{ env.phpunit_present }}
-
       - name: Set up MySQL
         if: inputs.use_db == true && env.phpunit_present == 1
         run: |

@@ -105,3 +105,11 @@
 * New: introduced `migrate-db-dump` action allowing to import, migrate and export DB dump
 * New: added CI-related classes for better CI framework structure
 * Update: `prepare-release` workflow update to use `migrate-db-dump` action
+
+## v2.0.2
+
+* Fix: fixed conditions for composer installation in `prepare-release` workflow
+* New: introduced `get-default-ci-environment` action
+* New: added version bumping using `officio.phar` if it's present in the repo in `prepare-release` workflow
+* Update: improved debug output in `prepare-environment` workflow
+
