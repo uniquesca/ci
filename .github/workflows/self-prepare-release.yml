@@ -1,12 +1,11 @@
 name: Prepare release
 
 on:
-  push:
-    branches:
-      - 'release/*'
+  create
 
 jobs:
   version:
+    if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version}}
