@@ -13,7 +13,7 @@ if (!config || config == '') {
     config = env.env_file;
 }
 if (!config || config == '') {
-    throw new Error('Environment file path is not defined!');
+    core.info("Environment file not found, exiting.");
 }
 
 // Copying stub file if exists - firstly from intput, then - from environment file
