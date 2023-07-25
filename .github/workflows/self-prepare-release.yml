@@ -20,5 +20,3 @@ jobs:
       UNIQUES_GITHUB_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
     with:
       version: ${{ needs.version.outputs.version }}
-      generate_changelog: ${{ github.event.created }}
-
