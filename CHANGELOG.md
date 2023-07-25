@@ -113,3 +113,10 @@
 * New: added version bumping using `officio.phar` if it's present in the repo in `prepare-release` workflow
 * Update: improved debug output in `prepare-environment` workflow
 
+## v2.0.3
+
+* Fix: adjusted `prepare-release` CI for the cases when there is no composer involved (e30a667 by George Shestayev)
+* Fix: fixed `self-prepare-release` workflow (fcb01ac by George Shestayev)
+* Fix: fixed debug output (5845a97 by George Shestayev)
+* New: added `db_migration_cmd` input for `qa-checks` in order migration needs to run before unit tests (3796cfd by George Shestayev)
+* Update: switched composer usage from composer.phar to the system installed one - would have positive performance impact (0c669c3 by George Shestayev)
