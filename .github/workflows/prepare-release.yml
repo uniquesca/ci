@@ -121,8 +121,8 @@ jobs:
       - name: Install Composer dependencies
         if: steps.cache-composer.outputs.cache-hit != 'true'
         run: |
-          php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-          php composer.phar install
+          composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+          composer install
 
       - name: Version bump if possible
         run: |
