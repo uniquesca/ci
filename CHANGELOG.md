@@ -124,4 +124,3 @@
 ## v2.0.4
 
 * Update: improved `prepare-environment` flow to properly exit if there is no environment file (6745f41 by George Shestayev)
-* Update: improved `prepare-environment` flow not to fail if there is no env file (in case of a library) (5110d29 by George Shestayev)
