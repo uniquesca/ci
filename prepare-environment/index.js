@@ -14,6 +14,7 @@ if (!config || config == '') {
 }
 if (!config || config == '') {
     core.info("Environment file not found, exiting.");
+    process.exit();
 }
 
 // Copying stub file if exists - firstly from intput, then - from environment file
