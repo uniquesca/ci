@@ -120,3 +120,7 @@
 * Fix: fixed debug output (5845a97 by George Shestayev)
 * New: added `db_migration_cmd` input for `qa-checks` in order migration needs to run before unit tests (3796cfd by George Shestayev)
 * Update: switched composer usage from composer.phar to the system installed one - would have positive performance impact (0c669c3 by George Shestayev)
+
+## v2.0.4
+
+* Update: improved `prepare-environment` flow to properly exit if there is no environment file (6745f41 by George Shestayev)
