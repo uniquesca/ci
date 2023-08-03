@@ -124,3 +124,7 @@
 ## v2.0.4
 
 * Update: improved `prepare-environment` flow to properly exit if there is no environment file (6745f41 by George Shestayev)
+
+## v2.0.5
+
+* Update: improved the way to map environment variable, allowing multiple mappings for one value (4443631 by George Shestayev)

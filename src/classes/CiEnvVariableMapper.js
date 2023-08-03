@@ -11,17 +11,20 @@ export class CiEnvVariableMapper {
     }
 
     map() {
-        const result = {};
-        for (const key in this.variables) {
+        const mappedResult = {};
+        for (const key in this.environment.token_mappings) {
             core.debug("Processing variable: " + key);
-            if (this.environment.token_mappings.hasOwnProperty(key)) {
-                result[this.environment.token_mappings[key]] = this.variables[key];
-                core.debug("Mapping found: " + this.environment.token_mappings[key]);
+            if (this.variables.hasOwnProperty(this.environment.token_mappings[key])) {
+                result[key] = this.variables[this.environment.token_mappings[key]];
+                core.debug("Mapping found: " + this.environment.token_mappings[this.environment.token_mappings[key]]);
             } else {
-                result[key] = this.variables[key];
                 core.debug("Mapping not found.");
             }
         }
+        const result = {
+            ...mappedResult,
+            ...this.variables
+        };
         return result;
     }
 }
