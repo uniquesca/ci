@@ -128,3 +128,7 @@
 ## v2.0.5
 
 * Update: improved the way to map environment variable, allowing multiple mappings for one value (4443631 by George Shestayev)
+
+## v2.0.6
+
+* Fix: fixed syntax bug in processing variable mappings in an environment file (33a4125 by George Shestayev)
