@@ -15,7 +15,7 @@ export class CiEnvVariableMapper {
         for (const key in this.environment.token_mappings) {
             core.debug("Processing variable: " + key);
             if (this.variables.hasOwnProperty(this.environment.token_mappings[key])) {
-                result[key] = this.variables[this.environment.token_mappings[key]];
+                mappedResult[key] = this.variables[this.environment.token_mappings[key]];
                 core.debug("Mapping found: " + this.environment.token_mappings[this.environment.token_mappings[key]]);
             } else {
                 core.debug("Mapping not found.");
