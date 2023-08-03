@@ -41,7 +41,7 @@ let configContent = fs.readFileSync(config, 'utf8');
 for (const key of Object.keys(variablesParsed)) {
     let value = variablesParsed[key];
     // Process was simplified, no need for the below part
-    const patternRegex = '[\${ ]*' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\$} ]*';
+    const patternRegex = '\$?\{{1,2}' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\}{1,2}';
     const regex = new RegExp(patternRegex, 'g');
     configContent = configContent.replaceAll(regex, value);
 }

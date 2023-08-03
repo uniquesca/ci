@@ -132,3 +132,8 @@
 ## v2.0.6
 
 * Fix: fixed syntax bug in processing variable mappings in an environment file (33a4125 by George Shestayev)
+
+## v2.0.7
+
+* Fix: restricted possible format for CI environment tokens (e4f84a8 by George Shestayev)
+* Fix: fixed debug output in processing CI environment tokens (e4f84a8 by George Shestayev)
