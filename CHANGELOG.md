@@ -137,3 +137,7 @@
 
 * Fix: restricted possible format for CI environment tokens (e4f84a8 by George Shestayev)
 * Fix: fixed debug output in processing CI environment tokens (e4f84a8 by George Shestayev)
+
+## v2.0.8
+
+* Fix: fixed escaping characters in regular expression (e6130f3 by George Shestayev)
