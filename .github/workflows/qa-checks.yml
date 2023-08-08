@@ -132,6 +132,10 @@ jobs:
         if: inputs.use_db == true && env.phpunit_present == 1
         run: ${{ inputs.db_migration_cmd }}
 
+      - name: Debug permissions
+        run: |
+          ls -al ./
+
       - name: Run PHPUnit
         if: env.phpunit_present == 1
         run: ./vendor/bin/phpunit --configuration phpunit.xml
