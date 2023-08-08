@@ -124,13 +124,13 @@ jobs:
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"
-          env_variables: steps.merge_environent_vars.outputs.variables
+          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
 
       - name: Set up default environment file
         if: env.phpunit_present == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
-          env_variables: steps.merge_environent_vars.outputs.variables
+          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
 
       - name: Run PHPUnit
         if: env.phpunit_present == 1
