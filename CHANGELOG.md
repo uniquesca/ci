@@ -141,3 +141,9 @@
 ## v2.0.8
 
 * Fix: fixed escaping characters in regular expression (e6130f3 by George Shestayev)
+
+## v2.0.9
+
+* Fix: fixed running post_cmd in `deploy` CI (afd2765 by George Shestayev)
+* New: added `merge-environment-variables` reusable action which merges two JSON strings together (76c6347 by George Shestayev)
+* Update: improved `QA Checks` workflow to allow to pass environment variables to it (76c6347 by George Shestayev)
