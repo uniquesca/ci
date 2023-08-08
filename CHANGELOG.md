@@ -147,3 +147,11 @@
 * Fix: fixed running post_cmd in `deploy` CI (afd2765 by George Shestayev)
 * New: added `merge-environment-variables` reusable action which merges two JSON strings together (76c6347 by George Shestayev)
 * Update: improved `QA Checks` workflow to allow to pass environment variables to it (76c6347 by George Shestayev)
+
+## v2.1.0
+
+* Fix: fixed order of the DB migration step to run after env file is set up in `QA Checks` workflow (f5c0192 by George Shestayev)
+* Fix: fixed syntax bug related to using variables in `QA Checks` CI (2702d92 by George Shestayev)
+* Fix: fixed bugs found in the latest changes related to env variables processing (778fc56 by George Shestayev)
+* Update: removing debug output, switching branches to stable ones (8fc9434 by George Shestayev)
+* Debug: added debugging information (6cb42ca by George Shestayev)
