@@ -106,16 +106,12 @@ jobs:
           dump_file_path: ${{ inputs.db_dump_file }}
           db_name: 'phpunit'
 
-      - name: Run DB migration
-        if: inputs.use_db == true && env.phpunit_present == 1
-        run: ${{ inputs.db_migration_cmd }}
-
       - name: Prepare environment variables
         if: env.phpunit_present
         id: merge_environent_vars
         uses: uniquesca/ci/merge-environment-variables@main
         with:
-          variables1: input.env_variables
+          variables1: ${{ inputs.env_variables }}
           variables2: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Set up PHPUnit environment file
@@ -124,13 +120,17 @@ jobs:
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"
-          env_variables: steps.merge_environent_vars.outputs.variables
+          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
 
       - name: Set up default environment file
         if: env.phpunit_present == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
-          env_variables: steps.merge_environent_vars.outputs.variables
+          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
+
+      - name: Run DB migration
+        if: inputs.use_db == true && env.phpunit_present == 1
+        run: ${{ inputs.db_migration_cmd }}
 
       - name: Run PHPUnit
         if: env.phpunit_present == 1

@@ -1,5 +1,4 @@
 import core from "@actions/core";
-import process from "process";
 
 let variables1 = core.getInput('variables1');
 variables1 = JSON.parse(variables1);
