@@ -113,9 +113,9 @@ jobs:
       - name: Prepare environment variables
         if: env.phpunit_present
         id: merge_environent_vars
-        uses: uniquesca/ci/merge-environment-variables@main
+        uses: uniquesca/ci/merge-environment-variables@feature/test-env-vars
         with:
-          variables1: input.env_variables
+          variables1: ${{ inputs.env_variables }}
           variables2: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Set up PHPUnit environment file
