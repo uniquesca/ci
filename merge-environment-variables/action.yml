@@ -1,0 +1,16 @@
+name: Merge environment variables
+
+inputs:
+  variables1:
+    description: 'JSON string representiing object with the neivnronment variables.'
+    required: true
+  variables2:
+    description: 'JSON string representing object with replacements.'
+    required: true
+outputs:
+  variables:
+    description: 'JSON string representing the merged variables1 and variables2 objects.'
+
+runs:
+  using: 'node16'
+  main: 'index.js'

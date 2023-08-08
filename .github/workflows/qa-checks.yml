@@ -31,6 +31,11 @@ on:
         required: false
         default: 'coverage.svg'
         type: string
+      env_variables:
+        description: 'JSON string representing an object with environment variables to set up an environment'
+        required: false
+        default: '{}'
+        type: string
 
 jobs:
   matrix:
@@ -105,19 +110,27 @@ jobs:
         if: inputs.use_db == true && env.phpunit_present == 1
         run: ${{ inputs.db_migration_cmd }}
 
+      - name: Prepare environment variables
+        if: env.phpunit_present
+        id: merge_environent_vars
+        uses: uniquesca/ci/merge-environment-variables@main
+        with:
+          variables1: input.env_variables
+          variables2: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+
       - name: Set up PHPUnit environment file
         if: env.phpunit_present == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"
-          env_variables: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+          env_variables: steps.merge_environent_vars.outputs.variables
 
       - name: Set up default environment file
         if: env.phpunit_present == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
-          env_variables: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+          env_variables: steps.merge_environent_vars.outputs.variables
 
       - name: Run PHPUnit
         if: env.phpunit_present == 1

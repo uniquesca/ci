@@ -125,4 +125,4 @@ jobs:
             
             ${{ inputs.clean_cache_cmd }}
             
-            ${{ inputs.inputs.post_cmd }}
+            ${{ inputs.post_cmd }}
