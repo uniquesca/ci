@@ -109,7 +109,7 @@ jobs:
       - name: Prepare environment variables
         if: env.phpunit_present
         id: merge_environent_vars
-        uses: uniquesca/ci/merge-environment-variables@feature/test-env-vars
+        uses: uniquesca/ci/merge-environment-variables@main
         with:
           variables1: ${{ inputs.env_variables }}
           variables2: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
@@ -131,10 +131,6 @@ jobs:
       - name: Run DB migration
         if: inputs.use_db == true && env.phpunit_present == 1
         run: ${{ inputs.db_migration_cmd }}
-
-      - name: Debug permissions
-        run: |
-          ls -al ./
 
       - name: Run PHPUnit
         if: env.phpunit_present == 1
