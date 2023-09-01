@@ -54,7 +54,9 @@ jobs:
     needs: [ matrix ]
     runs-on: ${{ matrix.setup.os }}
     env:
-      phpunit_present: 0
+      phpunit: 0
+      composer: 0
+      npm: 0
     strategy:
       fail-fast: false
       matrix:
@@ -69,7 +71,16 @@ jobs:
 
       - uses: actions/checkout@v3
 
+      - name: Check if we have Composer to install
+        run: |
+          if [[ -f "composer.json" ]]; then
+            echo "composer=1" >> $GITHUB_ENV
+          else
+            echo "No Composer found, skipping php-related QA."
+          fi
+
       - name: Cache Composer dependencies
+        if: env.composer == 1
         id: cache-composer
         uses: actions/cache@v3
         with:
@@ -80,7 +91,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-
 
       - name: Install Composer dependencies
-        if: steps.cache-composer.outputs.cache-hit != 'true'
+        if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true'
         run: |
           composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           composer install
@@ -88,26 +99,26 @@ jobs:
       - name: Check if we have PHPUnit
         run: |
           if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
-            echo "phpunit_present=1" >> $GITHUB_ENV
+            echo "phpunit=1" >> $GITHUB_ENV
           else
             echo "No PHPUnit configuration file found, skipping tests."
           fi
 
       - name: Set up MySQL
-        if: inputs.use_db == true && env.phpunit_present == 1
+        if: inputs.use_db == true && env.phpunit == 1
         run: |
           sudo systemctl start mysql.service
           mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
 
       - name: Import database dump
-        if: inputs.use_db == true && env.phpunit_present == 1
+        if: inputs.use_db == true && env.phpunit == 1
         uses: uniquesca/ci/mysql-import@main
         with:
           dump_file_path: ${{ inputs.db_dump_file }}
           db_name: 'phpunit'
 
       - name: Prepare environment variables
-        if: env.phpunit_present
+        if: env.phpunit == 1
         id: merge_environent_vars
         uses: uniquesca/ci/merge-environment-variables@main
         with:
@@ -115,7 +126,7 @@ jobs:
           variables2: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Set up PHPUnit environment file
-        if: env.phpunit_present == 1
+        if: env.phpunit == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
           env_file: "phpunit.xml"
@@ -123,21 +134,21 @@ jobs:
           env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
 
       - name: Set up default environment file
-        if: env.phpunit_present == 1
+        if: env.phpunit == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
           env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
 
       - name: Run DB migration
-        if: inputs.use_db == true && env.phpunit_present == 1
+        if: inputs.use_db == true && env.phpunit == 1
         run: ${{ inputs.db_migration_cmd }}
 
       - name: Run PHPUnit
-        if: env.phpunit_present == 1
+        if: env.phpunit == 1
         run: ./vendor/bin/phpunit --configuration phpunit.xml
 
       - name: Generate coverage badge
-        if: ${{ env.phpunit_present == 1 && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
+        if: ${{ env.phpunit == 1 && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
         uses: timkrase/phpunit-coverage-badge@v1.2.1
         with:
           coverage_badge_path: ${{ inputs.coverage_badge_file }}
@@ -158,4 +169,52 @@ jobs:
             ./vendor/bin/psalm --show-info=true
           else
             echo "No Psalm configuration file found, skipping code check."
+          fi
+
+      - name: Check if we have Composer to install
+        run: |
+          if [[ -f "package.json" ]]; then
+            echo "npm=1" >> $GITHUB_ENV
+          else
+            echo "No NPM found, skipping JS/TS-related QA."
+          fi
+
+      - name: Get NPM cache directory
+        if: env.npm == 1
+        id: npm-cache-dir
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
+
+      - name: Cache NPM dependencies
+        if: env.npm == 1
+        id: cache-npm
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.npm-cache-dir.outputs.dir }}
+          key: ${{ runner.os }}-node-ci-publish-npm-${{ hashFiles('package.json,package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-ci-publish-npm-
+
+      - name: Prepare .npmrc file
+        if: env.npm == 1
+        run: |
+          if [ ! -f ".npmrc" ]; then
+            echo "@uniquesca:registry=https://npm.pkg.github.com" >> .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
+            echo "always_auth=true" >> .npmrc
+          fi
+
+      - name: Install NPM dependencies
+        if: env.npm == 1
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+        run: npm install
+
+      - name: Run ESLint
+        if: env.npm == 1
+        run: |
+          if [ -f ".eslintrc.json" ]; then
+            npx eslint .
+          else
+            echo "No ESLint configuration file found, skipping code check."
           fi
