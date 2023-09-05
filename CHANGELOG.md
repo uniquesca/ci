@@ -155,6 +155,4 @@
 
 ## v2.1.1
 
-* New: adding ESLint execution into QA CI (33767ee by George Shestayev)
-* Update: improved npm publication workflow to properly publish github release as well (33767ee by George Shestayev)
-* Added ESLint to QA Checks, improved NPM publish process (#1) (33767ee by George Shestayev)
+* New: Added ESLint to QA Checks, improved NPM publish process (#1) (33767ee by George Shestayev)
