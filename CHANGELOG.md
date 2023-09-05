@@ -152,3 +152,9 @@
 
 * Fix: fixed order of the DB migration step to run after env file is set up in `QA Checks` workflow (f5c0192 by George Shestayev)
 * Fix: fixed bugs found in the latest changes related to env variables processing (778fc56 by George Shestayev)
+
+## v2.1.1
+
+* New: adding ESLint execution into QA CI (33767ee by George Shestayev)
+* Update: improved npm publication workflow to properly publish github release as well (33767ee by George Shestayev)
+* Added ESLint to QA Checks, improved NPM publish process (#1) (33767ee by George Shestayev)
