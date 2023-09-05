@@ -102,6 +102,8 @@ jobs:
 
       - run: ls -al ${{ inputs.dist_folder }}
 
+      - run: zip -qq -r dist.zip ${{ inputs.dist_folder }}
+
       - name: Publish Github release
         uses: uniquesca/ci/publish-github-release@main
         if: ${{ inputs.github_release == true }}
