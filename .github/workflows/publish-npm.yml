@@ -100,9 +100,10 @@ jobs:
         run: |
           npm publish
 
-      - run: ls -al ${{ inputs.dist_folder }}
-
-      - run: zip -qq -r dist.zip ${{ inputs.dist_folder }}
+        # This step is needed to prevent cleanup
+      - name: Move dist repo outside of the working tree
+        if: ${{ inputs.github_release == true }}
+        run: cp ${{ inputs.dist_folder }} ../dist
 
       - name: Publish Github release
         uses: uniquesca/ci/publish-github-release@main
@@ -110,5 +111,5 @@ jobs:
         with:
           release_version: ${{ inputs.release_version }}
           attach_dist: true
-          dist_folder: ${{ inputs.dist_folder }}
+          dist_folder: ../dist
           repo_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
