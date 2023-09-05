@@ -103,7 +103,7 @@ jobs:
         # This step is needed to prevent cleanup
       - name: Move dist repo outside of the working tree
         if: ${{ inputs.github_release == true }}
-        run: cp ${{ inputs.dist_folder }} ../dist
+        run: cp ${{ inputs.dist_folder }} ../dist -Rf
 
       - name: Publish Github release
         uses: uniquesca/ci/publish-github-release@main
