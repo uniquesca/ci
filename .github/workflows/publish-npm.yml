@@ -100,6 +100,8 @@ jobs:
         run: |
           npm publish
 
+      - run: ls -al ${{ inputs.dist_folder }}
+
       - name: Publish Github release
         uses: uniquesca/ci/publish-github-release@main
         if: ${{ inputs.github_release == true }}
