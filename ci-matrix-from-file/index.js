@@ -5,6 +5,8 @@ try {
     const file = core.getInput('matrix_file');
     if (fs.existsSync(file)) {
         const content = fs.readFileSync(file);
+        core.debug('Matrix file content:');
+        core.debug(content);
         if (JSON.parse(content)) {
             core.setOutput("matrix", content);
         } else {
