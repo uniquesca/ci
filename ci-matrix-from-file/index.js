@@ -4,7 +4,7 @@ import fs from "fs";
 try {
     const file = core.getInput('matrix_file');
     if (fs.existsSync(file)) {
-        const content = fs.readFileSync(file);
+        const content = fs.readFileSync(file, 'utf8');
         core.debug('Matrix file content:');
         core.debug(content);
         if (JSON.parse(content)) {

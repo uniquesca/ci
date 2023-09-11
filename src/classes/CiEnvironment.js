@@ -32,7 +32,7 @@ export class CiEnvironment {
     static fromEnvironmentFile() {
         let input = {};
         if (fs.existsSync('_ci_environment.json')) {
-            const envString = fs.readFileSync('_ci_environment.json');
+            const envString = fs.readFileSync('_ci_environment.json', 'utf8');
             input = JSON.parse(envString);
             core.info('Found environment file _ci_environment.json');
         }
