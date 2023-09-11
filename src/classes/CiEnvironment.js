@@ -2,7 +2,6 @@ import core from "@actions/core";
 import fs from "fs";
 import {CiJob} from "./CiJob.js";
 
-
 export class CiEnvironment {
     env_file = '';
     env_file_stub = '';
