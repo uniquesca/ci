@@ -101,7 +101,7 @@ jobs:
         if: ${{ inputs.update_db == true }}
         uses: uniquesca/ci/migrate-db-dump@main
         with:
-          db_dump_file: ${{ inputs.db_dump_path }}
+          db_dump_path: ${{ inputs.db_dump_path }}
           migration_command: ${{ inputs.migration_command }}
 
       - name: Debug DB dump
