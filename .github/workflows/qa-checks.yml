@@ -12,7 +12,7 @@ on:
         required: false
         default: false
         type: boolean
-      db_dump_file:
+      db_dump_path:
         description: 'Path to the DB dump file - ignored if `use_db` is not set to `true`'
         required: false
         type: string
@@ -114,7 +114,7 @@ jobs:
         if: inputs.use_db == true && env.phpunit == 1
         uses: uniquesca/ci/mysql-import@main
         with:
-          dump_file_path: ${{ inputs.db_dump_file }}
+          dump_file_path: ${{ inputs.db_dump_path }}
           db_name: 'phpunit'
 
       - name: Prepare environment variables
