@@ -156,3 +156,8 @@
 ## v2.1.1
 
 * New: Added ESLint to QA Checks, improved NPM publish process (#1) (33767ee by George Shestayev)
+
+## v2.1.2
+
+* Fix: fixed DB migration call from prepare-release workflow (6eee407 by George Shestayev)
+* New: fixed QA checks to install Yarn instead of NPM if .yarnrc file is detected (6eee407 by George Shestayev)
