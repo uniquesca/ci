@@ -89,9 +89,8 @@ jobs:
             
             if [ -f "package.json" ]; then
               if [ ! -f ".npmrc" ]; then
-                echo "@uniquesca:registry=https://npm.pkg.github.com" >> .npmrc
+                echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
                 echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
-                echo "always_auth=true" >> .npmrc
               fi
             
               if ! command -v nvm &> /dev/null

@@ -6,6 +6,9 @@ on:
       UNIQUES_GITHUB_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories from GitHub'
         required: true
+      NODE_AUTH_TOKEN:
+        description: 'Access token for authentication with the NPM registry'
+        required: false
     inputs:
       use_db:
         description: 'Whether a database is needed (for example for unit tests)'
@@ -195,22 +198,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-ci-publish-npm-
 
-      - name: Prepare .npmrc file
-        if: env.npm == 1
-        run: |
-          if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
-            echo "always_auth=true" >> .npmrc
-          fi
-
       - name: Install NPM/Yarn dependencies
         if: env.npm == 1
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
+          if [ ! -f ".npmrc" ]; then
+            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
+            cat .npmrc
+          fi
+          
+          # This is a hack because otherwise Yarn can't just download private packages =/
+          if [ -f "yarn.lock" ]; then
+            rm yarn.lock
+          fi
+          
           if [ -f ".yarnrc" ]; then
-            yarn install
+            yarn install --verbose
           else
             npm install  
           fi

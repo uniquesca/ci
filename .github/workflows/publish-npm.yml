@@ -68,9 +68,8 @@ jobs:
       - name: Prepare .npmrc file
         run: |
           if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
-            echo "always_auth=true" >> .npmrc
+            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
           fi
 
       - name: Update package version
