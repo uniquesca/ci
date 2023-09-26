@@ -6,13 +6,16 @@ on:
       UNIQUES_GITHUB_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories from GitHub'
         required: true
+      NODE_AUTH_TOKEN:
+        description: 'Access token for authentication with the NPM registry'
+        required: false
     inputs:
       use_db:
         description: 'Whether a database is needed (for example for unit tests)'
         required: false
         default: false
         type: boolean
-      db_dump_file:
+      db_dump_path:
         description: 'Path to the DB dump file - ignored if `use_db` is not set to `true`'
         required: false
         type: string
@@ -114,7 +117,7 @@ jobs:
         if: inputs.use_db == true && env.phpunit == 1
         uses: uniquesca/ci/mysql-import@main
         with:
-          dump_file_path: ${{ inputs.db_dump_file }}
+          dump_file_path: ${{ inputs.db_dump_path }}
           db_name: 'phpunit'
 
       - name: Prepare environment variables
@@ -171,12 +174,12 @@ jobs:
             echo "No Psalm configuration file found, skipping code check."
           fi
 
-      - name: Check if we have Composer to install
+      - name: Check if we have NPM/Yarn to install
         run: |
           if [[ -f "package.json" ]]; then
             echo "npm=1" >> $GITHUB_ENV
           else
-            echo "No NPM found, skipping JS/TS-related QA."
+            echo "No NPM/Yarn found, skipping JS/TS-related QA."
           fi
 
       - name: Get NPM cache directory
@@ -195,20 +198,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-ci-publish-npm-
 
-      - name: Prepare .npmrc file
-        if: env.npm == 1
-        run: |
-          if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
-            echo "always_auth=true" >> .npmrc
-          fi
-
-      - name: Install NPM dependencies
+      - name: Install NPM/Yarn dependencies
         if: env.npm == 1
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
-        run: npm install
+        run: |
+          if [ ! -f ".npmrc" ]; then
+            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
+            cat .npmrc
+          fi
+          
+          # This is a hack because otherwise Yarn can't just download private packages =/
+          if [ -f "yarn.lock" ]; then
+            rm yarn.lock
+          fi
+          
+          if [ -f ".yarnrc" ]; then
+            yarn install --verbose
+          else
+            npm install  
+          fi
 
       - name: Run ESLint
         if: env.npm == 1
