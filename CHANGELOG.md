@@ -161,3 +161,7 @@
 
 * Fix: fixed DB migration call from prepare-release workflow (6eee407 by George Shestayev)
 * New: fixed QA checks to install Yarn instead of NPM if .yarnrc file is detected (6eee407 by George Shestayev)
+
+## v2.1.3
+
+* Fix: added proper NPM/Yarn presence check for prepare-release workflow (0eae319 by George Shestayev)

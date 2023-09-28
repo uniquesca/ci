@@ -66,6 +66,8 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.get-environment.outputs.env) }}
     runs-on: ${{ matrix.env.os }}
+    env:
+      npm: 0
     steps:
       - name: Set up environment
         uses: shivammathur/setup-php@v2
@@ -133,12 +135,22 @@ jobs:
             ./officio.phar bump_version ${{ inputs.version }}
           fi
 
+      - name: Check if we have NPM/Yarn to install
+        run: |
+          if [[ -f "package.json" ]]; then
+            echo "npm=1" >> $GITHUB_ENV
+          else
+            echo "No NPM/Yarn found, skipping JS/TS-related QA."
+          fi
+
       - name: Get NPM cache directory
+        if: env.npm == 1
         id: npm-cache-dir
         shell: bash
         run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
 
       - name: Cache NPM dependencies
+        if: env.npm == 1
         id: cache-npm
         uses: actions/cache@v3
         with:
@@ -148,6 +160,7 @@ jobs:
             ${{ runner.os }}-node-ci-prepare-release-
 
       - name: Prepare .npmrc file
+        if: env.npm == 1
         run: |
           if [ ! -f ".npmrc" ]; then
             echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
@@ -155,12 +168,12 @@ jobs:
           fi
 
       - name: Update package version
+        if: env.npm == 1
         run: |
-          if [ -f "package.json" ]; then
-            npm pkg set version=${{ inputs.version }}
-          fi
+          npm pkg set version=${{ inputs.version }}
 
       - name: Install NPM/Yarn dependencies
+        if: env.npm == 1
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
