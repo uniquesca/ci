@@ -73,6 +73,8 @@ jobs:
               git reset --hard ${{ inputs.ref }}
             fi
             
+            git checkout ${{ inputs.ref }}
+            
             # Improve steps here to make it possible to install things, not just update
             # mysql -u root -p root -e "CREATE DATABASE IF NOT EXISTS officio.forms;"
             

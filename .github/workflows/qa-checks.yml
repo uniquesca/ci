@@ -122,7 +122,7 @@ jobs:
 
       - name: Prepare environment variables
         if: env.phpunit == 1
-        id: merge_environent_vars
+        id: merge_environment_vars
         uses: uniquesca/ci/merge-environment-variables@main
         with:
           variables1: ${{ inputs.env_variables }}
@@ -134,7 +134,7 @@ jobs:
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"
-          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
+          env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
       - name: Set up default environment file
         if: env.phpunit == 1
