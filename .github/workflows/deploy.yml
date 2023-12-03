@@ -73,6 +73,8 @@ jobs:
               git reset --hard ${{ inputs.ref }}
             fi
             
+            git checkout ${{ inputs.ref }}
+            
             # Improve steps here to make it possible to install things, not just update
             # mysql -u root -p root -e "CREATE DATABASE IF NOT EXISTS officio.forms;"
             
@@ -101,16 +103,16 @@ jobs:
                   nvm install 16
                   nvm alias set default 16
                 fi
-                
+
                 if ! command -v yarn &> /dev/null
                 then
                   nvm use default
                   npm install -g yarn
                 fi
-                
+
                 yarn install
             fi
-                       
+
             if [ -f "vendor/bin/phinx" ]; then
               if [ -f "phinx.php" ]; then
                 chmod +x ./vendor/bin/phinx

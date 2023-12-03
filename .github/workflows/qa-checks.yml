@@ -10,6 +10,11 @@ on:
         description: 'Access token for authentication with the NPM registry'
         required: false
     inputs:
+      setup_cmd:
+        description: 'Command to run to set up environment before the QA checks execution'
+        required: false
+        default: ''
+        type: string
       use_db:
         description: 'Whether a database is needed (for example for unit tests)'
         required: false
@@ -120,9 +125,12 @@ jobs:
           dump_file_path: ${{ inputs.db_dump_path }}
           db_name: 'phpunit'
 
+      - name: Run setup cmd (if specified)
+        run: ${{ inputs.setup_cmd }}
+
       - name: Prepare environment variables
         if: env.phpunit == 1
-        id: merge_environent_vars
+        id: merge_environment_vars
         uses: uniquesca/ci/merge-environment-variables@main
         with:
           variables1: ${{ inputs.env_variables }}
@@ -134,7 +142,7 @@ jobs:
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"
-          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
+          env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
       - name: Set up default environment file
         if: env.phpunit == 1
