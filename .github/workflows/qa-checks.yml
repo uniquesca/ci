@@ -148,7 +148,7 @@ jobs:
         if: env.phpunit == 1
         uses: uniquesca/ci/prepare-environment@main
         with:
-          env_variables: ${{ steps.merge_environent_vars.outputs.variables }}
+          env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
       - name: Run DB migration
         if: inputs.use_db == true && env.phpunit == 1
