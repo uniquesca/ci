@@ -10,6 +10,11 @@ on:
         description: 'Access token for authentication with the NPM registry'
         required: false
     inputs:
+      setup_cmd:
+        description: 'Command to run to set up environment before the QA checks execution'
+        required: false
+        default: ''
+        type: string
       use_db:
         description: 'Whether a database is needed (for example for unit tests)'
         required: false
@@ -119,6 +124,9 @@ jobs:
         with:
           dump_file_path: ${{ inputs.db_dump_path }}
           db_name: 'phpunit'
+
+      - name: Run setup cmd (if specified)
+        run: ${{ inputs.setup_cmd }}
 
       - name: Prepare environment variables
         if: env.phpunit == 1

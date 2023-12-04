@@ -103,16 +103,16 @@ jobs:
                   nvm install 16
                   nvm alias set default 16
                 fi
-                
+
                 if ! command -v yarn &> /dev/null
                 then
                   nvm use default
                   npm install -g yarn
                 fi
-                
+
                 yarn install
             fi
-                       
+
             if [ -f "vendor/bin/phinx" ]; then
               if [ -f "phinx.php" ]; then
                 chmod +x ./vendor/bin/phinx
