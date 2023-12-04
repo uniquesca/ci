@@ -171,3 +171,7 @@
 * New: introduce setup_cmd in qa-checks workflow (8f60e41 by George Shestayev)
 * Update: removing "USE %dbname%;" statement from exported DB dump (#2) (7158305 by Ihor Ziubrovskyi)
 * Updated: added git checkout step for deployments so the branch is switched (59f75b2 by George Shestayev)
+
+## v2.1.5
+
+* Fix: fixed typo leading to a critical bug in qa-checks workflow (a475461 by George Shestayev)
