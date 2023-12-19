@@ -183,3 +183,7 @@
 * Update: added "locked" flag to CiPhpJob (7ce598f by George Shestayev)
 * Update: improved QA checks to choose between composer install and update depending on the CiPhpJob.locked flag (7ce598f by George Shestayev)
 * Update: added debug output into `prepare-ci-matrix` workflow (7ce598f by George Shestayev)
+
+## v2.1.7
+
+* Fix: fixed phpunit call to be independent from execution bit (8b16111 by George Shestayev)
