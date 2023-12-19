@@ -1,6 +1,6 @@
 import core from "@actions/core";
 import fs from "fs";
-import {CiJob} from "./CiJob.js";
+import {CiPhpJob} from "./CiPhpJob.js";
 
 
 export class CiEnvironment {
@@ -11,12 +11,14 @@ export class CiEnvironment {
 
     // Array of CiJob classes
     job_matrix = [
-        new CiJob({
+        new CiPhpJob({
             os: "ubuntu-latest",
             php: {
                 version: "8.1",
                 extensions: "xdebug"
-            }
+            },
+            default: true,
+            locked: false
         })
     ];
 
@@ -24,7 +26,7 @@ export class CiEnvironment {
         const copy = {...input};
 
         if (copy.job_matrix) {
-            copy.job_matrix = copy.job_matrix.map(jobInfo => new CiJob(jobInfo));
+            copy.job_matrix = copy.job_matrix.map(jobInfo => new CiPhpJob(jobInfo));
         }
 
         Object.assign(this, copy);

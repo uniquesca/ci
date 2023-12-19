@@ -98,11 +98,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-
 
-      - name: Install Composer dependencies
-        if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true'
+      - name: Install Composer dependencies (Composer-locked environment)
+        if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == 'true'
         run: |
           composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           composer install
+
+      - name: Update Composer dependencies (not Composer-locked environment)
+        if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked != 'true'
+        run: |
+          composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+          composer update
 
       - name: Check if we have PHPUnit
         run: |

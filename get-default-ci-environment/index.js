@@ -1,6 +1,6 @@
 import core from "@actions/core";
 import {CiEnvironment} from "../src/classes/CiEnvironment.js";
-import {CiJob} from "../src/classes/CiJob.js";
+import {CiPhpJob} from "../src/classes/CiPhpJob.js";
 import {CiPhpVersion} from "../src/classes/CiPhpVersion.js";
 
 try {
@@ -11,7 +11,7 @@ try {
         // If there is only one job, using it as default
         job = env.job_matrix[0];
     } else {
-        // Trying to find job market as default
+        // Trying to find job marked as default
         for (let key in env.job_matrix) {
             if (env.job_matrix[key].default) {
                 job = env.job_matrix[key];
@@ -22,13 +22,14 @@ try {
 
     if (!job) {
         // If no job found, creating default one
-        job = new CiJob({
+        job = new CiPhpJob({
             os: "ubuntu-latest",
             php: new CiPhpVersion({
                 version: "8.1",
                 extensions: "xdebug"
             }),
-            default: true
+            default: true,
+            locked: false
         });
     } else {
         // Add php xdebug extension as it's necessary for coverage
