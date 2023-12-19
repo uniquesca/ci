@@ -175,3 +175,11 @@
 ## v2.1.5
 
 * Fix: fixed typo leading to a critical bug in qa-checks workflow (a475461 by George Shestayev)
+
+## v2.1.6
+
+* New: introduced "locked" flag for PHP environments (#3) (7ce598f by George Shestayev)
+* Update: CiJob renamed to CiPhpJob (7ce598f by George Shestayev)
+* Update: added "locked" flag to CiPhpJob (7ce598f by George Shestayev)
+* Update: improved QA checks to choose between composer install and update depending on the CiPhpJob.locked flag (7ce598f by George Shestayev)
+* Update: added debug output into `prepare-ci-matrix` workflow (7ce598f by George Shestayev)

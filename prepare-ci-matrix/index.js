@@ -10,6 +10,8 @@ try {
         }
     }
     core.setOutput("matrix", JSON.stringify(env.job_matrix));
+    core.debug("Generated matrix:");
+    core.debug(JSON.stringify(env.job_matrix));
 } catch (error) {
     core.setFailed(error.message);
 }
