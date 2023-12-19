@@ -162,7 +162,7 @@ jobs:
 
       - name: Run PHPUnit
         if: env.phpunit == 1
-        run: ./vendor/bin/phpunit --configuration phpunit.xml
+        run: php ./vendor/bin/phpunit --configuration phpunit.xml
 
       - name: Generate coverage badge
         if: ${{ env.phpunit == 1 && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
