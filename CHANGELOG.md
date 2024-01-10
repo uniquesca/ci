@@ -192,3 +192,7 @@
 
 * Update: added git pull for the deployment process in order to avoid deployment issues when different branches involved (f5e2f48 by George Shestayev)
 * Update: eslint command changed to run through npm to be consistent with phpcs and abstract CI from project path structure (12076fa by George Shestayev)
+
+## v2.1.9
+
+* Update: improved handling git branches/other refs when deploying (a231b26 by George Shestayev)
