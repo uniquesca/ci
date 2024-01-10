@@ -74,6 +74,7 @@ jobs:
             fi
             
             git checkout ${{ inputs.ref }}
+            git pull
             
             # Improve steps here to make it possible to install things, not just update
             # mysql -u root -p root -e "CREATE DATABASE IF NOT EXISTS officio.forms;"

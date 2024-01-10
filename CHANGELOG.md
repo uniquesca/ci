@@ -187,3 +187,8 @@
 ## v2.1.7
 
 * Fix: fixed phpunit call to be independent from execution bit (8b16111 by George Shestayev)
+
+## v2.1.8
+
+* Update: added git pull for the deployment process in order to avoid deployment issues when different branches involved (f5e2f48 by George Shestayev)
+* Update: eslint command changed to run through npm to be consistent with phpcs and abstract CI from project path structure (12076fa by George Shestayev)
