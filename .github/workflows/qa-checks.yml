@@ -196,24 +196,29 @@ jobs:
             echo "No NPM/Yarn found, skipping JS/TS-related QA."
           fi
 
-      - name: Get NPM cache directory
+      - name: Get NPM/Yarn cache directory
         if: env.npm == 1
         id: npm-cache-dir
         shell: bash
-        run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
+        run: |
+          if [ -f ".yarnrc" ]; then
+            echo "dir=$(yarn cache dir)" >> ${GITHUB_OUTPUT}
+          else
+            echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
+          fi
 
-      - name: Cache NPM dependencies
+      - name: Cache NPM/Yarn dependencies
         if: env.npm == 1
         id: cache-npm
         uses: actions/cache@v3
         with:
           path: ${{ steps.npm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-ci-publish-npm-${{ hashFiles('package.json,package-lock.json') }}
+          key: ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json,package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-node-ci-publish-npm-
+            ${{ runner.os }}-node-ci-qa-checks-npm-
 
       - name: Install NPM/Yarn dependencies
-        if: env.npm == 1
+        if: env.npm == 1 && steps.cache-npm.outputs.cache-hit != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
@@ -229,7 +234,7 @@ jobs:
           fi
           
           if [ -f ".yarnrc" ]; then
-            yarn install --verbose
+            yarn install
           else
             npm install  
           fi
