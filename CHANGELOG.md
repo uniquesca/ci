@@ -196,3 +196,8 @@
 ## v2.1.9
 
 * Update: improved handling git branches/other refs when deploying (a231b26 by George Shestayev)
+
+## v2.1.10
+
+* Update: removed npm and composer caching from release and npm package publication - it's not needed there and might just cause issues (d87c6d2 by George Shestayev)
+* Update: improved and fixed caching for Npm/Yarn in qa-checks (47ea9c2 by George Shestayev)

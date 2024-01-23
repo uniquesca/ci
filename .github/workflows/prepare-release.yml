@@ -99,18 +99,7 @@ jobs:
           changelog_path: ${{ inputs.changelog_path }}
           target_version: ${{ inputs.version }}
 
-      - name: Cache Composer dependencies
-        id: cache-composer
-        uses: actions/cache@v3
-        with:
-          path: |
-            vendor
-          key: ${{ runner.os }}-composer-ci-prepare-release-${{ hashFiles('composer.json,composer.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-composer-ci-prepare-release-
-
       - name: Install Composer dependencies
-        if: steps.cache-composer.outputs.cache-hit != 'true'
         run: |
           if [ -f "composer.json" ]; then
             composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
@@ -135,6 +124,11 @@ jobs:
             ./officio.phar bump_version ${{ inputs.version }}
           fi
 
+      - name: Update package version
+        if: env.npm == 1
+        run: |
+          npm pkg set version=${{ inputs.version }}
+
       - name: Check if we have NPM/Yarn to install
         run: |
           if [[ -f "package.json" ]]; then
@@ -142,35 +136,6 @@ jobs:
           else
             echo "No NPM/Yarn found, skipping JS/TS-related QA."
           fi
-
-      - name: Get NPM cache directory
-        if: env.npm == 1
-        id: npm-cache-dir
-        shell: bash
-        run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
-
-      - name: Cache NPM dependencies
-        if: env.npm == 1
-        id: cache-npm
-        uses: actions/cache@v3
-        with:
-          path: ${{ steps.npm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-ci-prepare-release-${{ hashFiles('package.json,package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-ci-prepare-release-
-
-      - name: Prepare .npmrc file
-        if: env.npm == 1
-        run: |
-          if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          fi
-
-      - name: Update package version
-        if: env.npm == 1
-        run: |
-          npm pkg set version=${{ inputs.version }}
 
       - name: Install NPM/Yarn dependencies
         if: env.npm == 1
