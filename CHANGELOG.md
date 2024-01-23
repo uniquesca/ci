@@ -201,3 +201,7 @@
 
 * Update: removed npm and composer caching from release and npm package publication - it's not needed there and might just cause issues (d87c6d2 by George Shestayev)
 * Update: improved and fixed caching for Npm/Yarn in qa-checks (47ea9c2 by George Shestayev)
+
+## v2.1.11
+
+* Fix: fixed hashing composer and npm files for cache id (8067e6e by George Shestayev)
