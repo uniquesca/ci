@@ -51,27 +51,6 @@ jobs:
       - name: Checkout application repository
         uses: actions/checkout@v3
 
-      - name: Get NPM cache directory
-        id: npm-cache-dir
-        shell: bash
-        run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
-
-      - name: Cache NPM dependencies
-        id: cache-npm
-        uses: actions/cache@v3
-        with:
-          path: ${{ steps.npm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-ci-publish-npm-${{ hashFiles('package.json,package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-ci-publish-npm-
-
-      - name: Prepare .npmrc file
-        run: |
-          if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          fi
-
       - name: Update package version
         run: |
           if [ -f "package.json" ]; then
@@ -81,7 +60,12 @@ jobs:
       - name: Install NPM dependencies
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
-        run: npm install
+        run: |
+          if [ ! -f ".npmrc" ]; then
+            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
+          fi
+          npm install
 
       - name: Run build command if specified
         run: ${{ inputs.build_cmd }}
