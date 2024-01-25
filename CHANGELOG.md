@@ -205,3 +205,11 @@
 ## v2.1.11
 
 * Fix: fixed hashing composer and npm files for cache id (8067e6e by George Shestayev)
+
+## v2.1.12
+
+* New: added mysql setup to qa-checks and prepare-release workflows (88ff6f4 by George Shestayev)
+* Update: removing debug output (be9f38c by George Shestayev)
+* Update: fixing and debugging caching process (f87f959 by George Shestayev)
+* Update: fixing and debugging caching process (584ff05 by George Shestayev)
+* Update: removed code for starting mysql server as it's started by an action now (0f43de7 by George Shestayev)
