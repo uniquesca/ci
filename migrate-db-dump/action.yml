@@ -13,9 +13,7 @@ runs:
   steps:
     - name: Start MySQL and create a database
       shell: bash
-      run: |
-        sudo service mysql start
-        mysql -u root -proot --execute="CREATE DATABASE mysql_migration_db;"
+      run: mysql -u root -proot --execute="CREATE DATABASE mysql_migration_db;"
 
     - name: Import DB
       uses: uniquesca/ci/mysql-import@main

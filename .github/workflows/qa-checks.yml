@@ -134,12 +134,12 @@ jobs:
         with:
           mysql-version: ${{ inputs.mysql_version }}
           my-cnf: ${{ inputs.mysql_config }}
+          root-password: 'root'
+          auto-start: true
 
       - name: Start MySQL and create a database
         if: inputs.use_db == true && env.phpunit == 1
-        run: |
-          sudo systemctl start mysql.service
-          mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
+        run: mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
 
       - name: Import database dump
         if: inputs.use_db == true && env.phpunit == 1

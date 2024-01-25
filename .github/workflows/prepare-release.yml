@@ -122,6 +122,8 @@ jobs:
         with:
           mysql-version: ${{ inputs.mysql_version }}
           my-cnf: ${{ inputs.mysql_config }}
+          root-password: 'root'
+          auto-start: true
 
       - name: Migrate DB dump
         if: ${{ inputs.update_db == true }}
