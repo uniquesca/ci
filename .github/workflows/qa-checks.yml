@@ -20,6 +20,16 @@ on:
         required: false
         default: false
         type: boolean
+      mysql_version:
+        description: 'Version of MySQL to set up'
+        required: false
+        default: "8.0"
+        type: string
+      mysql_config:
+        description: 'MySQL config to apply (syntax similar to my.cnf)'
+        required: false
+        default: false
+        type: string
       db_dump_path:
         description: 'Path to the DB dump file - ignored if `use_db` is not set to `true`'
         required: false
@@ -79,6 +89,9 @@ jobs:
 
       - uses: actions/checkout@v3
 
+      - name: Run setup cmd (if specified)
+        run: ${{ inputs.setup_cmd }}
+
       - name: Check if we have Composer to install
         run: |
           if [[ -f "composer.json" ]]; then
@@ -96,7 +109,7 @@ jobs:
             vendor
           key: ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-
+            ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
 
       - name: Install Composer dependencies (Composer-locked environment)
         if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == true
@@ -120,9 +133,16 @@ jobs:
 
       - name: Set up MySQL
         if: inputs.use_db == true && env.phpunit == 1
-        run: |
-          sudo systemctl start mysql.service
-          mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
+        uses: shogo82148/actions-setup-mysql@v1
+        with:
+          mysql-version: ${{ inputs.mysql_version }}
+          my-cnf: ${{ inputs.mysql_config }}
+          root-password: 'root'
+          auto-start: true
+
+      - name: Start MySQL and create a database
+        if: inputs.use_db == true && env.phpunit == 1
+        run: mysql -uroot -proot -h127.0.0.1 -e 'CREATE DATABASE phpunit;'
 
       - name: Import database dump
         if: inputs.use_db == true && env.phpunit == 1
@@ -130,9 +150,6 @@ jobs:
         with:
           dump_file_path: ${{ inputs.db_dump_path }}
           db_name: 'phpunit'
-
-      - name: Run setup cmd (if specified)
-        run: ${{ inputs.setup_cmd }}
 
       - name: Prepare environment variables
         if: env.phpunit == 1
@@ -215,7 +232,7 @@ jobs:
           path: ${{ steps.npm-cache-dir.outputs.dir }}
           key: ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-node-ci-qa-checks-npm-
+            ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
 
       - name: Install NPM/Yarn dependencies
         if: env.npm == 1 && steps.cache-npm.outputs.cache-hit != 'true'
