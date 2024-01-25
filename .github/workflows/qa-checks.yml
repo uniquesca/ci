@@ -28,7 +28,7 @@ on:
       mysql_config:
         description: 'MySQL config to apply (syntax similar to my.cnf)'
         required: false
-        default: false
+        default: ""
         type: string
       db_dump_path:
         description: 'Path to the DB dump file - ignored if `use_db` is not set to `true`'
