@@ -217,3 +217,7 @@
 ## v2.1.13
 
 * Update: npm and yarn will install dev dependencies in QA checks workflow (f18fd40 by George Shestayev)
+
+## v2.1.14
+
+* Fix: fixed default value for mysql_config input in qa-checks and prepare-release workflows (652437a by George Shestayev)
