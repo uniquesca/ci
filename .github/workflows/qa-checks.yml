@@ -109,15 +109,11 @@ jobs:
             vendor
           key: ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-
+            ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
 
       - name: Debug cache
         run: |
-          echo ${{ env.composer }}
-          echo '--'
           echo ${{ steps.cache-composer.outputs.cache-hit }}
-          echo '--'
-          echo ${{ matrix.setup.locked }}
 
       - name: Install Composer dependencies (Composer-locked environment)
         if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == true
@@ -240,7 +236,7 @@ jobs:
           path: ${{ steps.npm-cache-dir.outputs.dir }}
           key: ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-node-ci-qa-checks-npm-
+            ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
 
       - name: Install NPM/Yarn dependencies
         if: env.npm == 1 && steps.cache-npm.outputs.cache-hit != 'true'
