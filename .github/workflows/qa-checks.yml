@@ -111,10 +111,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
 
-      - name: Debug cache
-        run: |
-          echo ${{ steps.cache-composer.outputs.cache-hit }}
-
       - name: Install Composer dependencies (Composer-locked environment)
         if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == true
         run: |
