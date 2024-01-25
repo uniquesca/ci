@@ -251,8 +251,9 @@ jobs:
           fi
           
           if [ -f ".yarnrc" ]; then
-            yarn install
+            yarn install --production=false
           else
+            npm config set -g production false
             npm install  
           fi
 

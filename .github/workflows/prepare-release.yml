@@ -173,7 +173,7 @@ jobs:
           fi
           
           if [ -f ".yarnrc" ]; then
-            yarn install --verbose
+            yarn install
           else
             npm install  
           fi
