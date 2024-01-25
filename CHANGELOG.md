@@ -213,3 +213,7 @@
 * Update: fixing and debugging caching process (f87f959 by George Shestayev)
 * Update: fixing and debugging caching process (584ff05 by George Shestayev)
 * Update: removed code for starting mysql server as it's started by an action now (0f43de7 by George Shestayev)
+
+## v2.1.13
+
+* Update: npm and yarn will install dev dependencies in QA checks workflow (f18fd40 by George Shestayev)
