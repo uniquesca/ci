@@ -29,6 +29,16 @@ on:
         required: false
         default: false
         type: boolean
+      mysql_version:
+        description: 'Version of MySQL to set up'
+        required: false
+        default: "8.0"
+        type: string
+      mysql_config:
+        description: 'MySQL config to apply (syntax similar to my.cnf)'
+        required: false
+        default: false
+        type: string
       db_dump_path:
         description: 'Path to the DB dump. Ignored if `update_db` input is not set to `true`'
         required: false
@@ -69,7 +79,7 @@ jobs:
     env:
       npm: 0
     steps:
-      - name: Set up environment
+      - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.env.php.version }}
@@ -105,6 +115,13 @@ jobs:
             composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
             composer install
           fi
+
+      - name: Set up MySQL
+        if: inputs.update_db == true
+        uses: shogo82148/actions-setup-mysql@v1
+        with:
+          mysql-version: ${{ inputs.mysql_version }}
+          my-cnf: ${{ inputs.mysql_config }}
 
       - name: Migrate DB dump
         if: ${{ inputs.update_db == true }}

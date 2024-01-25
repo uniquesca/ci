@@ -20,6 +20,16 @@ on:
         required: false
         default: false
         type: boolean
+      mysql_version:
+        description: 'Version of MySQL to set up'
+        required: false
+        default: "8.0"
+        type: string
+      mysql_config:
+        description: 'MySQL config to apply (syntax similar to my.cnf)'
+        required: false
+        default: false
+        type: string
       db_dump_path:
         description: 'Path to the DB dump file - ignored if `use_db` is not set to `true`'
         required: false
@@ -119,6 +129,13 @@ jobs:
           fi
 
       - name: Set up MySQL
+        if: inputs.use_db == true && env.phpunit == 1
+        uses: shogo82148/actions-setup-mysql@v1
+        with:
+          mysql-version: ${{ inputs.mysql_version }}
+          my-cnf: ${{ inputs.mysql_config }}
+
+      - name: Start MySQL and create a database
         if: inputs.use_db == true && env.phpunit == 1
         run: |
           sudo systemctl start mysql.service

@@ -11,7 +11,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Init MySQL
+    - name: Start MySQL and create a database
       shell: bash
       run: |
         sudo service mysql start
