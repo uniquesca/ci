@@ -66,7 +66,7 @@ jobs:
             git clean -fd
             git fetch
 
-            if git show-ref -q --verify "refs/heads/$1" 2>/dev/null; then
+            if git show-ref -q --verify "refs/heads/${{ inputs.ref }}" 2>/dev/null; then
               echo "Branch detected, switching and pulling"
               git checkout ${{ inputs.ref }}
               git pull

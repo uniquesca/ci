@@ -221,3 +221,7 @@
 ## v2.1.14
 
 * Fix: fixed default value for mysql_config input in qa-checks and prepare-release workflows (652437a by George Shestayev)
+
+## v2.1.15
+
+* Update: added more information to the deployment CI output (c6b64f1 by George Shestayev)
