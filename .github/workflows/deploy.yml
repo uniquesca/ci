@@ -59,15 +59,19 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
           script: |
+            echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
             
+            echo "Cleaning git"
             git clean -fd
             git fetch
 
             if git show-ref -q --verify "refs/heads/$1" 2>/dev/null; then
+              echo "Branch detected, switching and pulling"
               git checkout ${{ inputs.ref }}
               git pull
             else
+              echo "Non-branch detected, performing get reset"
               git ls-remote --exit-code --heads origin ${{ inputs.ref }} >/dev/null 2>&1
               EXIT_CODE=$?
 
@@ -82,6 +86,7 @@ jobs:
             # mysql -u root -p root -e "CREATE DATABASE IF NOT EXISTS officio.forms;"
             
             if [ -f "composer.json" ]; then
+              echo "Installing composer dependencies"
               if [ ! -f "composer.phar" ]; then
                 php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
                 php composer-setup.php
@@ -93,6 +98,7 @@ jobs:
             fi
             
             if [ -f "package.json" ]; then
+              echo "Installing NPM/Yarn dependencies"
               if [ ! -f ".npmrc" ]; then
                 echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
                 echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
@@ -117,6 +123,7 @@ jobs:
             fi
 
             if [ -f "vendor/bin/phinx" ]; then
+              echo "Executing Phinx migrations"
               if [ -f "phinx.php" ]; then
                 chmod +x ./vendor/bin/phinx
                 chmod +x ./vendor/robmorgan/phinx/bin/phinx
@@ -125,8 +132,11 @@ jobs:
               fi
             fi
             
+            echo "Executing DB migration command"
             ${{ inputs.db_migration_cmd }}
             
+            echo "Executing cache cleaning command"
             ${{ inputs.clean_cache_cmd }}
             
+            echo "Executing post-deployment command"
             ${{ inputs.post_cmd }}
