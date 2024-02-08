@@ -225,3 +225,9 @@
 ## v2.1.15
 
 * Update: added more information to the deployment CI output (c6b64f1 by George Shestayev)
+
+## v2.2.0
+
+* Update: node version updated to 20 everywhere (0104568 by George Shestayev)
+* Update: action/checkout updated to v4 (0104568 by George Shestayev)
+* Update: npm config updated to avoid using --production false flag as it's deprecated (0104568 by George Shestayev)
