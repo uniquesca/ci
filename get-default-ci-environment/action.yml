@@ -5,5 +5,5 @@ outputs:
     description: 'Retrieved default environment from _ci_environment.json file and compatible with Uniques CI framework'
 
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'index.js'
