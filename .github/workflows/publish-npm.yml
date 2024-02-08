@@ -49,7 +49,7 @@ jobs:
           node-version: ${{ inputs.node_version }}
 
       - name: Checkout application repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Update package version
         run: |
