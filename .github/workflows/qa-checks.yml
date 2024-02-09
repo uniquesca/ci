@@ -103,7 +103,7 @@ jobs:
       - name: Cache Composer dependencies
         if: env.composer == 1
         id: cache-composer
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             vendor
@@ -227,7 +227,7 @@ jobs:
       - name: Cache NPM/Yarn dependencies
         if: env.npm == 1
         id: cache-npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ steps.npm-cache-dir.outputs.dir }}
           key: ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
