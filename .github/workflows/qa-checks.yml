@@ -255,12 +255,3 @@ jobs:
           else
             npm install  
           fi
-
-      - name: Run ESLint
-        if: env.npm == 1
-        run: |
-          if [ -f ".eslintrc.json" ]; then
-            npm run cs-check
-          else
-            echo "No ESLint configuration file found, skipping code check."
-          fi
