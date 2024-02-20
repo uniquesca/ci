@@ -231,3 +231,8 @@
 * Update: node version updated to 20 everywhere (0104568 by George Shestayev)
 * Update: action/checkout updated to v4 (0104568 by George Shestayev)
 * Update: npm config updated to avoid using --production false flag as it's deprecated (0104568 by George Shestayev)
+
+## v2.2.1
+
+* Update: temporarily removed ESLint from qa-checks (c7e5c48 by George Shestayev)
+* Update: actions/cache updated to v4 (00e4530 by George Shestayev)

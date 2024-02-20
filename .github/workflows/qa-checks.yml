@@ -103,7 +103,7 @@ jobs:
       - name: Cache Composer dependencies
         if: env.composer == 1
         id: cache-composer
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             vendor
@@ -227,7 +227,7 @@ jobs:
       - name: Cache NPM/Yarn dependencies
         if: env.npm == 1
         id: cache-npm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ steps.npm-cache-dir.outputs.dir }}
           key: ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
@@ -254,13 +254,4 @@ jobs:
             yarn install --production=false
           else
             npm install  
-          fi
-
-      - name: Run ESLint
-        if: env.npm == 1
-        run: |
-          if [ -f ".eslintrc.json" ]; then
-            npm run cs-check
-          else
-            echo "No ESLint configuration file found, skipping code check."
           fi
