@@ -24,7 +24,7 @@ runs:
     - name: Set up environment
       uses: uniquesca/ci/prepare-environment@main
       with:
-        env_variables: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"localhost","db.port":"3306"}'
+        env_variables: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
     - name: Run DB migration
       shell: bash

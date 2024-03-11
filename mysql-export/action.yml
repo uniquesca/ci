@@ -10,7 +10,7 @@ inputs:
   host:
     description: 'MySQL server address'
     required: false
-    default: 'localhost'
+    default: '127.0.0.1'
   username:
     description: 'MySQL server username'
     required: false
