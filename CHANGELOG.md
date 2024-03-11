@@ -236,3 +236,7 @@
 
 * Update: temporarily removed ESLint from qa-checks (c7e5c48 by George Shestayev)
 * Update: actions/cache updated to v4 (00e4530 by George Shestayev)
+
+## v2.2.2
+
+* Update: switching mysql connections to do 127.0.0.1 instead of localhost (5cd54f1 by George Shestayev)
