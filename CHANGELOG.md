@@ -240,3 +240,7 @@
 ## v2.2.2
 
 * Update: switching mysql connections to do 127.0.0.1 instead of localhost (5cd54f1 by George Shestayev)
+
+## v2.2.3
+
+* New: added `prep_release_command` step in `prepare-release` workflow (8923555 by George Shestayev)
