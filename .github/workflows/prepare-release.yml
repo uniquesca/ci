@@ -48,6 +48,11 @@ on:
         required: false
         default: './vendor/bin/phinx migrate'
         type: string
+      prep_release_command:
+        description: 'Command to execute additional actions while preparing a release'
+        required: false
+        default: ''
+        type: string
       build_command:
         description: 'Allows to perform a build as part of release preparation'
         required: false
@@ -177,6 +182,9 @@ jobs:
           else
             npm install
           fi
+
+      - name: Run additional release preparation comand
+        run: ${{ inputs.prep_release_command }}
 
       - name: Run Build
         run: ${{ inputs.build_command }}
