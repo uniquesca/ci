@@ -46,6 +46,11 @@ on:
         required: false
         default: ''
         type: string
+      node_version:
+        description: 'Node version to use when deploying'
+        required: false
+        default: '20'
+        type: string
 
 jobs:
   deploy:
@@ -106,11 +111,11 @@ jobs:
             
               if ! command -v nvm &> /dev/null
                 then
-                  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
+                  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
                   export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
                   [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
-                  nvm install 16
-                  nvm alias set default 16
+                  nvm install ${{ inputs.node_version }}
+                  nvm alias set default ${{ inputs.node_version }}
                 fi
 
                 if ! command -v yarn &> /dev/null

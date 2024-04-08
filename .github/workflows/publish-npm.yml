@@ -14,7 +14,7 @@ on:
         description: 'Node version to use for building and publishing the package'
         required: false
         type: number
-        default: 16
+        default: 20
       release_version:
         description: 'Version being published, has to be in x.y.z format'
         required: true
@@ -44,7 +44,7 @@ jobs:
   publish-npm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
 
