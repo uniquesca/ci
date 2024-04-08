@@ -244,3 +244,7 @@
 ## v2.2.3
 
 * New: added `prep_release_command` step in `prepare-release` workflow (8923555 by George Shestayev)
+
+## v2.3.0
+
+* Update: bumping node version to v20 everywhere (ee66867 by George Shestayev)
