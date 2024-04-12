@@ -2,7 +2,6 @@ import core from "@actions/core";
 import fs from "fs";
 import {CiPhpJob} from "./CiPhpJob.js";
 
-
 export class CiEnvironment {
     env_file = '';
     env_file_stub = '';
@@ -35,7 +34,7 @@ export class CiEnvironment {
     static fromEnvironmentFile() {
         let input = {};
         if (fs.existsSync('_ci_environment.json')) {
-            const envString = fs.readFileSync('_ci_environment.json');
+            const envString = fs.readFileSync('_ci_environment.json', 'utf8');
             input = JSON.parse(envString);
             core.info('Found environment file _ci_environment.json');
         }

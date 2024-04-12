@@ -1,0 +1,14 @@
+name: CI matrix from file
+
+outputs:
+  matrix:
+    description: 'Read JSON file and retrieves matrix from it'
+
+inputs:
+  matrix_file:
+    description: 'JSON file to read matrix from'
+    required: true
+
+runs:
+  using: 'node16'
+  main: 'index.js'

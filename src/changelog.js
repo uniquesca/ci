@@ -160,7 +160,7 @@ export function updateChangelog(changelogPath, targetVersion, fromTag, toTag) {
         process.exit(1);
     }
 
-    let changelogContents = fs.readFileSync(changelogPath).toString();
+    let changelogContents = fs.readFileSync(changelogPath, 'utf8').toString();
     changelogContents = cleanupChangelogIfAlreadyHasTargetVersion(changelogContents, targetVersion);
     changelogContents = normalizeChangelog(changelogContents);
     changelogContents = appendChangeLog(changelogContents, targetVersion, fromTag, toTag);
