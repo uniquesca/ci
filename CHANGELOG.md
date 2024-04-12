@@ -248,3 +248,10 @@
 ## v2.3.0
 
 * Update: bumping node version to v20 everywhere (ee66867 by George Shestayev)
+
+## v2.3.1
+
+* Fix: fixed calls for fs.readFileSync to specify encoding (635319f by George Shestayev)
+* New: introduced new ci-matrix-from-file action allowing to retrieve matrix from any json file (8d03485 by George Shestayev)
+* Update: add debug output to `ci-matrix-from-file` action (e06ab0f by George Shestayev)
+* Update: prepare-ci-matrix action renamed to qa-ci-matrix to be more specific (8d03485 by George Shestayev)
