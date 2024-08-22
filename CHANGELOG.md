@@ -255,3 +255,9 @@
 * New: introduced new ci-matrix-from-file action allowing to retrieve matrix from any json file (8d03485 by George Shestayev)
 * Update: add debug output to `ci-matrix-from-file` action (e06ab0f by George Shestayev)
 * Update: prepare-ci-matrix action renamed to qa-ci-matrix to be more specific (8d03485 by George Shestayev)
+
+## v2.3.2
+
+* Update: improving autodeployment to do git hard resets always instead of sticking to branch which often fails deployments (945d0c8 by George Shestayev)
+* Update: improving autodeployments to stop after an error (e8a752d by George Shestayev)
+* Update: updating more workflows to node 20 (5f1c406 by George Shestayev)
