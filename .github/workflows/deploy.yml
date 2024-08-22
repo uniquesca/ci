@@ -72,12 +72,14 @@ jobs:
             git clean -fd
             git fetch
 
-            if git show-ref -q --verify "refs/heads/${{ inputs.ref }}" 2>/dev/null; then
-              echo "Branch detected, switching and pulling"
-              git checkout ${{ inputs.ref }}
-              git pull
-            else
-              echo "Non-branch detected, performing get reset"
+            # This part is commented because it doesn't work well - if there are any changes done, 
+            # or some commits are ahead autodeployment will fail
+            # if git show-ref -q --verify "refs/heads/${{ inputs.ref }}" 2>/dev/null; then
+            #   echo "Branch detected, switching and pulling"
+            #   git checkout ${{ inputs.ref }}
+            #   git pull
+            # else
+            #   echo "Non-branch detected, performing get reset"
               git ls-remote --exit-code --heads origin ${{ inputs.ref }} >/dev/null 2>&1
               EXIT_CODE=$?
 
@@ -86,7 +88,7 @@ jobs:
               else
                 git reset --hard ${{ inputs.ref }}
               fi
-            fi
+            # fi
             
             # Improve steps here to make it possible to install things, not just update
             # mysql -u root -p root -e "CREATE DATABASE IF NOT EXISTS officio.forms;"
