@@ -63,6 +63,7 @@ jobs:
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
+          script_stop: true
           script: |
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
