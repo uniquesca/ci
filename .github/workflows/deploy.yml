@@ -96,38 +96,44 @@ jobs:
             if [ -f "composer.json" ]; then
               echo "Installing composer dependencies"
               if [ ! -f "composer.phar" ]; then
+                echo "Installing Composer"
                 php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
                 php composer-setup.php
                 php -r "unlink('composer-setup.php');"
               fi
+              echo "Installing Composer dependencies"
               chmod +x composer.phar
               php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
               php composer.phar install --no-dev
             fi
             
             if [ -f "package.json" ]; then
-              echo "Installing NPM/Yarn dependencies"
               if [ ! -f ".npmrc" ]; then
+                echo "Preparing .npmrc file"
                 echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
                 echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
               fi
             
               if ! command -v nvm &> /dev/null
-                then
-                  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-                  export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-                  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
-                  nvm install ${{ inputs.node_version }}
-                  nvm alias set default ${{ inputs.node_version }}
-                fi
+              then
+                echo "Installing NVM"
+                curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+                export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
+                echo "  Using node v${{ inputs.node_version }}"
+                nvm install ${{ inputs.node_version }}
+                nvm alias set default ${{ inputs.node_version }}
+              fi
 
-                if ! command -v yarn &> /dev/null
-                then
-                  nvm use default
-                  npm install -g yarn
-                fi
+              if ! command -v yarn &> /dev/null
+              then
+                echo "Installing Yarn"
+                nvm use default
+                npm install -g yarn
+              fi
 
-                yarn install
+              echo "Installing NPM/Yarn dependencies"
+              yarn install
             fi
 
             if [ -f "vendor/bin/phinx" ]; then
