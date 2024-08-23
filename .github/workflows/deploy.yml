@@ -114,8 +114,7 @@ jobs:
                 echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
               fi
             
-              if ! command -v nvm &> /dev/null
-              then
+              if ! command -v nvm &> /dev/null; then
                 echo "Installing NVM"
                 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
                 export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
@@ -125,8 +124,7 @@ jobs:
                 nvm alias set default ${{ inputs.node_version }}
               fi
 
-              if ! command -v yarn &> /dev/null
-              then
+              if ! command -v yarn &> /dev/null; then
                 echo "Installing Yarn"
                 nvm use default
                 npm install -g yarn

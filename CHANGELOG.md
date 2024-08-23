@@ -265,3 +265,4 @@
 ## v2.3.3
 
 * Update: improved logging for autodeployments (c9b2a8b by George Shestayev)
+* Fix: fixed bash syntax for autodeployments (George Shestayev)
