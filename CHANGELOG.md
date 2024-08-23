@@ -266,3 +266,7 @@
 
 * Update: improved logging for autodeployments (c9b2a8b by George Shestayev)
 * Fix: fixed bash syntax for autodeployments (George Shestayev)
+
+## v2.3.4
+
+* Update: composer scripts are skipped now when performing QA checks (cd6e88f by George Shestayev)
