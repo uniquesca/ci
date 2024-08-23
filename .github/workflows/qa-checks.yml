@@ -115,13 +115,13 @@ jobs:
         if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == true
         run: |
           composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-          composer install
+          composer install --no-scripts
 
       - name: Update Composer dependencies (not Composer-locked environment)
         if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked != true
         run: |
           composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-          composer update
+          composer update --no-scripts
 
       - name: Check if we have PHPUnit
         run: |
