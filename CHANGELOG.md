@@ -261,3 +261,7 @@
 * Update: improving autodeployment to do git hard resets always instead of sticking to branch which often fails deployments (945d0c8 by George Shestayev)
 * Update: improving autodeployments to stop after an error (e8a752d by George Shestayev)
 * Update: updating more workflows to node 20 (5f1c406 by George Shestayev)
+
+## v2.3.3
+
+* Update: improved logging for autodeployments (c9b2a8b by George Shestayev)
