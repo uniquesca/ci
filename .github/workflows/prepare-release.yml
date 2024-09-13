@@ -169,7 +169,7 @@ jobs:
         run: |
           echo "Preparing .npmrc file"
           echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
           
           # This is a hack because otherwise Yarn can't just download private packages =/
           if [ -f "yarn.lock" ]; then
