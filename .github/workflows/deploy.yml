@@ -114,7 +114,7 @@ jobs:
             if [ -f "package.json" ]; then
               echo "Preparing .npmrc file"
               echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" > .npmrc
+              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
             
               if ! command -v nvm &> /dev/null; then
                 echo "Installing NVM"
