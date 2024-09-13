@@ -56,10 +56,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
-          if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          fi
+          echo "Preparing .npmrc file"
+          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" > .npmrc
           npm install
 
       - name: Run build command if specified

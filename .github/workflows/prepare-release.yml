@@ -76,6 +76,7 @@ jobs:
         uses: uniquesca/ci/get-default-ci-environment@main
 
   prepare-release:
+    name: Prepare release
     needs: [ get-environment ]
     strategy:
       matrix:
@@ -166,11 +167,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
-          if [ ! -f ".npmrc" ]; then
-            echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-            cat .npmrc
-          fi
+          echo "Preparing .npmrc file"
+          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" > .npmrc
           
           # This is a hack because otherwise Yarn can't just download private packages =/
           if [ -f "yarn.lock" ]; then
