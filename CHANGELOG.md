@@ -274,3 +274,9 @@
 ## v2.3.5
 
 * Update: moved npm package version update after build command in publish-npm workflow (c2f9bdf by George Shestayev)
+
+## v3.0.0
+
+* BREAKING: added NODE_AUTH_TOKEN secret to deploy pipeline (de521f0 by George Shestayev)
+* Update: forcing .npmrc file updates so that it always gets the latest token (de521f0 by George Shestayev)
+* Update: improved job names to be more human friendly (de521f0 by George Shestayev)
