@@ -9,6 +9,9 @@ on:
       UNIQUES_GITHUB_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories from GitHub'
         required: true
+      NODE_AUTH_TOKEN:
+        description: 'Access token for authentication with the NPM registry'
+        required: false
     inputs:
       host:
         description: 'Address of the server'
@@ -54,6 +57,7 @@ on:
 
 jobs:
   deploy:
+    name: Deploy
     runs-on: ubuntu-latest
     steps:
       - name: Connect to Deploy Server
@@ -108,11 +112,9 @@ jobs:
             fi
             
             if [ -f "package.json" ]; then
-              if [ ! -f ".npmrc" ]; then
-                echo "Preparing .npmrc file"
-                echo "@uniquesca:registry=https://npm.pkg.github.com/" >> .npmrc
-                echo "//npm.pkg.github.com/:_authToken=${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}" >> .npmrc
-              fi
+              echo "Preparing .npmrc file"
+              echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" > .npmrc
             
               if ! command -v nvm &> /dev/null; then
                 echo "Installing NVM"
