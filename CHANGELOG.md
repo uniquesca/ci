@@ -270,3 +270,7 @@
 ## v2.3.4
 
 * Update: composer scripts are skipped now when performing QA checks (cd6e88f by George Shestayev)
+
+## v2.3.5
+
+* Update: moved npm package version update after build command in publish-npm workflow (c2f9bdf by George Shestayev)
