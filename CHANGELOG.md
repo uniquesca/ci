@@ -280,3 +280,7 @@
 * BREAKING: added NODE_AUTH_TOKEN secret to deploy pipeline (de521f0 by George Shestayev)
 * Update: forcing .npmrc file updates so that it always gets the latest token (de521f0 by George Shestayev)
 * Update: improved job names to be more human friendly (de521f0 by George Shestayev)
+
+## v3.0.1
+
+* Fix: fixed npmrc file preparation (cc1598e by George Shestayev)
