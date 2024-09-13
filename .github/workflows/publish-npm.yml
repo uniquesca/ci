@@ -42,6 +42,7 @@ on:
 
 jobs:
   publish-npm:
+    name: Publish NPM package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-node@v4
@@ -50,12 +51,6 @@ jobs:
 
       - name: Checkout application repository
         uses: actions/checkout@v4
-
-      - name: Update package version
-        run: |
-          if [ -f "package.json" ]; then
-            npm pkg set version=${{ inputs.release_version }}
-          fi
 
       - name: Install NPM dependencies
         env:
@@ -69,6 +64,12 @@ jobs:
 
       - name: Run build command if specified
         run: ${{ inputs.build_cmd }}
+
+      - name: Update package version
+        run: |
+          if [ -f "package.json" ]; then
+            npm pkg set version=${{ inputs.release_version }}
+          fi
 
       - name: Remove dependencies from package.json
         if: ${{ inputs.cleanup_dependencies == 'true' }}
