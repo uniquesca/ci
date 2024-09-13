@@ -1,0 +1,24 @@
+name: Get version
+
+inputs:
+  ref:
+    description: 'Ref to get version from'
+    required: true
+outputs:
+  version:
+    description: "Version in x.y.z format"
+    value: ${{ steps.get-version.outputs.version }}
+runs:
+  using: "composite"
+  steps:
+    - id: get-version
+      run: |
+        ref="${{ inputs.ref }}"
+        if [[ "ref" =~ ^refs/heads/release/[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          echo "version=$(echo ${GITHUB_REF#refs/heads/release/})" >> "$GITHUB_OUTPUT"
+        elif [[ "ref" =~ ^refs/heads/hotfix/[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+          echo "version=$(echo ${GITHUB_REF#refs/heads/hotfix/})" >> "$GITHUB_OUTPUT"
+        else 
+          echo "Unable to determine version from $ref"
+          exit 2
+        fi
