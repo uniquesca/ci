@@ -10,7 +10,6 @@ on:
     outputs:
       version:
         description: "Version in x.y.z format"
-        type: string
         value: ${{ jobs.get-version.outputs.output1 }}
 
 jobs:
