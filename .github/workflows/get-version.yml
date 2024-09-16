@@ -6,9 +6,11 @@ on:
       ref:
         description: 'Ref to get version from'
         required: true
+        type: string
     outputs:
       version:
         description: "Version in x.y.z format"
+        type: string
         value: ${{ jobs.get-version.outputs.output1 }}
 
 jobs:
