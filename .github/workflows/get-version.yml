@@ -1,0 +1,32 @@
+name: Get version
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Ref to get version from'
+        required: true
+        type: string
+    outputs:
+      version:
+        description: "Version in x.y.z format"
+        value: ${{ jobs.get-version.outputs.output1 }}
+
+jobs:
+  get-version:
+    name: Get version
+    runs-on: ubuntu-latest
+    outputs:
+      output1: ${{ steps.get-version.outputs.version }}
+    steps:
+      - id: get-version
+        run: |
+          ref="${{ inputs.ref }}"
+          if [[ "$ref" =~ ^refs/heads/release/[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "version=$(echo ${GITHUB_REF#refs/heads/release/})" >> "$GITHUB_OUTPUT"
+          elif [[ "$ref" =~ ^refs/heads/hotfix/[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "version=$(echo ${GITHUB_REF#refs/heads/hotfix/})" >> "$GITHUB_OUTPUT"
+          else 
+            echo "Unable to determine version from $ref"
+            exit 2
+          fi

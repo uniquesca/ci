@@ -6,12 +6,9 @@ on:
 jobs:
   version:
     if: startsWith(github.ref, 'refs/heads/release/')
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version}}
-    steps:
-      - id: get_version
-        run: echo "version=$(echo ${GITHUB_REF#refs/heads/release/})" >> "$GITHUB_OUTPUT"
+    uses: ./.github/workflows/get-version.yml
+    with:
+      ref: ${{ github.ref }}
 
   pre-release:
     needs: version

@@ -284,3 +284,10 @@
 ## v3.0.1
 
 * Fix: fixed npmrc file preparation (cc1598e by George Shestayev)
+
+## v3.0.2
+
+* Fix: fix in get-version pipeline (c043ee6 by George Shestayev)
+* New: introducing get-version workflow (#4) (2993c49 by George Shestayev)
+* New: added get-version CI reusable action (ba86050 by George Shestayev)
+* Update: updating to get-version workflow (3249d01 by George Shestayev)
