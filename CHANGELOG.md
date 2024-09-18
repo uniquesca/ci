@@ -291,3 +291,8 @@
 * New: introducing get-version workflow (#4) (2993c49 by George Shestayev)
 * New: added get-version CI reusable action (ba86050 by George Shestayev)
 * Update: updating to get-version workflow (3249d01 by George Shestayev)
+
+## v3.0.3
+
+* Update: adding retries to yarn installation on deploy (5860be4 by George Shestayev)
+* Update: adding cache clean to npm and yarn on deploy (5860be4 by George Shestayev)

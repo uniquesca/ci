@@ -129,10 +129,12 @@ jobs:
               if ! command -v yarn &> /dev/null; then
                 echo "Installing Yarn"
                 nvm use default
-                npm install -g yarn
+                (r=2;while ! npm install -g yarn ; do ((--r))||exit;sleep 5;done)
               fi
 
               echo "Installing NPM/Yarn dependencies"
+              npm cache clean --force
+              yarn cache clean 
               yarn install
             fi
 
