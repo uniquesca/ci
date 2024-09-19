@@ -116,6 +116,8 @@ jobs:
               echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
               echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
             
+              export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
               if ! command -v nvm &> /dev/null; then
                 echo "Installing NVM"
                 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
@@ -123,22 +125,24 @@ jobs:
                 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
                 echo "  Using node v${{ inputs.node_version }}"
                 nvm install ${{ inputs.node_version }}
-                nvm alias default ${{ inputs.node_version }}
               fi
 
+              nvm use ${{ inputs.node_version }}
               if ! command -v yarn &> /dev/null; then
                 echo "Installing Yarn"
-                nvm use default
                 (r=2;while ! npm install -g yarn ; do ((--r))||exit;sleep 5;done)
               fi
 
               echo "Installing NPM/Yarn dependencies"
-              npm cache clean --force
-              yarn cache clean 
-              output=$(yarn install 2>&1)
-              # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug with yarn authentication
+              # Commands below run yarn in a way it doesn't emit non-zero exit code, so we don't stop,
+              # yet we capture stderr, so we can check it
+              output=$(yarn install 2>&1 || true)
+              echo "$output"
+              # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug 
+              # with yarn authentication
               if echo "$output" | grep -q "401 Unauthorized"; then
-                rm -f yarn.lock
+                echo "Could not install yarn dependencies, retrying..."
+                rm yarn.lock
                 npm cache clean --force
                 yarn cache clean 
                 echo "Deleted yarn.lock, running yarn install again..."
