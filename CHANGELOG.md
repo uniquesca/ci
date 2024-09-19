@@ -304,3 +304,10 @@
 ## v3.0.5
 
 * Fix: fixed process of setting default node for nvm (a17cf92 by George Shestayev)
+
+## v3.0.6
+
+* Update: improving yarn intermittent issues on autodeployments (#5) (ff5b7d2 by George Shestayev)
+* Update: improving yarn secondary attempt (ff5b7d2 by George Shestayev)
+* Update: making yarn install not exit with non-zero code for the first attempt (ff5b7d2 by George Shestayev)
+* Update: adding comments to the deployment script (ff5b7d2 by George Shestayev)
