@@ -300,3 +300,7 @@
 ## v3.0.4
 
 * Update: added a workaround for an intermittent issue with yarn authentication for autodeployment (a4cd34b by George Shestayev)
+
+## v3.0.5
+
+* Fix: fixed process of setting default node for nvm (a17cf92 by George Shestayev)
