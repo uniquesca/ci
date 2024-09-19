@@ -134,16 +134,19 @@ jobs:
               fi
 
               echo "Installing NPM/Yarn dependencies"
+              # Commands below run yarn in a way it doesn't emit non-zero exit code, so we don't stop,
+              # yet we capture stderr, so we can check it
               output=$(yarn install 2>&1 || true)
               echo "$output"
-              # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug with yarn authentication
+              # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug 
+              # with yarn authentication
               if echo "$output" | grep -q "401 Unauthorized"; then
                 echo "Could not install yarn dependencies, retrying..."
                 rm yarn.lock
                 npm cache clean --force
                 yarn cache clean 
                 echo "Deleted yarn.lock, running yarn install again..."
-                yarn install --verbose
+                yarn install
               fi
             fi
 
