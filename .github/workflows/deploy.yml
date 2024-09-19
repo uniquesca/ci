@@ -123,7 +123,7 @@ jobs:
                 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
                 echo "  Using node v${{ inputs.node_version }}"
                 nvm install ${{ inputs.node_version }}
-                nvm alias set default ${{ inputs.node_version }}
+                nvm alias default ${{ inputs.node_version }}
               fi
 
               if ! command -v yarn &> /dev/null; then
