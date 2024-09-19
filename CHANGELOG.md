@@ -296,3 +296,7 @@
 
 * Update: adding retries to yarn installation on deploy (5860be4 by George Shestayev)
 * Update: adding cache clean to npm and yarn on deploy (5860be4 by George Shestayev)
+
+## v3.0.4
+
+* Update: added a workaround for an intermittent issue with yarn authentication for autodeployment (a4cd34b by George Shestayev)
