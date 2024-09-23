@@ -60,11 +60,13 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Connect to Deploy Server
-        uses: appleboy/ssh-action@v0.1.8
+      - name: Dump GitHub context
         env:
           GITHUB_CONTEXT: ${{ toJson(github) }}
-          EVENT_CONTEXT: ${{ toJson(github.event) }}
+        run: echo "$GITHUB_CONTEXT"
+
+      - name: Connect to Deploy Server
+        uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ inputs.host }}
           username: ${{ inputs.username }}
@@ -72,8 +74,6 @@ jobs:
           port: ${{ inputs.port }}
           script_stop: true
           script: |
-            echo "$GITHUB_CONTEXT"
-            echo "$EVENT_CONTEXT"
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
             
