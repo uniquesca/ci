@@ -94,7 +94,7 @@ jobs:
               # Handling pull requests
               git reset --hard
               git fetch origin pull/${{ github.event.number }}/head:pr${{ github.event.number }}
-              git switch pr${{ github.event.number }}
+              #git switch pr${{ github.event.number }}
             else
               # This is just regular branch
               branch_exists = "$(git ls-remote --heads origin $ref | wc -l)"
