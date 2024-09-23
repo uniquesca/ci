@@ -84,15 +84,22 @@ jobs:
             #   git pull
             # else
             #   echo "Non-branch detected, performing get reset"
-              git ls-remote --exit-code --heads origin ${{ inputs.ref }} >/dev/null 2>&1
-              EXIT_CODE=$?
+            ref="${{ inputs.ref }}"
+            if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
+              # Handling pull requests
+              git reset --hard
+              git fetch origin pull/${{ github.event.id }}/head:pr${{ github.event.id }}
+              git switch pr${{ github.event.id }}
+            else
+              # This is just regular branch
+              branch_exists = "$(git ls-remote --heads origin $ref | wc -l)"
 
-              if [[ $EXIT_CODE == '0' ]]; then
+              if [[ branch_exists > 0 ]]; then
                 git reset --hard origin/${{ inputs.ref }}
               else
                 git reset --hard ${{ inputs.ref }}
               fi
-            # fi
+            fi
             
             # Improve steps here to make it possible to install things, not just update
             # mysql -u root -p root -e "CREATE DATABASE IF NOT EXISTS officio.forms;"
@@ -115,6 +122,7 @@ jobs:
               echo "Preparing .npmrc file"
               echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
               echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
+              echo "always-auth=true" >> .npmrc
             
               export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
               [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
@@ -142,6 +150,9 @@ jobs:
               # with yarn authentication
               if echo "$output" | grep -q "401 Unauthorized"; then
                 echo "Could not install yarn dependencies, retrying..."
+                echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+                echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
+                echo "always-auth=true" >> .npmrc
                 rm yarn.lock
                 npm cache clean --force
                 yarn cache clean 
