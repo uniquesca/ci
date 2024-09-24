@@ -79,7 +79,11 @@ jobs:
             
             echo "Cleaning git"
             git clean -fd
+            
+            echo "Pruning git"
             git remote prune origin
+            
+            echo "Retrieving the latest updates"
             git fetch
 
             # This part is commented because it doesn't work well - if there are any changes done, 
@@ -92,16 +96,21 @@ jobs:
             #   echo "Non-branch detected, performing get reset"
             ref="${{ inputs.ref }}"
             if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
+              echo "Pull request detected"
               # Handling pull requests
+              echo "Performing hard reset"
               git reset --hard
+              echo "Switching to PR branch with detached HEAD"
               git fetch -u origin pull/${{ github.event.pull_request.number }}/head && git checkout FETCH_HEAD
             else
               # This is just regular branch
               branch_exists="$(git ls-remote --heads origin $ref | wc -l)"
 
               if [[ branch_exists > 0 ]]; then
+                echo "Remote branch ${{ inputs.ref }} exists, performing hard reset to it"
                 git reset --hard origin/${{ inputs.ref }}
               else
+                echo "Remote branch ${{ inputs.ref }} not found, performing hard reset"
                 git reset --hard ${{ inputs.ref }}
               fi
             fi
