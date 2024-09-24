@@ -315,3 +315,7 @@
 ## v3.0.7
 
 * Update: improved handling pull requests for autodeployment purposes (#6) (65f4a03 by George Shestayev)
+
+## v3.0.8
+
+* Fix: fixed syntax issue for autodeployment CI (ee5e4f3 by George Shestayev)

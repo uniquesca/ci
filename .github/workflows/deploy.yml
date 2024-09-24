@@ -97,7 +97,7 @@ jobs:
               git fetch -u origin pull/${{ github.event.pull_request.number }}/head && git checkout FETCH_HEAD
             else
               # This is just regular branch
-              branch_exists = "$(git ls-remote --heads origin $ref | wc -l)"
+              branch_exists="$(git ls-remote --heads origin $ref | wc -l)"
 
               if [[ branch_exists > 0 ]]; then
                 git reset --hard origin/${{ inputs.ref }}
