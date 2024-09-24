@@ -72,7 +72,7 @@ jobs:
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
-          script_stop: true
+          script_stop: false
           script: |
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
@@ -94,8 +94,10 @@ jobs:
             #   git pull
             # else
             #   echo "Non-branch detected, performing get reset"
+            
+            echo "Checking if it's a pull request"
             ref="${{ inputs.ref }}"
-            if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
+            if [[ ${{ inputs.ref }} =~ ^refs/pull/[0-9]+/merge$ ]]; then
               echo "Pull request detected"
               # Handling pull requests
               echo "Performing hard reset"
@@ -103,6 +105,8 @@ jobs:
               echo "Switching to PR branch with detached HEAD"
               git fetch -u origin pull/${{ github.event.pull_request.number }}/head && git checkout FETCH_HEAD
             else
+              echo "Pull request not detected"
+              echo "Checking if remote branch exists"
               # This is just regular branch
               branch_exists="$(git ls-remote --heads origin $ref | wc -l)"
 
