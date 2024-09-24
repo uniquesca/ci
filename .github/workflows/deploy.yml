@@ -98,7 +98,7 @@ jobs:
             echo "Checking if it's a pull request"
             ref="${{ inputs.ref }}"
             echo "Ref is $ref"
-            if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
+            if [[ ${{ inputs.ref }} =~ ^refs/pull/[0-9]+/merge$ ]]; then
               echo "Pull request detected"
               # Handling pull requests
               echo "Performing hard reset"
