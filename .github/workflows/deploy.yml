@@ -95,8 +95,9 @@ jobs:
             # else
             #   echo "Non-branch detected, performing get reset"
 
-            echo "Checking if it's pull request"
+            echo "Checking if it's a pull request"
             ref="${{ inputs.ref }}"
+            echo "Ref is $ref"
             if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
               echo "Pull request detected"
               # Handling pull requests
@@ -106,6 +107,7 @@ jobs:
               git fetch -u origin pull/${{ github.event.pull_request.number }}/head && git checkout FETCH_HEAD
             else
               echo "Pull request not detected"
+              echo "Checking if remote branch exists"
               # This is just regular branch
               branch_exists="$(git ls-remote --heads origin $ref | wc -l)"
 
