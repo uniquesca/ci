@@ -323,3 +323,7 @@
 ## v3.0.9
 
 * Update: added more debug information to the deploy CI (58d8976 by George Shestayev)
+
+## v3.0.10
+
+* Update: temporarily disabling stop_script flag in `deploy` job due to a vendor issue (#7) (85ebea2 by George Shestayev)
