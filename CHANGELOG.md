@@ -311,3 +311,7 @@
 * Update: improving yarn secondary attempt (ff5b7d2 by George Shestayev)
 * Update: making yarn install not exit with non-zero code for the first attempt (ff5b7d2 by George Shestayev)
 * Update: adding comments to the deployment script (ff5b7d2 by George Shestayev)
+
+## v3.0.7
+
+* Update: improved handling pull requests for autodeployment purposes (#6) (65f4a03 by George Shestayev)
