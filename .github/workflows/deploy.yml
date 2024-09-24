@@ -79,7 +79,7 @@ jobs:
             
             echo "Cleaning git"
             git clean -fd
-            git fetch
+            git fetch -u
 
             # This part is commented because it doesn't work well - if there are any changes done, 
             # or some commits are ahead autodeployment will fail
