@@ -79,6 +79,7 @@ jobs:
             
             echo "Cleaning git"
             git clean -fd
+            git remote prune origin
             git fetch
 
             # This part is commented because it doesn't work well - if there are any changes done, 
@@ -93,8 +94,7 @@ jobs:
             if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
               # Handling pull requests
               git reset --hard
-              git fetch -u origin pull/${{ github.event.number }}/head:pr${{ github.event.number }}
-              git switch pr${{ github.event.number }}
+              git fetch -u origin pull/${{ github.event.pull_request.number }}/head && git checkout FETCH_HEAD
             else
               # This is just regular branch
               branch_exists = "$(git ls-remote --heads origin $ref | wc -l)"
