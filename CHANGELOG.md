@@ -319,3 +319,7 @@
 ## v3.0.8
 
 * Fix: fixed syntax issue for autodeployment CI (ee5e4f3 by George Shestayev)
+
+## v3.0.9
+
+* Update: added more debug information to the deploy CI (58d8976 by George Shestayev)
