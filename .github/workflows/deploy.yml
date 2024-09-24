@@ -94,6 +94,13 @@ jobs:
             #   git pull
             # else
             #   echo "Non-branch detected, performing get reset"
+            
+            echo "TMP TESTING IF"
+            if [[ "1" == "2" ]]; then
+              echo "True"
+            else
+              echo "False"
+            fi
 
             echo "Checking if it's a pull request"
             ref="${{ inputs.ref }}"
