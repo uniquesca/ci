@@ -72,7 +72,7 @@ jobs:
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
-          script_stop: true
+          script_stop: false
           script: |
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
@@ -95,16 +95,8 @@ jobs:
             # else
             #   echo "Non-branch detected, performing get reset"
             
-            echo "TMP TESTING IF"
-            if [[ "1" == "1" ]]; then
-              echo "True"
-            else
-              echo "False"
-            fi
-
             echo "Checking if it's a pull request"
             ref="${{ inputs.ref }}"
-            echo "Ref is $ref"
             if [[ ${{ inputs.ref }} =~ ^refs/pull/[0-9]+/merge$ ]]; then
               echo "Pull request detected"
               # Handling pull requests
