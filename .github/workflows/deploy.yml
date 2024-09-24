@@ -93,10 +93,8 @@ jobs:
             if [[ "$ref" =~ ^refs/pull/[0-9]+/merge$ ]]; then
               # Handling pull requests
               git reset --hard
-              echo "$?"
               git fetch origin pull/${{ github.event.number }}/head:pr${{ github.event.number }}
-              echo "$?"
-              #git switch pr${{ github.event.number }}
+              git switch pr${{ github.event.number }}
             else
               # This is just regular branch
               branch_exists = "$(git ls-remote --heads origin $ref | wc -l)"
