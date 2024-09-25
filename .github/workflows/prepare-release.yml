@@ -53,16 +53,6 @@ on:
         required: false
         default: ''
         type: string
-      build_command:
-        description: 'Allows to perform a build as part of release preparation'
-        required: false
-        type: string
-        default: ''
-      build_path:
-        description: 'Allows to specify path to the build files for committing them'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   get-environment:
@@ -184,13 +174,6 @@ jobs:
 
       - name: Run additional release preparation comand
         run: ${{ inputs.prep_release_command }}
-
-      - name: Run Build
-        run: ${{ inputs.build_command }}
-
-      - name: Add build files to Git index
-        if: ${{ inputs.build_path != '' }}
-        run: git add ${{ inputs.build_path }}
 
       - name: Commit changes
         run: |
