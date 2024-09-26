@@ -41,6 +41,14 @@ runs:
         changelog_path: '_github_ci_changelog.txt'
         target_version: ${{ inputs.release_version }}
 
+    - name: Shrinkg changelog if it's too big
+      run: |
+        if [ $(wc -c < _github_ci_changelog.txt) -gt 125000 ]; then
+          echo "Github body message has more than 125000 characters, cutting..."
+          head -c 124000 _github_ci_changelog.txt > temp.txt && mv temp.txt _github_ci_changelog.txt
+          echo "..." >> '_github_ci_changelog.txt'
+        fi
+
     - name: Debug changelog
       run: cat _github_ci_changelog.txt
       shell: bash
