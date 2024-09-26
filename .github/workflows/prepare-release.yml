@@ -59,7 +59,7 @@ on:
         default: ''
         type: string
       node_version:
-        descript: 'Node version to use during release preparation'
+        description: 'Node version to use during release preparation'
         required: false
         default: 20
         type: number
