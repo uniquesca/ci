@@ -345,3 +345,7 @@
 
 * BREAKING: mysql-export job - switching to mysqldump instead of mysqlpump (627b6bc0 by George Shestayev)
 * Fix: publish-github-release job - added missing shell input (8138675 by George Shestayev)
+
+## v3.1.3
+
+* Fix: mysql-export job - added missing newline escape (f20f612 by George Shestayev)
