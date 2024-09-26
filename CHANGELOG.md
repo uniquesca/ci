@@ -340,3 +340,7 @@
 ## v3.1.1
 
 * Update: improved Github Release process to shrink bodies too big (ee7d850 by George Shestayev)
+
+## v3.1.2
+
+* Fix: publish-github-release job - added missing shell input (8138675 by George Shestayev)
