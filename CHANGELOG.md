@@ -349,3 +349,7 @@
 ## v3.1.3
 
 * Fix: mysql-export job - added missing newline escape (f20f612 by George Shestayev)
+
+## v3.1.4
+
+* Update: mysql-export job - improved DEFINER clause removed from the resulting db dumps (2ba8f4e by George Shestayev)
