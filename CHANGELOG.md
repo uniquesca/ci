@@ -336,3 +336,7 @@
 * New: added node_version and pre_cmd inputs to prepare-release job (79937a9 by George Shestayev)
 * Update: fixed type in an input descripion (9cac171 by George Shestayev)
 * Update: composer install with --no-scripts flag now in prepare-release job (79937a9 by George Shestayev)
+
+## v3.1.1
+
+* Update: improved Github Release process to shrink bodies too big (ee7d850 by George Shestayev)
