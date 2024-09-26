@@ -37,5 +37,7 @@ runs:
           --result-file=${{ inputs.dump_file_path }} \
           ${{ inputs.db_name }}
         # Remove DEFINER from the dump 
-        sed -i 's/DEFINER=[^*]*\*/\*/g' ${{ inputs.dump_file_path }}
+        sed -i -e 's/DEFINER[ ]*=[ ]*[^*]*\*/\*/' ${{ inputs.dump_file_path }} 
+        sed -i -e 's/DEFINER[ ]*=[ ]*[^*]*PROCEDURE/PROCEDURE/' ${{ inputs.dump_file_path }} 
+        sed -i -e 's/DEFINER[ ]*=[ ]*[^*]*FUNCTION/FUNCTION/' ${{ inputs.dump_file_path }}
       shell: bash
