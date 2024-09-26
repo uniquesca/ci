@@ -327,3 +327,12 @@
 ## v3.0.10
 
 * Update: temporarily disabling stop_script flag in `deploy` job due to a vendor issue (#7) (85ebea2 by George Shestayev)
+
+## v3.1.0
+
+* BREAKING: input prep_release_command renamed to post_cmd in prepare-release job (79937a9 by George Shestayev)
+* BREAKING: default node version switched to 20 in prepare-release job (79937a9 by George Shestayev)
+* BREAKING: removed build_command and build_path inputs from prepare-release job as obsolete (64923a8 by George Shestayev)
+* New: added node_version and pre_cmd inputs to prepare-release job (79937a9 by George Shestayev)
+* Update: fixed type in an input descripion (9cac171 by George Shestayev)
+* Update: composer install with --no-scripts flag now in prepare-release job (79937a9 by George Shestayev)
