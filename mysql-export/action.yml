@@ -29,9 +29,13 @@ runs:
   steps:
     - name: MySQL export
       run: |
-        mysqlpump -u ${{inputs.username}} -p${{inputs.password}} --host ${{inputs.host}} --port ${{inputs.port}} --no-create-db --skip-definer=true ${{ inputs.db_name }} --result-file=${{ inputs.dump_file_path }}
-        sed -i '/^USE `${{ inputs.db_name }}`;/d' ${{ inputs.dump_file_path }}
-        sed -i '/-- Dump start time:/ {N; s/.*\n//}' ${{ inputs.dump_file_path }}   # This deletes the line with the line ending
-        sed -i 's/-- Dump end time: .*//' ${{ inputs.dump_file_path }}              # This replaces the line with an empty one
-        sed -i -r 's/`{0,1}${{inputs.db_name}}`{0,1}\.//g' ${{inputs.dump_file_path}}
+        mysqldump -q --routines --triggers --single-transaction --max_allowed_packet=512M \
+          --user=${{inputs.username}} \
+          --password=${{inputs.password}} \
+          --host=${{inputs.host}} \
+          --port=${{inputs.port}} \
+          --result-file=${{ inputs.dump_file_path }}
+          ${{ inputs.db_name }}
+        # Remove DEFINER from the dump 
+        sed -i 's/DEFINER=[^*]*\*/\*/g' ${{ inputs.dump_file_path }}
       shell: bash
