@@ -353,3 +353,7 @@
 ## v3.1.4
 
 * Update: mysql-export job - improved DEFINER clause removed from the resulting db dumps (2ba8f4e by George Shestayev)
+
+## v3.1.5
+
+* Update: mysql-export job - removing dump completion time to avoid unnecessary commits (5f162c5 by George Shestayev)

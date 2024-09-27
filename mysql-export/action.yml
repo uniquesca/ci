@@ -40,4 +40,6 @@ runs:
         sed -i -e 's/DEFINER[ ]*=[ ]*[^*]*\*/\*/' ${{ inputs.dump_file_path }} 
         sed -i -e 's/DEFINER[ ]*=[ ]*[^*]*PROCEDURE/PROCEDURE/' ${{ inputs.dump_file_path }} 
         sed -i -e 's/DEFINER[ ]*=[ ]*[^*]*FUNCTION/FUNCTION/' ${{ inputs.dump_file_path }}
+        # Remove dump end time to avoid unnecessary commits every time
+        sed -i 's/-- Dump completed on .*//' ${{ inputs.dump_file_path }}
       shell: bash
