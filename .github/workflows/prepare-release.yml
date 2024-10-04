@@ -220,4 +220,4 @@ jobs:
           
           git clean -fd
           
-          git diff --staged --quiet || (git commit -a -m "Automatic commit for the new release: #${GITHUB_SHA}" && git push)
+          git diff --staged --quiet || (git commit -m "Automatic commit for the new release: #${GITHUB_SHA}" && git push)
