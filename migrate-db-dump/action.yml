@@ -7,6 +7,11 @@ inputs:
   migration_command:
     description: 'DB migration command'
     required: true
+  env_variables:
+    description: 'JSON string representing an object with environment variables to set up an environment'
+    required: false
+    default: '{}'
+    type: string
 
 runs:
   using: "composite"
@@ -21,10 +26,18 @@ runs:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: mysql_migration_db
 
+    - name: Prepare environment variables
+      if: env.phpunit == 1
+      id: merge-environment-vars
+      uses: uniquesca/ci/merge-environment-variables@main
+      with:
+        variables1: ${{ inputs.env_variables }}
+        variables2: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+
     - name: Set up environment
       uses: uniquesca/ci/prepare-environment@main
       with:
-        env_variables: '{"db.name":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+        env_variables: ${{ steps.merge-environment-vars.outputs.variables }}
 
     - name: Run DB migration
       shell: bash
