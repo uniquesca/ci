@@ -357,3 +357,8 @@
 ## v3.1.5
 
 * Update: mysql-export job - removing dump completion time to avoid unnecessary commits (5f162c5 by George Shestayev)
+
+## v3.1.6
+
+* New: added env_variables inputs to prepare-release and migrate-db-dump actions to allow to set up environment properly (c9b318e by George Shestayev)
+* Update: mysql-export job - removing dump completion time line instead of replacing it with an empty one (e1134c4 by George Shestayev)
