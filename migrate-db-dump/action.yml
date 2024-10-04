@@ -27,7 +27,6 @@ runs:
         db_name: mysql_migration_db
 
     - name: Prepare environment variables
-      if: env.phpunit == 1
       id: merge-environment-vars
       uses: uniquesca/ci/merge-environment-variables@main
       with:
