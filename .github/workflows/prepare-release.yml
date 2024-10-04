@@ -63,6 +63,11 @@ on:
         required: false
         default: 20
         type: number
+      env_variables:
+        description: 'JSON string representing an object with environment variables to set up an environment'
+        required: false
+        default: '{}'
+        type: string
 
 jobs:
   get-environment:
@@ -140,6 +145,7 @@ jobs:
         with:
           db_dump_path: ${{ inputs.db_dump_path }}
           migration_command: ${{ inputs.migration_command }}
+          env_variables: ${{ inputs.env_variables }}
 
       - name: Debug DB dump
         if: ${{ inputs.update_db == true }}
