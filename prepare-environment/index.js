@@ -4,6 +4,11 @@ import process from "process";
 import {CiEnvironment} from "../src/classes/CiEnvironment.js";
 import {CiEnvVariableMapper} from "../src/classes/CiEnvVariableMapper.js";
 
+let workingDir = core.getInput('working_directory');
+if (workingDir) {
+    process.chdir(workingDir);
+}
+
 // Retrieving environment from the file
 const env = CiEnvironment.fromEnvironmentFile();
 
