@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Remove dependencies from package.json
-        if: ${{ inputs.cleanup_dependencies == 'true' }}
+        if: ${{ inputs.cleanup_dependencies == true }}
         run: |
           npm pkg delete dependencies
           npm pkg delete devDependencies
