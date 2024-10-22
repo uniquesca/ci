@@ -372,3 +372,7 @@
 * Fix: fixed automatic git commits when preparing a release to limit it to the changes (c4b232c by George Shestayev)
 * Update: added working-directory to the prepare-environment CI job (dbd848e by George Shestayev)
 * Update: improved dump cleanup routine for mysql-export CI job (7d76b27 by George Shestayev)
+
+## v3.1.9
+
+* Fix: fixed check for cleanup_dependencies input in publish-npm ci (4de4968 by George Shestayev)
