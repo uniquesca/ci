@@ -253,3 +253,12 @@ jobs:
           else
             npm install  
           fi
+
+        name: Run TSLint
+        if: env.npm == 1
+        run: |
+          if [ -f "tslint.json" ]; then
+            npm run lint
+          else
+            echo "No TSLint configuration file found, skipping code check."
+          fi
