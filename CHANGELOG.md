@@ -376,3 +376,7 @@
 ## v3.1.9
 
 * Fix: fixed check for cleanup_dependencies input in publish-npm ci (4de4968 by George Shestayev)
+
+## v3.1.10
+
+* New: added TSLint to QA checks (97af9e4 by George Shestayev)
