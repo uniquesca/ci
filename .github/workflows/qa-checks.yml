@@ -254,7 +254,7 @@ jobs:
             npm install  
           fi
 
-        name: Run TSLint
+      - name: Run TSLint
         if: env.npm == 1
         run: |
           if [ -f "tslint.json" ]; then
