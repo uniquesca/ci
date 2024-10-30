@@ -380,3 +380,7 @@
 ## v3.1.10
 
 * New: added TSLint to QA checks (97af9e4 by George Shestayev)
+
+## v3.1.11
+
+* Fix: fixed qa-checks workflow syntax issue (c225c89 by George Shestayev)
