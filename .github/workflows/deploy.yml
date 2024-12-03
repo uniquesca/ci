@@ -74,6 +74,9 @@ jobs:
           port: ${{ inputs.port }}
           script_stop: false
           script: |
+            # Making it more strict for the script to fail in case of an error
+            set -eux;
+            
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
             
