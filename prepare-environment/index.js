@@ -16,6 +16,7 @@ const env = CiEnvironment.fromEnvironmentFile();
 let config = core.getInput('env_file');
 if (!config || config == '') {
     config = env.env_file;
+    core.debug('Environment file is ' + env.enf_file);
 }
 if (!config || config == '') {
     core.info("Environment file not found, exiting.");
@@ -26,6 +27,7 @@ if (!config || config == '') {
 let configStub = core.getInput('env_file_stub');
 if (!configStub || configStub == '') {
     configStub = env.env_file_stub;
+    core.debug('Environment stub file is ' + env.env_file_stub);
 }
 if (configStub !== '' && fs.existsSync(configStub)) {
     fs.copyFileSync(configStub, config);
