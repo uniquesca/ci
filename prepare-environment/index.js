@@ -19,7 +19,7 @@ if (!config || config == '') {
     core.debug('Environment file is ' + env.env_file);
 }
 if (!config || config == '') {
-    core.info("Environment file not found, exiting.");
+    core.info("Environment file not specified, exiting.");
     process.exit();
 }
 
@@ -28,6 +28,9 @@ let configStub = core.getInput('env_file_stub');
 if (!configStub || configStub == '') {
     configStub = env.env_file_stub;
     core.debug('Environment stub file is ' + env.env_file_stub);
+    if (fs.existsSync(configStub)) {
+        core.debug('Environment stub file is found.');
+    }
 }
 if (configStub !== '' && fs.existsSync(configStub)) {
     fs.copyFileSync(configStub, config);
