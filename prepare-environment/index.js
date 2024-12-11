@@ -16,14 +16,14 @@ const env = CiEnvironment.fromEnvironmentFile();
 let config = core.getInput('env_file');
 if (!config || config == '') {
     config = env.env_file;
-    core.debug('Environment file is ' + env.enf_file);
+    core.debug('Environment file is ' + env.env_file);
 }
 if (!config || config == '') {
     core.info("Environment file not found, exiting.");
     process.exit();
 }
 
-// Copying stub file if exists - firstly from intput, then - from environment file
+// Copying stub file if exists - firstly from input, then - from environment file
 let configStub = core.getInput('env_file_stub');
 if (!configStub || configStub == '') {
     configStub = env.env_file_stub;
