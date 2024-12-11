@@ -6,7 +6,14 @@ import {CiEnvVariableMapper} from "../src/classes/CiEnvVariableMapper.js";
 
 let workingDir = core.getInput('working_directory');
 if (workingDir) {
+    core.debug('Changing working directory to ' + workingDir);
     process.chdir(workingDir);
+}
+
+if (core.isDebug()) {
+    fs.readdirSync('./').forEach(file => {
+        core.debug(file);
+    });
 }
 
 // Retrieving environment from the file
@@ -30,6 +37,8 @@ if (!configStub || configStub == '') {
     core.debug('Environment stub file is ' + env.env_file_stub);
     if (fs.existsSync(configStub)) {
         core.debug('Environment stub file is found.');
+    } else {
+        core.debug('Environment stub file not found.');
     }
 }
 if (configStub !== '' && fs.existsSync(configStub)) {
