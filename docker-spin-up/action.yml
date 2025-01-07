@@ -28,6 +28,7 @@ runs:
     - name: Prepare uid:gid mapping
       id: uid_gid
       run: echo "result=$(id -u):$(id -g)" >> $GITHUB_OUTPUT
+      shell: bash
 
     - name: Prepare environment variables for Docker
       id: merge_docker_variables
@@ -45,6 +46,7 @@ runs:
 
     - name: Update hosts file
       run: sudo echo "127.0.0.1 ${{ inputs.hostname }}" | sudo tee -a /etc/hosts
+      shell: bash
 
     - name: Login to Docker Hub
       if: ${{ inputs.docker_registry }}
@@ -56,3 +58,4 @@ runs:
 
     - name: Spin up Docker
       run: docker compose up -d
+      shell: bash

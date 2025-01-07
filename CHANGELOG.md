@@ -384,3 +384,8 @@
 ## v3.1.11
 
 * Fix: fixed qa-checks workflow syntax issue (c225c89 by George Shestayev)
+
+## v3.2.0
+
+* New: introduced reusable action for spinning application up in Docker (08664be by George Shestayev)
+* Update: added set -eux for the deploy job (47f632d by George Shestayev)
