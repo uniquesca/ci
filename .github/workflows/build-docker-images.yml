@@ -23,7 +23,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ vars.USERNAME_GITHUB }}
-          password: ${{ secrets.GHA_RW_ACCESS_TOKEN }}
+          password: ${{ secrets.ACCESS_TOKEN }}
 
       - name: Build and push PROD Docker image
         uses: docker/build-push-action@v6
