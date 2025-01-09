@@ -14,7 +14,6 @@ jobs:
     strategy:
       matrix:
         php-version: [ 5.6, 8.1, 8.2 ]
-    needs: version
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
