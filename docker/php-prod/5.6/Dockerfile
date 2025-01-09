@@ -45,8 +45,8 @@ RUN mkdir -p $YARN_CACHE_FOLDER \
 RUN mkdir -p $NVM_DIR \
     && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
     && . $NVM_DIR/nvm.sh \
-    && nvm install 20 \
-    && nvm alias default 20 \
+    && nvm install 16 \
+    && nvm alias default 16 \
     && nvm use default \
     && npm install -g yarn \
     && mkdir /.npm -p && chmod 777 /.npm -Rf
