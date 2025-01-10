@@ -2,8 +2,6 @@ name: Build Docker images
 
 on:
   push:
-    branch:
-      - 'feature/build-docker'
     tag:
       - '*'
 
