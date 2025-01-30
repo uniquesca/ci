@@ -85,7 +85,6 @@ runs:
       if: steps.composer.outputs.detected == 1
       id: cache-composer
       uses: actions/cache@v4
-      shell: bash
       with:
         path: ${{ steps.vars.outputs.composer_cache_dir }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles('composer.lock') }}
@@ -94,14 +93,14 @@ runs:
 
     - name: Install Composer dependencies (Composer-locked environment)
       shell: bash
-      if: steps.composer.outputs.detected == 1 && input.composer_update != true
+      if: steps.composer.outputs.detected == 1 && inputs.composer_update != true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         ${{ steps.vars.outputs.composer_install_cmd }}
 
     - name: Update Composer dependencies (not Composer-locked environment)
       shell: bash
-      if: steps.composer.outputs.detected == 1 && input.composer_update == true
+      if: steps.composer.outputs.detected == 1 && inputs.composer_update == true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         ${{ steps.vars.outputs.composer_update_cmd }}
