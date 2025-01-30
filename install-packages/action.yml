@@ -19,6 +19,7 @@ inputs:
 
 runs:
   using: "composite"
+  shell: bash
   steps:
     - name: Check if we have Composer to install
       if: inputs.skip_composer != true
@@ -72,7 +73,6 @@ runs:
 
     - name: Prepare .npmrc file
       if: env.npm == 1 || env.yarn == 1
-      shell: bash
       run: |
         echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
         echo "//npm.pkg.github.com/:_authToken=${{ inputs.access_token }}" >> .npmrc
@@ -80,7 +80,6 @@ runs:
     - name: Get NPM cache directory
       if: env.npm == 1
       id: npm-cache-dir
-      shell: bash
       run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
 
     - name: NPM cache
@@ -97,13 +96,11 @@ runs:
       if: env.npm == 1
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
-      shell: bash
       run: npm install
 
     - name: Get Yarn cache directory
       if: env.yarn == 1
       id: yarn-cache-dir
-      shell: bash
       run: echo "dir=$(yarn cache dir)" >> ${GITHUB_OUTPUT}
 
     - name: Yarn cache
@@ -120,7 +117,6 @@ runs:
       if: env.yarn == 1
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
-      shell: bash
       run: |
         # This is a hack because otherwise Yarn can't just download private packages =/
         if [ -f "yarn.lock" ]; then
