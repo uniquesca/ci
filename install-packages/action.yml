@@ -12,13 +12,49 @@ inputs:
     description: 'Skip Composer installation'
     required: false
     default: false
+  composer_install_cmd:
+    description: 'Command to install Composer'
+    required: false
+    default: "composer install --no-scripts"
+  composer_update_cmd:
+    description: 'Command to update Composer'
+    required: false
+    default: "composer update --no-scripts"
+  composer_cache_dir:
+    description: 'Composer cache directory'
+    required: false
+    default: false
   skip_npm_yarn:
     description: 'Skip NPM/Yarn installation'
     required: false
     default: false
+  npm_cache_dir:
+    description: 'NPM cache directory'
+    required: false
+    default: false
+  npm_install_cmd:
+    description: 'Command to install NPM'
+    required: false
+    default: "composer install --no-scripts"
+  yarn_cache_dir:
+    description: 'Yarn cache directory'
+    required: false
+    default: false
+  yarn_install_cmd:
+    description: 'Command to install Yarn'
+    required: false
+    default: "yarn install --production=false"
 
 runs:
   using: "composite"
+  env:
+    composer_cache_dir: ${{ inputs.composer_cache_dir }}
+    composer_install_cmd: ${{ inputs.composer_install_cmd}}
+    npm_cache_dir: ${{ inputs.npm_cache_dir }}
+    npm_install_cmd: ${{ inputs.npm_install_cmd }}
+    npm_update_cmd: ${{ inputs.npm_update_cmd }}
+    yarn_cache_dir: ${{ inputs.yarn_cache_dir }}
+    yarn_install_cmd: ${{ inputs.yarn_install_cmd }}
   shell: bash
   steps:
     - name: Check if we have Composer to install
@@ -31,17 +67,16 @@ runs:
         fi
 
     - name: Get Composer Cache Directory
-      if: env.composer == 1
-      id: composer-cache
+      if: env.composer == 1 && inputs.compose_cache_dir == false
       run: |
-        echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+        echo "composer_cache_dir=$(composer config cache-files-dir)" >> $GITHUB_ENV
 
     - name: Cache Composer dependencies
       if: env.composer == 1
       id: cache-composer
       uses: actions/cache@v4
       with:
-        path: ${{ steps.composer-cache.outputs.dir }}
+        path: ${{ env.composer_cache_dir }}
         key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
         restore-keys: |
           ${{ runner.os }}-composer-
@@ -50,13 +85,13 @@ runs:
       if: env.composer == 1 && input.composer_update != true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
-        composer install --no-scripts
+        ${{ env.composer_install_cmd }}
 
     - name: Update Composer dependencies (not Composer-locked environment)
       if: env.composer == 1 && input.composer_update == true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
-        composer update --no-scripts
+        ${{ env.composer_update_cmd }}
 
     - name: Check if we have NPM/Yarn to install
       if: inputs.skip_npm_yarn != true
@@ -79,15 +114,14 @@ runs:
 
     - name: Get NPM cache directory
       if: env.npm == 1
-      id: npm-cache-dir
-      run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
+      run: echo "npm_cache_dir=$(npm config get cache)" >> $GITHUB_ENV
 
     - name: NPM cache
       if: env.npm == 1
       id: cache-npm
       uses: actions/cache@v4
       with:
-        path: ${{ steps.npm-cache-dir.outputs.dir }}
+        path: ${{ env.npm_cache_dir }}
         key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
         restore-keys: |
           ${{ runner.os }}-npm-
@@ -96,19 +130,18 @@ runs:
       if: env.npm == 1
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
-      run: npm install
+      run: ${{ env.npm_install_cmd }}
 
     - name: Get Yarn cache directory
       if: env.yarn == 1
-      id: yarn-cache-dir
-      run: echo "dir=$(yarn cache dir)" >> ${GITHUB_OUTPUT}
+      run: echo "yarn_cache_dir=$(yarn cache dir)" >> $GITHUB_ENV
 
     - name: Yarn cache
       if: env.yarn == 1
       id: cache-yarn
       uses: actions/cache@v4
       with:
-        path: ${{ steps.yarn-cache-dir.outputs.dir }}
+        path: ${{ env.yarn_cache_dir }}
         key: ${{ runner.os }}-yarn-${{ hashFiles('package-lock.json') }}
         restore-keys: |
           ${{ runner.os }}-yarn-
@@ -123,4 +156,4 @@ runs:
           rm yarn.lock
         fi
         
-        yarn install --production=false
+        ${{ env.yarn_install_cmd }}
