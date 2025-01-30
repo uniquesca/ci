@@ -123,13 +123,6 @@ jobs:
           changelog_path: ${{ inputs.changelog_path }}
           target_version: ${{ inputs.version }}
 
-      - name: Install Composer dependencies
-        run: |
-          if [ -f "composer.json" ]; then
-            composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-            composer install --no-scripts
-          fi
-
       - name: Set up MySQL
         if: inputs.update_db == true
         uses: shogo82148/actions-setup-mysql@v1
@@ -151,6 +144,11 @@ jobs:
         if: ${{ inputs.update_db == true }}
         run: cat ${{ inputs.db_dump_path }}
 
+      - name: Install dependencies
+        uses: uniquesca/ci/install-packages@feature/improved-caching
+        with:
+          access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+
       - name: Version bump if possible
         run: |
           if [ -f "officio.phar" ]; then
@@ -162,41 +160,6 @@ jobs:
         if: env.npm == 1
         run: |
           npm pkg set version=${{ inputs.version }}
-
-      - name: Check if we have NPM/Yarn to install
-        run: |
-          if [[ -f "package.json" ]]; then
-            echo "npm=1" >> $GITHUB_ENV
-          else
-            echo "No NPM/Yarn found, skipping JS/TS-related QA."
-          fi
-
-      - name: Install NPM/Yarn dependencies
-        if: env.npm == 1
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
-        run: |
-          echo "Preparing .npmrc file"
-          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          echo "always-auth=true" >> .npmrc
-          
-          if [ -f ".yarnrc" ]; then
-            output=$(yarn install 2>&1 || true)
-            echo "$output"
-            # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug 
-            # with yarn authentication
-            if echo "$output" | grep -q "401 Unauthorized"; then
-              echo "Could not install yarn dependencies, retrying..."
-              rm yarn.lock
-              npm cache clean --force
-              yarn cache clean 
-              echo "Deleted yarn.lock, running yarn install again..."
-              yarn install
-            fi
-          else
-            npm install
-          fi
 
       - name: Run additional release preparation comand
         run: ${{ inputs.post_cmd }}

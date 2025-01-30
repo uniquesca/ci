@@ -4,6 +4,10 @@ inputs:
   access_token:
     description: 'GitHub access token with the access to read from repositories'
     required: false
+  composer_update:
+    description: 'Will run `composer update` instead of `composer install` if true'
+    require: false
+    default: false
 
 runs:
   using: "composite"
@@ -16,25 +20,30 @@ runs:
           echo "No Composer found, skipping."
         fi
 
+    - name: Get Composer Cache Directory
+      if: env.composer == 1
+      id: composer-cache
+      run: |
+        echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
     - name: Cache Composer dependencies
       if: env.composer == 1
       id: cache-composer
       uses: actions/cache@v4
       with:
-        path: |
-          vendor
-        key: ${{ runner.os }}-${{ matrix.setup.locked }}-composer-ci-${{ hashFiles('composer.json','composer.lock') }}
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
         restore-keys: |
-          ${{ runner.os }}-${{ matrix.setup.locked }}-composer-ci-${{ hashFiles('composer.json','composer.lock') }}
+          ${{ runner.os }}-composer-
 
     - name: Install Composer dependencies (Composer-locked environment)
-      if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == true
+      if: env.composer == 1 && input.composer_update != true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         composer install --no-scripts
 
     - name: Update Composer dependencies (not Composer-locked environment)
-      if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked != true
+      if: env.composer == 1 && input.composer_update == true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         composer update --no-scripts
@@ -42,46 +51,70 @@ runs:
     - name: Check if we have NPM/Yarn to install
       run: |
         if [[ -f "package.json" ]]; then
-          echo "npm=1" >> $GITHUB_ENV
+          if [ -f ".yarnrc" ]; then
+            echo "yarn=1" >> $GITHUB_ENV
+          else 
+            echo "npm=1" >> $GITHUB_ENV
+          fi
         else
           echo "No NPM/Yarn found, skipping JS/TS-related QA."
         fi
 
-    - name: Get NPM/Yarn cache directory
+    - name: Prepare .npmrc file
+      if: env.npm == 1 || env.yarn == 1
+      shell: bash
+      run: |
+        echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+        echo "//npm.pkg.github.com/:_authToken=${{ inputs.access_token }}" >> .npmrc
+
+    - name: Get NPM cache directory
       if: env.npm == 1
       id: npm-cache-dir
       shell: bash
-      run: |
-        if [ -f ".yarnrc" ]; then
-          echo "dir=$(yarn cache dir)" >> ${GITHUB_OUTPUT}
-        else
-          echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
-        fi
+      run: echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
 
-    - name: Cache NPM/Yarn dependencies
+    - name: NPM cache
       if: env.npm == 1
       id: cache-npm
       uses: actions/cache@v4
       with:
         path: ${{ steps.npm-cache-dir.outputs.dir }}
-        key: ${{ runner.os }}-npm-ci-${{ hashFiles('package.json','package-lock.json') }}
+        key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
         restore-keys: |
-          ${{ runner.os }}-npm-ci-${{ hashFiles('package.json','package-lock.json') }}
+          ${{ runner.os }}-npm-
 
-    - name: Install NPM/Yarn dependencies
-      if: env.npm == 1 && steps.cache-npm.outputs.cache-hit != 'true'
+    - name: Install NPM dependencies
+      if: env.npm == 1
+      env:
+        NODE_AUTH_TOKEN: ${{ inputs.access_token }}
+      shell: bash
+      run: npm install
+
+    - name: Get Yarn cache directory
+      if: env.yarn == 1
+      id: yarn-cache-dir
+      shell: bash
+      run: echo "dir=$(yarn cache dir)" >> ${GITHUB_OUTPUT}
+
+    - name: Yarn cache
+      if: env.yarn == 1
+      id: cache-yarn
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.yarn-cache-dir.outputs.dir }}
+        key: ${{ runner.os }}-yarn-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-yarn-
+
+    - name: Install Yarn dependencies
+      if: env.yarn == 1
+      env:
+        NODE_AUTH_TOKEN: ${{ inputs.access_token }}
+      shell: bash
       run: |
-        echo "Preparing .npmrc file"
-        echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-        echo "//npm.pkg.github.com/:_authToken=${{ inputs.access_token }}" >> .npmrc
-        
         # This is a hack because otherwise Yarn can't just download private packages =/
         if [ -f "yarn.lock" ]; then
           rm yarn.lock
         fi
         
-        if [ -f ".yarnrc" ]; then
-          yarn install --production=false
-        else
-          npm install  
-        fi
+        yarn install --production=false
