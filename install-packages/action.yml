@@ -44,6 +44,10 @@ inputs:
     description: 'Command to install Yarn'
     required: false
     default: "yarn install --production=false"
+  cache_key:
+    description: 'Cache key fraction to add to make cache unique'
+    required: false
+    default: ''
 
 runs:
   using: "composite"
@@ -77,7 +81,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ env.composer_cache_dir }}
-        key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles('composer.lock') }}
         restore-keys: |
           ${{ runner.os }}-composer-
 
@@ -122,7 +126,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ env.npm_cache_dir }}
-        key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles('package-lock.json') }}
         restore-keys: |
           ${{ runner.os }}-npm-
 
@@ -142,7 +146,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ env.yarn_cache_dir }}
-        key: ${{ runner.os }}-yarn-${{ hashFiles('package-lock.json') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles('package-lock.json') }}
         restore-keys: |
           ${{ runner.os }}-yarn-
 
