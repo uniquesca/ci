@@ -62,9 +62,11 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - id: matrix
+      - name: Get QA matrix
+        id: matrix
         uses: uniquesca/ci/qa-ci-matrix@main
 
   qa:
@@ -87,13 +89,14 @@ jobs:
           extensions: ${{ matrix.setup.php.extensions }}
           ini-values: xdebug.mode="coverage"
 
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@feature/improved-caching
+        uses: uniquesca/ci/install-packages@main
         with:
           access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           composer_update: ${{ matrix.setup.locked }}

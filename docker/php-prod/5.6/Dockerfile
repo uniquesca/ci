@@ -49,7 +49,8 @@ RUN mkdir -p $NVM_DIR \
     && nvm alias default 16 \
     && nvm use default \
     && npm install -g yarn \
-    && mkdir /.npm -p && chmod 777 /.npm -Rf
+    && mkdir /.npm -p \
+    && chmod 777 /.npm -Rf
 
 # Final touch
 EXPOSE 80 443
