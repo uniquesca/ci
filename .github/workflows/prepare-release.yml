@@ -145,7 +145,7 @@ jobs:
         run: cat ${{ inputs.db_dump_path }}
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@feature/improved-caching
+        uses: uniquesca/ci/install-packages@main
         with:
           access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
 

@@ -389,3 +389,10 @@
 
 * New: introduced reusable action for spinning application up in Docker (08664be by George Shestayev)
 * Update: added set -eux for the deploy job (47f632d by George Shestayev)
+
+## v3.3.0
+
+* Update: improving caching of Composer, NPM and Yarn packages (9287469e by George Shestayev)
+* Update: allowing parallel Docker builds (26165829 by George Shestayev)
+* Update: adjusted GHA triggers for Docker building job (93545249 by George Shestayev)
+* New: added basic autobuilt Docker PHP+Apache images (#8) (00436175 by George Shestayev)

@@ -96,7 +96,7 @@ jobs:
         run: ${{ inputs.setup_cmd }}
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@feature/improved-caching
+        uses: uniquesca/ci/install-packages@main
         with:
           access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
           composer_update: ${{ matrix.setup.locked }}
