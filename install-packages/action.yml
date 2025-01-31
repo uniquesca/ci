@@ -162,10 +162,6 @@ runs:
         restore-keys: |
           ${{ runner.os }}-yarn-
 
-    - name: Yarn check cache dir
-      shell: bash
-      run: ls -al ${{ steps.vars.outputs.yarn_cache_dir }}
-
     - name: Install Yarn dependencies
       shell: bash
       if: steps.npm-yarn.outputs.yarn == 1
