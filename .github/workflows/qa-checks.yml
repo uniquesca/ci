@@ -62,9 +62,11 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - id: matrix
+      - name: Get QA matrix
+        id: matrix
         uses: uniquesca/ci/qa-ci-matrix@main
 
   qa:
@@ -87,41 +89,17 @@ jobs:
           extensions: ${{ matrix.setup.php.extensions }}
           ini-values: xdebug.mode="coverage"
 
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
 
-      - name: Check if we have Composer to install
-        run: |
-          if [[ -f "composer.json" ]]; then
-            echo "composer=1" >> $GITHUB_ENV
-          else
-            echo "No Composer found, skipping php-related QA."
-          fi
-
-      - name: Cache Composer dependencies
-        if: env.composer == 1
-        id: cache-composer
-        uses: actions/cache@v4
+      - name: Install dependencies
+        uses: uniquesca/ci/install-packages@main
         with:
-          path: |
-            vendor
-          key: ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.setup.php.version }}-composer-ci-qa-checks-${{ hashFiles('composer.json','composer.lock') }}
-
-      - name: Install Composer dependencies (Composer-locked environment)
-        if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked == true
-        run: |
-          composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-          composer install --no-scripts
-
-      - name: Update Composer dependencies (not Composer-locked environment)
-        if: env.composer == 1 && steps.cache-composer.outputs.cache-hit != 'true' && matrix.setup.locked != true
-        run: |
-          composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-          composer update --no-scripts
+          access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+          composer_update: ${{ matrix.setup.locked }}
 
       - name: Check if we have PHPUnit
         run: |
@@ -205,57 +183,8 @@ jobs:
             echo "No Psalm configuration file found, skipping code check."
           fi
 
-      - name: Check if we have NPM/Yarn to install
-        run: |
-          if [[ -f "package.json" ]]; then
-            echo "npm=1" >> $GITHUB_ENV
-          else
-            echo "No NPM/Yarn found, skipping JS/TS-related QA."
-          fi
-
-      - name: Get NPM/Yarn cache directory
-        if: env.npm == 1
-        id: npm-cache-dir
-        shell: bash
-        run: |
-          if [ -f ".yarnrc" ]; then
-            echo "dir=$(yarn cache dir)" >> ${GITHUB_OUTPUT}
-          else
-            echo "dir=$(npm config get cache)" >> ${GITHUB_OUTPUT}
-          fi
-
-      - name: Cache NPM/Yarn dependencies
-        if: env.npm == 1
-        id: cache-npm
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.npm-cache-dir.outputs.dir }}
-          key: ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-ci-qa-checks-npm-${{ hashFiles('package.json','package-lock.json') }}
-
-      - name: Install NPM/Yarn dependencies
-        if: env.npm == 1 && steps.cache-npm.outputs.cache-hit != 'true'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
-        run: |
-          echo "Preparing .npmrc file"
-          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          
-          # This is a hack because otherwise Yarn can't just download private packages =/
-          if [ -f "yarn.lock" ]; then
-            rm yarn.lock
-          fi
-          
-          if [ -f ".yarnrc" ]; then
-            yarn install --production=false
-          else
-            npm install  
-          fi
-
       - name: Run TSLint
-        if: env.npm == 1
+        if: env.npm == 1 || env.yarn == 1
         run: |
           if [ -f "tslint.json" ]; then
             npm run lint
