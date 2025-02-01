@@ -396,3 +396,19 @@
 * Update: allowing parallel Docker builds (26165829 by George Shestayev)
 * Update: adjusted GHA triggers for Docker building job (93545249 by George Shestayev)
 * New: added basic autobuilt Docker PHP+Apache images (#8) (00436175 by George Shestayev)
+
+## v3.3.1
+
+* Fix: fixed process of getting npm and yarn cache directories (184d011 by George Shestayev)
+* Fix: fixed default npm install command (184d011 by George Shestayev)
+* Fix: fixed syntax in install-packages job (afc9001 by George Shestayev)
+* Fix: fixed syntax in install-packages job (b7cbc53 by George Shestayev)
+* Fix: fixed syntax in install-packages job (bb888fb by George Shestayev)
+* Fix: adding missing properties to CI (79778e7 by George Shestayev)
+* New: add cache fraction key (62ac74f by George Shestayev)
+* Update: removing debug output (23d981b by George Shestayev)
+* Update: added debug info (260197b by George Shestayev)
+* Update: minor improvements (fbccad0 by George Shestayev)
+* Update: adding customizations to install-packages CI job (fe61744 by George Shestayev)
+* Update: minor improvements (40e9d14 by George Shestayev)
+* Update: allowing to skip Composer or NPM/Yarn installation (6fec74e by George Shestayev)
