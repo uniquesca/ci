@@ -131,10 +131,10 @@ runs:
       if: steps.npm_yarn.outputs.npm == 1
       run: |
         npm_cache_dir="${{ inputs.npm_cache_dir }}"
-        if [ ! -d "$npm_cache_dir" ]; then
+        if [ -z "$npm_cache_dir" ] || [ ! -d "$npm_cache_dir" ]; then
           npm_cache_dir=$(npm config get cache)
         fi
-        echo "path=$npm_cache_dir" >> $GITHUB_ENV
+        echo "path=$npm_cache_dir" >> $GITHUB_OUTPUT
 
     - name: NPM cache
       if: steps.npm_yarn.outputs.npm == 1
@@ -158,10 +158,10 @@ runs:
       if: steps.npm_yarn.outputs.yarn == 1
       run: |
         yarn_cache_dir="${{ inputs.yarn_cache_dir }}"
-        if [ ! -d "$yarn_cache_dir" ]; then
+        if [ -z "$yarn_cache_dir" ] || [ ! -d "$yarn_cache_dir" ]; then
           yarn_cache_dir=$(yarn cache dir)
         fi
-        echo "path=$yarn_cache_dir" >> $GITHUB_ENV
+        echo "path=$yarn_cache_dir" >> $GITHUB_OUTPUT
 
     - name: Yarn cache
       if: steps.npm_yarn.outputs.yarn == 1
