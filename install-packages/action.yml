@@ -168,7 +168,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.yarn_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles('package-lock.json') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles('yarn.lock') }}
         restore-keys: |
           ${{ runner.os }}-yarn-
 
