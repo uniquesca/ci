@@ -75,19 +75,24 @@ runs:
 
     - name: Get Composer Cache Directory
       shell: bash
-      if: steps.composer.outputs.detected == 1 && inputs.compose_cache_dir == false
+      id: composer_cache_dir
+      if: steps.composer.outputs.detected == 1
       run: |
-        echo "composer_cache_dir=$(composer config cache-files-dir)" >> $GITHUB_ENV
+        composer_cache_dir="${{ inputs.compose_cache_dir }}"
+        if [ -z "$composer_cache_dir" ] || [ ! -d "$composer_cache_dir" ]; then
+          composer_cache_dir=$(composer config cache-files-dir)
+        fi
+        echo "path=$composer_cache_dir" >> $GITHUB_OUTPUT
 
     - name: Cache Composer dependencies
-      if: steps.composer.outputs.detected == 1
+      if: steps.composer.outputs.detected == 1 && steps.composer_cache_dir.outputs.path
       id: cache-composer
       uses: actions/cache@v4
       with:
-        path: ${{ steps.vars.outputs.composer_cache_dir }}
+        path: ${{ steps.composer_cache_dir.outputs.path }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles('composer.lock') }}
         restore-keys: |
-          ${{ runner.os }}-composer-
+          ${{ runner.os }}-${{ inputs.cache_key}}-composer-
 
     - name: Install Composer dependencies (Composer-locked environment)
       shell: bash
@@ -137,7 +142,7 @@ runs:
         echo "path=$npm_cache_dir" >> $GITHUB_OUTPUT
 
     - name: NPM cache
-      if: steps.npm_yarn.outputs.npm == 1
+      if: steps.npm_yarn.outputs.npm == 1 && steps.npm_cache_dir.outputs.path
       uses: actions/cache@v4
       with:
         path: ${{ steps.npm_cache_dir.outputs.path }}
@@ -164,7 +169,7 @@ runs:
         echo "path=$yarn_cache_dir" >> $GITHUB_OUTPUT
 
     - name: Yarn cache
-      if: steps.npm_yarn.outputs.yarn == 1
+      if: steps.npm_yarn.outputs.yarn == 1 && steps.yarn_cache_dir.outputs.path
       uses: actions/cache@v4
       with:
         path: ${{ steps.yarn_cache_dir.outputs.path }}
