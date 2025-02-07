@@ -412,3 +412,11 @@
 * Update: adding customizations to install-packages CI job (fe61744 by George Shestayev)
 * Update: minor improvements (40e9d14 by George Shestayev)
 * Update: allowing to skip Composer or NPM/Yarn installation (6fec74e by George Shestayev)
+
+## v3.3.2
+
+* Fix: added checks cache dirs when doing caching in install-packages (263765f by George Shestayev)
+* Fix: fixed a process for determining composer cache directory (263765f by George Shestayev)
+* Fix: using proper lock file for caching Yarn dependencies (0040f8e by George Shestayev)
+* Fix: fixed process of getting npm and yarn cache directories (e44f93f by George Shestayev)
+* Fix: fixed default npm install command (e44f93f by George Shestayev)
