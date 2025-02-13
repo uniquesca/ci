@@ -169,7 +169,7 @@ jobs:
 
       - name: Run PHP Codesniffer
         run: |
-          if [ -f "phpcs.xml" ]; then
+          if [[ -f "phpcs.xml" ]] || [[ -f "phpcs.xml.dist" ]]; then
             ./vendor/bin/phpcs
           else
             echo "No PHP_Codesniffer configuration file found, skipping code check."
@@ -177,8 +177,10 @@ jobs:
 
       - name: Run Psalm
         run: |
-          if [ -f "psalm.xml" ]; then
+          if [[ -f "psalm.xml" ]]; then
             ./vendor/bin/psalm --show-info=true
+          elif [[ -f "psalm.xml.dist" ]]; then
+            ./vendor/bin/psalm --config=psalm.xml.dist --show-info=true
           else
             echo "No Psalm configuration file found, skipping code check."
           fi
