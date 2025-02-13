@@ -420,3 +420,7 @@
 * Fix: using proper lock file for caching Yarn dependencies (0040f8e by George Shestayev)
 * Fix: fixed process of getting npm and yarn cache directories (e44f93f by George Shestayev)
 * Fix: fixed default npm install command (e44f93f by George Shestayev)
+
+## v3.3.3
+
+* Add .dist file support (#9) (6135b05 by Thomas Baier)
