@@ -21,10 +21,30 @@ inputs:
     description: 'Docker password/access token'
     required: false
     type: string
+  docker_up_command:
+    description: 'Alternative command to run docker'
+    required: false
+    type: string
 
 runs:
   using: "composite"
   steps:
+    - name: Prepare command to spin up Docker
+      shell: bash
+      id: docker_up_command
+      run: |
+        cmd="${{ inputs.docker_up_command }}"
+        if [ -z "$cmd" ]; then
+          if [ -f "task.sh" ]; then
+            echo "Using task.sh to spin up Docker"
+            cmd="./task.sh up -d --force-recreate"
+          else
+            echo "Using `docker compose up` to spin up Docker"
+            cmd="docker compose up -d --force-recreate"
+          fi
+        fi
+        echo "cmd=$cmd" >> $GITHUB_OUTPUT
+
     - name: Prepare uid:gid mapping
       id: uid_gid
       run: echo "result=$(id -u):$(id -g)" >> $GITHUB_OUTPUT
@@ -57,5 +77,7 @@ runs:
         password: ${{ inputs.docker_password }}
 
     - name: Spin up Docker
-      run: docker compose up -d
+      run: |
+        echo "Running command: ${{ steps.docker_up_command.outputs.cmd }}"
+        ${{ steps.docker_up_command.outputs.cmd }}
       shell: bash
