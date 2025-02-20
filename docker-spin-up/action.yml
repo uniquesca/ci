@@ -34,15 +34,16 @@ runs:
       id: docker_up_command
       run: |
         cmd="${{ inputs.docker_up_command }}"
-        if [ ! -z "cmd" ]; then
+        if [ -z "$cmd" ]; then
           if [ -f "task.sh" ]; then
             echo "Using task.sh to spin up Docker"
-            cmd="./task.sh up -d --force-recreate
+            cmd="./task.sh up -d --force-recreate"
           else
             echo "Using `docker compose up` to spin up Docker"
             cmd="docker compose up -d --force-recreate"
+          fi
         fi
-        echo "cmd=\"$cmd\"" >> $GITHUB_OUTPUT
+        echo "cmd=$cmd" >> $GITHUB_OUTPUT
 
     - name: Prepare uid:gid mapping
       id: uid_gid
@@ -76,5 +77,7 @@ runs:
         password: ${{ inputs.docker_password }}
 
     - name: Spin up Docker
-      run: ${{ steps.docker_up_command.outputs.cmd }}
+      run: |
+        echo "Running command: ${{ steps.docker_up_command.outputs.cmd }}"
+        ${{ steps.docker_up_command.outputs.cmd }}
       shell: bash

@@ -424,3 +424,7 @@
 ## v3.3.3
 
 * Add .dist file support (#9) (6135b05 by Thomas Baier)
+
+## v3.4.0
+
+* Update: added integration with task.sh file when spinning up Docker (3547c2a by George Shestayev)
