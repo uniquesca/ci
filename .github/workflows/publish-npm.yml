@@ -62,9 +62,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
           echo "Preparing .npmrc file"
+          cd ${{ inputs.working_directory }}
           echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
           echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          cd ${{ inputs.working_directory }}
           npm install
 
       - name: Run build command if specified
