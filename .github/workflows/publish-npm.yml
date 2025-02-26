@@ -39,6 +39,11 @@ on:
         required: false
         type: boolean
         default: false
+      working_directory:
+        description: 'Directory where npm commands should be executed'
+        required: false
+        type: string
+        default: '.'
 
 jobs:
   publish-npm:
@@ -59,13 +64,17 @@ jobs:
           echo "Preparing .npmrc file"
           echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
           echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
+          cd ${{ inputs.working_directory }}
           npm install
 
       - name: Run build command if specified
-        run: ${{ inputs.build_cmd }}
+        run: |
+          cd ${{ inputs.working_directory }}
+          ${{ inputs.build_cmd }}
 
       - name: Update package version
         run: |
+          cd ${{ inputs.working_directory }}
           if [ -f "package.json" ]; then
             npm pkg set version=${{ inputs.release_version }}
           fi
@@ -73,6 +82,7 @@ jobs:
       - name: Remove dependencies from package.json
         if: ${{ inputs.cleanup_dependencies == true }}
         run: |
+          cd ${{ inputs.working_directory }}
           npm pkg delete dependencies
           npm pkg delete devDependencies
           npm pkg delete scripts
@@ -81,12 +91,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
+          cd ${{ inputs.working_directory }}
           npm publish
 
         # This step is needed to prevent cleanup
       - name: Move dist repo outside of the working tree
         if: ${{ inputs.github_release == true }}
-        run: cp ${{ inputs.dist_folder }} ../dist -Rf
+        run: cp ${{ inputs.working_directory }}/${{ inputs.dist_folder }} ../dist -Rf
 
       - name: Publish Github release
         uses: uniquesca/ci/publish-github-release@main
