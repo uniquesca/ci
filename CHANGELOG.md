@@ -428,3 +428,7 @@
 ## v3.4.0
 
 * Update: added integration with task.sh file when spinning up Docker (3547c2a by George Shestayev)
+
+## v3.4.1
+
+* Introduce working_directory input for publish-npm.yml (#10) (4f0456f by Thomas Baier)
