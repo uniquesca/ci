@@ -44,6 +44,16 @@ on:
         required: false
         type: string
         default: '.'
+      copy_to_dist:
+        description: "Array of files or directories to copy to dist folder"
+        required: false
+        type: string
+        default: "[]"
+      dist_sub_directory:
+        description: 'If the build of the target uses a sub directory in dist, specify it here'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   publish-npm:
@@ -52,7 +62,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ inputs.node_version }}
+          node-version: 22
 
       - name: Checkout application repository
         uses: actions/checkout@v4
@@ -65,36 +75,67 @@ jobs:
           cd ${{ inputs.working_directory }}
           echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
           echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          npm install
+          echo "Install Dependencies"
+          npm install --no-audit --no-fund --prefer-offline --no-progress --loglevel=error          
 
       - name: Run build command if specified
+        if: ${{ inputs.build_cmd != '' }}
         run: |
+          echo "Build input given, execute build now"
           cd ${{ inputs.working_directory }}
           ${{ inputs.build_cmd }}
 
+      # usage: copy_to_dist: '["package.json"]'
+      - name: Copy specified files and directories to dist
+        if: ${{ inputs.copy_to_dist != '[]' }}
+        run: |
+          echo "Copy extra dist files and folders:"
+          for item in $(echo '${{ inputs.copy_to_dist }}' | jq -r '.[]'); do
+            echo "Copying $item to ${{ inputs.working_directory }}/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+            cp -r "$item" ${{ inputs.working_directory }}/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}
+          done
+        shell: bash
+
       - name: Update package version
         run: |
-          cd ${{ inputs.working_directory }}
+          DIRECTORY="${{ inputs.working_directory }}"
+          if [ -n "${{ inputs.build_cmd }}" ]; then
+            DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+          fi
+          cd "$DIRECTORY"
           if [ -f "package.json" ]; then
             npm pkg set version=${{ inputs.release_version }}
+          else
+            echo "No package.json found"
           fi
 
       - name: Remove dependencies from package.json
         if: ${{ inputs.cleanup_dependencies == true }}
         run: |
-          cd ${{ inputs.working_directory }}
+          DIRECTORY="${{ inputs.working_directory }}"
+          if [ -n "${{ inputs.build_cmd }}" ]; then
+           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+          fi
+          cd "$DIRECTORY"
           npm pkg delete dependencies
           npm pkg delete devDependencies
           npm pkg delete scripts
+          cat package.json
 
       - name: Publish NPM package on GitHub
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
-          cd ${{ inputs.working_directory }}
+          DIRECTORY="${{ inputs.working_directory }}"
+          if [ -n "${{ inputs.build_cmd }}" ]; then
+           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+            echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> "$DIRECTORY/.npmrc"
+          fi
+          cd "$DIRECTORY"
           npm publish
 
-        # This step is needed to prevent cleanup
+      # This step is needed to prevent cleanup
       - name: Move dist repo outside of the working tree
         if: ${{ inputs.github_release == true }}
         run: cp ${{ inputs.working_directory }}/${{ inputs.dist_folder }} ../dist -Rf
