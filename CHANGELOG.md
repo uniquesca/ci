@@ -432,3 +432,7 @@
 ## v3.4.1
 
 * Introduce working_directory input for publish-npm.yml (#10) (4f0456f by Thomas Baier)
+
+## v3.4.2
+
+* publish workflow changes (#11) (1d670dc by Thomas Baier)
