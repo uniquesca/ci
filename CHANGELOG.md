@@ -436,3 +436,7 @@
 ## v3.4.2
 
 * publish workflow changes (#11) (1d670dc by Thomas Baier)
+
+## v3.4.3
+
+* New: added msmtp to docker images to help forwarding mails to mailhog (21a87c8 by George Shestayev)
