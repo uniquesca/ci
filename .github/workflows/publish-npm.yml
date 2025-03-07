@@ -57,31 +57,24 @@ jobs:
       - name: Checkout application repository
         uses: actions/checkout@v4
 
-      - name: Install NPM dependencies
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
-        run: |
-          echo "Preparing .npmrc file"
-          cd ${{ inputs.working_directory }}
-          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-          echo "Install Dependencies"
-          npm install --no-audit --no-fund --prefer-offline --no-progress --loglevel=error          
+      - name: Install dependencies
+        uses: uniquesca/ci/install-packages@main
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          access_token: ${{ secrets.NODE_AUTH_TOKEN }}
+          skip_composer: true
+          npm_install_cmd: npm install --no-audit --no-fund --prefer-offline --no-progress --loglevel=error
 
       - name: Run build command if specified
         if: ${{ inputs.build_cmd != '' }}
+        working-directory: ${{ inputs.working_directory }}
         run: |
           echo "Build input given, execute build now"
-          cd ${{ inputs.working_directory }}
           ${{ inputs.build_cmd }}
 
       - name: Update package version
+        working-directory: ${{ inputs.working_directory }}/${{ inputs.dist_folder }}
         run: |
-          DIRECTORY="${{ inputs.working_directory }}"
-          if [ -n "${{ inputs.build_cmd }}" ]; then
-            DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
-          fi
-          cd "$DIRECTORY"
           if [ -f "package.json" ]; then
             npm pkg set version=${{ inputs.release_version }}
           else
@@ -90,27 +83,19 @@ jobs:
 
       - name: Remove dependencies from package.json
         if: ${{ inputs.cleanup_dependencies == true }}
+        working-directory: ${{ inputs.working_directory }}/${{ inputs.dist_folder }}
         run: |
-          DIRECTORY="${{ inputs.working_directory }}"
-          if [ -n "${{ inputs.build_cmd }}" ]; then
-           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
-          fi
-          cd "$DIRECTORY"
           npm pkg delete dependencies
           npm pkg delete devDependencies
           npm pkg delete scripts
 
       - name: Publish NPM package on GitHub
+        working-directory: ${{ inputs.working_directory }}/${{ inputs.dist_folder }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
-          DIRECTORY="${{ inputs.working_directory }}"
-          if [ -n "${{ inputs.build_cmd }}" ]; then
-           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
-            echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> "$DIRECTORY/.npmrc"
-          fi
-          cd "$DIRECTORY"
+          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> ".npmrc"
           npm publish
 
       # This step is needed to prevent cleanup
