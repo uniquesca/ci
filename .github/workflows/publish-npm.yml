@@ -77,11 +77,7 @@ jobs:
 
       - name: Update package version
         run: |
-          DIRECTORY="${{ inputs.working_directory }}"
-          if [ -n "${{ inputs.build_cmd }}" ]; then
-            DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
-          fi
-          cd "$DIRECTORY"
+          cd "${{ inputs.working_directory }}/${{ inputs.dist_folder }}"
           if [ -f "package.json" ]; then
             npm pkg set version=${{ inputs.release_version }}
           else
@@ -91,10 +87,7 @@ jobs:
       - name: Remove dependencies from package.json
         if: ${{ inputs.cleanup_dependencies == true }}
         run: |
-          DIRECTORY="${{ inputs.working_directory }}"
-          if [ -n "${{ inputs.build_cmd }}" ]; then
-           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
-          fi
+          cd "${{ inputs.working_directory }}/${{ inputs.dist_folder }}"
           cd "$DIRECTORY"
           npm pkg delete dependencies
           npm pkg delete devDependencies
@@ -104,13 +97,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
-          DIRECTORY="${{ inputs.working_directory }}"
-          if [ -n "${{ inputs.build_cmd }}" ]; then
-           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
-            echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> "$DIRECTORY/.npmrc"
-          fi
-          cd "$DIRECTORY"
+          cd ="${{ inputs.dist_folder }}/${{ inputs.working_directory }}"
+          echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> ".npmrc"
           npm publish
 
       # This step is needed to prevent cleanup
