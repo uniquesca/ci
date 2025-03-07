@@ -21,6 +21,15 @@ inputs:
     description: 'Docker password/access token'
     required: false
     type: string
+  profile:
+    description: 'Docker compose profile to use'
+    require: false
+    type: string
+  docker_up_arguments:
+    description: "Arguments for Docker compose up command, excluding -d and --profile"
+    require: false
+    type: string
+    default: '--force-recreate'
   docker_up_command:
     description: 'Alternative command to run docker'
     required: false
@@ -37,12 +46,23 @@ runs:
         if [ -z "$cmd" ]; then
           if [ -f "task.sh" ]; then
             echo "Using task.sh to spin up Docker"
-            cmd="./task.sh up -d --force-recreate"
+            cmd="./task.sh up -d"
           else
             echo "Using `docker compose up` to spin up Docker"
-            cmd="docker compose up -d --force-recreate"
+            cmd="docker compose up -d"
           fi
         fi
+        
+        arguments="${{docker_up_arguments}}"
+        if [ -n "$arguments" ]; then
+          cmd="$cmd $arguments"
+        fi
+        
+        profile="${{ inputs.profile }}"
+        if [ -n "$profile" ]; then
+          cmd="$cmd --profile $profile"
+        fi
+        
         echo "cmd=$cmd" >> $GITHUB_OUTPUT
 
     - name: Prepare uid:gid mapping
