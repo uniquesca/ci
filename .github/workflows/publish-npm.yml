@@ -59,8 +59,8 @@ jobs:
 
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@main
-        working-directory: ${{ inputs.working_directory }}
         with:
+          working_directory: ${{ inputs.working_directory }}
           access_token: ${{ secrets.NODE_AUTH_TOKEN }}
           skip_composer: true
           npm_install_cmd: npm install --no-audit --no-fund --prefer-offline --no-progress --loglevel=error
