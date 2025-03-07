@@ -450,3 +450,7 @@
 ## v3.5.1
 
 * Update: added support for profile and custom arguments for docker-spin-up action (1aabd2b by George Shestayev)
+
+## v3.5.2
+
+* Fix: fixed using docker_up_arguments input in docker-spin-up job (686eae9 by George Shestayev)
