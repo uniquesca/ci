@@ -53,7 +53,7 @@ runs:
           fi
         fi
         
-        arguments="${{docker_up_arguments}}"
+        arguments="${{ inputs.docker_up_arguments }}"
         if [ -n "$arguments" ]; then
           cmd="$cmd $arguments"
         fi
