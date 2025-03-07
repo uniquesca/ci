@@ -4,6 +4,10 @@ inputs:
   access_token:
     description: 'GitHub access token with the access to read from repositories'
     required: false
+  working_directory:
+    description: 'Working directory to install packages in'
+    required: false
+    default: '.'
   composer_update:
     description: 'Will run `composer update` instead of `composer install` if true'
     required: false
@@ -66,6 +70,7 @@ runs:
       shell: bash
       id: composer
       if: inputs.skip_composer != true
+      working-directory: ${{ inputs.working_directory }}
       run: |
         if [[ -f "composer.json" ]]; then
           echo "detected=1" >> $GITHUB_OUTPUT
@@ -90,12 +95,13 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.composer_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles('composer.lock') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ format('{0}/{1}', inputs.working_directory, hashFiles('composer.lock')) }}
         restore-keys: |
           ${{ runner.os }}-${{ inputs.cache_key}}-composer-
 
     - name: Install Composer dependencies (Composer-locked environment)
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       if: steps.composer.outputs.detected == 1 && inputs.composer_update != true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
@@ -103,6 +109,7 @@ runs:
 
     - name: Update Composer dependencies (not Composer-locked environment)
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       if: steps.composer.outputs.detected == 1 && inputs.composer_update == true
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
@@ -125,6 +132,7 @@ runs:
 
     - name: Prepare .npmrc file
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       if: steps.npm_yarn.outputs.npm == 1 || steps.npm_yarn.outputs.yarn == 1
       run: |
         echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
@@ -146,12 +154,13 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.npm_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles('package-lock.json') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ format('{0}/{1}', inputs.working_directory, hashFiles('package-lock.json')) }}
         restore-keys: |
           ${{ runner.os }}-npm-
 
     - name: Install NPM dependencies
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       if: steps.npm_yarn.outputs.npm == 1
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
@@ -173,12 +182,13 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.yarn_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles('yarn.lock') }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ format('{0}/{1}', inputs.working_directory, hashFiles('yarn.lock')) }}
         restore-keys: |
           ${{ runner.os }}-yarn-
 
     - name: Install Yarn dependencies
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       if: steps.npm_yarn.outputs.yarn == 1
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}

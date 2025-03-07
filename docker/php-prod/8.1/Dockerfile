@@ -27,7 +27,7 @@ RUN apk update && apk upgrade && \
 	;
 
 # Additional software
-RUN apt-get update && apt-get install default-mysql-client jq zip git -y
+RUN apt-get update && apt-get install default-mysql-client jq zip git nano -y
 
 # Set up Composer
 ENV COMPOSER_HOME=/.composer/
