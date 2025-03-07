@@ -445,3 +445,4 @@
 
 * New: added nano to docker images for simple text editing (a290c04 by George Shestayev)
 * Update: removed copy_to_dist and dist_subdirectory inputs from publish-npm job to avoid unnecessary complication (d8603aa by George Shestayev)
+* Update: introduced working-directory in install-packages CI (6954a6a2 by George Shestayev)
