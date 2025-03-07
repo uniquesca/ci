@@ -30,7 +30,7 @@ on:
         default: true
         type: boolean
       dist_folder:
-        description: 'Dist folder to use for publishing'
+        description: 'Dist folder to use for publishing, relative to working directory'
         required: false
         default: 'dist'
         type: string
@@ -44,16 +44,6 @@ on:
         required: false
         type: string
         default: '.'
-      copy_to_dist:
-        description: "Array of files or directories to copy to dist folder"
-        required: false
-        type: string
-        default: "[]"
-      dist_sub_directory:
-        description: 'If the build of the target uses a sub directory in dist, specify it here'
-        required: false
-        default: ''
-        type: string
 
 jobs:
   publish-npm:
@@ -85,22 +75,11 @@ jobs:
           cd ${{ inputs.working_directory }}
           ${{ inputs.build_cmd }}
 
-      # usage: copy_to_dist: '["package.json"]'
-      - name: Copy specified files and directories to dist
-        if: ${{ inputs.copy_to_dist != '[]' }}
-        run: |
-          echo "Copy extra dist files and folders:"
-          for item in $(echo '${{ inputs.copy_to_dist }}' | jq -r '.[]'); do
-            echo "Copying $item to ${{ inputs.working_directory }}/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
-            cp -r "$item" ${{ inputs.working_directory }}/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}
-          done
-        shell: bash
-
       - name: Update package version
         run: |
           DIRECTORY="${{ inputs.working_directory }}"
           if [ -n "${{ inputs.build_cmd }}" ]; then
-            DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+            DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
           fi
           cd "$DIRECTORY"
           if [ -f "package.json" ]; then
@@ -114,7 +93,7 @@ jobs:
         run: |
           DIRECTORY="${{ inputs.working_directory }}"
           if [ -n "${{ inputs.build_cmd }}" ]; then
-           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
           fi
           cd "$DIRECTORY"
           npm pkg delete dependencies
@@ -127,7 +106,7 @@ jobs:
         run: |
           DIRECTORY="${{ inputs.working_directory }}"
           if [ -n "${{ inputs.build_cmd }}" ]; then
-           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}/${{ inputs.dist_sub_directory }}"
+           DIRECTORY="$DIRECTORY/${{ inputs.dist_folder }}"
             echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
             echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> "$DIRECTORY/.npmrc"
           fi

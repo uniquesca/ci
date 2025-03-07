@@ -41,7 +41,7 @@ runs:
         changelog_path: '_github_ci_changelog.txt'
         target_version: ${{ inputs.release_version }}
 
-    - name: Shrinkg changelog if it's too big
+    - name: Shrinking changelog if it's too big
       shell: bash
       run: |
         if [ $(wc -c < _github_ci_changelog.txt) -gt 125000 ]; then
