@@ -58,7 +58,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@release/3.5.0
+        uses: uniquesca/ci/install-packages@main
         with:
           working_directory: ${{ inputs.working_directory }}
           access_token: ${{ secrets.NODE_AUTH_TOKEN }}
