@@ -440,3 +440,8 @@
 ## v3.4.3
 
 * New: added msmtp to docker images to help forwarding mails to mailhog (21a87c8 by George Shestayev)
+
+## v3.5.0
+
+* New: added nano to docker images for simple text editing (a290c04 by George Shestayev)
+* Update: removed copy_to_dist and dist_subdirectory inputs from publish-npm job to avoid unnecessary complication (d8603aa by George Shestayev)
