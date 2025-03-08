@@ -69,7 +69,7 @@ runs:
     - name: Check if we have Composer to install
       shell: bash
       id: composer
-      if: inputs.skip_composer != true
+      if: inputs.skip_composer != 'true'
       working-directory: ${{ inputs.working_directory }}
       run: |
         if [[ -f "composer.json" ]]; then
@@ -95,14 +95,14 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.composer_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ format('{0}/{1}', inputs.working_directory, hashFiles('composer.lock')) }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles(format('{0}/{1}', inputs.working_directory, 'composer.lock')) }}
         restore-keys: |
           ${{ runner.os }}-${{ inputs.cache_key}}-composer-
 
     - name: Install Composer dependencies (Composer-locked environment)
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      if: steps.composer.outputs.detected == 1 && inputs.composer_update != true
+      if: steps.composer.outputs.detected == 1 && inputs.composer_update != 'true'
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         ${{ steps.vars.outputs.composer_install_cmd }}
@@ -110,15 +110,16 @@ runs:
     - name: Update Composer dependencies (not Composer-locked environment)
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      if: steps.composer.outputs.detected == 1 && inputs.composer_update == true
+      if: steps.composer.outputs.detected == 1 && inputs.composer_update == 'true'
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         ${{ steps.vars.outputs.composer_update_cmd }}
 
-    - name: Check if we have Yarn to install
+    - name: Check if we have NPM or Yarn to install
+      working-directory: ${{ inputs.working_directory }}
       shell: bash
       id: npm_yarn
-      if: inputs.skip_npm_yarn != true
+      if: inputs.skip_npm_yarn != 'true'
       run: |
         if [[ -f "package.json" ]]; then
           if [ -f ".yarnrc" ]; then
@@ -154,7 +155,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.npm_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ format('{0}/{1}', inputs.working_directory, hashFiles('package-lock.json')) }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles(format('{0}/{1}', inputs.working_directory, 'package-lock.json')) }}
         restore-keys: |
           ${{ runner.os }}-npm-
 
@@ -182,7 +183,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.yarn_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ format('{0}/{1}', inputs.working_directory, hashFiles('yarn.lock')) }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles(format('{0}/{1}', inputs.working_directory, 'yarn.lock')) }}
         restore-keys: |
           ${{ runner.os }}-yarn-
 

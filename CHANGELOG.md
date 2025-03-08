@@ -454,3 +454,8 @@
 ## v3.5.2
 
 * Fix: fixed using docker_up_arguments input in docker-spin-up job (686eae9 by George Shestayev)
+
+## v3.5.3
+
+* Fix: fixed install-packages job to use inputs properly and use working directory for determination Yarn vs NPM (328a7b3 by George Shestayev)
+* Fix: fixed cache key calculation in install-packages job (aee3e7c by George Shestayev)
