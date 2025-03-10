@@ -62,6 +62,7 @@ runs:
       run: |
         echo "composer_cache_dir=${{ inputs.composer_cache_dir }}" >> $GITHUB_OUTPUT
         echo "composer_install_cmd=${{ inputs.composer_install_cmd }}" >> $GITHUB_OUTPUT
+        echo "composer_update_cmd=${{ inputs.composer_update_cmd }}" >> $GITHUB_OUTPUT
         echo "npm_install_cmd=${{ inputs.npm_install_cmd }}" >> $GITHUB_OUTPUT
         echo "npm_update_cmd=${{ inputs.npm_update_cmd }}" >> $GITHUB_OUTPUT
         echo "yarn_install_cmd=${{ inputs.yarn_install_cmd }}" >> $GITHUB_OUTPUT
@@ -87,6 +88,7 @@ runs:
         if [ -z "$composer_cache_dir" ] || [ ! -d "$composer_cache_dir" ]; then
           composer_cache_dir=$(composer config cache-files-dir)
         fi
+        echo "Composer cache dir: $composer_cache_dir"
         echo "path=$composer_cache_dir" >> $GITHUB_OUTPUT
 
     - name: Cache Composer dependencies
@@ -105,6 +107,7 @@ runs:
       if: steps.composer.outputs.detected == 1 && inputs.composer_update != 'true'
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
+        echo "Installing dependencies via Composer using command: ${{ steps.vars.outputs.composer_install_cmd }}"
         ${{ steps.vars.outputs.composer_install_cmd }}
 
     - name: Update Composer dependencies (not Composer-locked environment)
@@ -113,6 +116,7 @@ runs:
       if: steps.composer.outputs.detected == 1 && inputs.composer_update == 'true'
       run: |
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
+        echo "Updating dependencies via Composer using command: ${{ steps.vars.outputs.composer_update_cmd }}"
         ${{ steps.vars.outputs.composer_update_cmd }}
 
     - name: Check if we have NPM or Yarn to install
@@ -124,8 +128,10 @@ runs:
         if [[ -f "package.json" ]]; then
           if [ -f ".yarnrc" ]; then
             echo "yarn=1" >> $GITHUB_OUTPUT
+            echo "Yarn found"
           else 
             echo "npm=1" >> $GITHUB_OUTPUT
+            echo "NPM found"
           fi
         else
           echo "No NPM/Yarn found, skipping JS/TS-related QA."
@@ -149,6 +155,7 @@ runs:
           npm_cache_dir=$(npm config get cache)
         fi
         echo "path=$npm_cache_dir" >> $GITHUB_OUTPUT
+        echo "NPM cache dir: $npm_cache_dir"
 
     - name: NPM cache
       if: steps.npm_yarn.outputs.npm == 1 && steps.npm_cache_dir.outputs.path
@@ -165,7 +172,9 @@ runs:
       if: steps.npm_yarn.outputs.npm == 1
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
-      run: ${{ steps.vars.outputs.npm_install_cmd }}
+      run: |
+        echo "Installing dependencies via NPM using command: ${{ steps.vars.outputs.npm_install_cmd }}"
+        ${{ steps.vars.outputs.npm_install_cmd }}
 
     - name: Get Yarn cache directory
       shell: bash
@@ -177,6 +186,7 @@ runs:
           yarn_cache_dir=$(yarn cache dir)
         fi
         echo "path=$yarn_cache_dir" >> $GITHUB_OUTPUT
+        echo "Yarn cache dir: $yarn_cache_dir"
 
     - name: Yarn cache
       if: steps.npm_yarn.outputs.yarn == 1 && steps.yarn_cache_dir.outputs.path
@@ -198,5 +208,5 @@ runs:
         if [ -f "yarn.lock" ]; then
           rm yarn.lock
         fi
-        
+        echo "Installing dependencies via Yarn using command: ${{ steps.vars.outputs.yarn_install_cmd }}"
         ${{ steps.vars.outputs.yarn_install_cmd }}
