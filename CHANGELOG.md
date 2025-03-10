@@ -463,3 +463,7 @@
 ## v3.5.4
 
 * Update: improved output in install-packages job (d04a28b by George Shestayev)
+
+## v3.5.5
+
+* Fix: fixed wrong parameter pass when installing dependencies from qa checks (b4ffa7a by George Shestayev)
