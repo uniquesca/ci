@@ -459,3 +459,7 @@
 
 * Fix: fixed install-packages job to use inputs properly and use working directory for determination Yarn vs NPM (328a7b3 by George Shestayev)
 * Fix: fixed cache key calculation in install-packages job (aee3e7c by George Shestayev)
+
+## v3.5.4
+
+* Update: improved output in install-packages job (d04a28b by George Shestayev)
