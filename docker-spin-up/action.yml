@@ -48,7 +48,7 @@ runs:
             echo "Using task.sh to spin up Docker"
             cmd="./task.sh up -d"
           else
-            echo "Using `docker compose up` to spin up Docker"
+            echo "Using docker compose up to spin up Docker"
             cmd="docker compose up -d"
           fi
         fi
