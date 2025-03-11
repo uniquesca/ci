@@ -467,3 +467,9 @@
 ## v3.5.5
 
 * Fix: fixed wrong parameter pass when installing dependencies from qa checks (b4ffa7a by George Shestayev)
+
+## v3.6.0
+
+* New: introduced docker-deploy CI job (b73c6dd by George Shestayev)
+* Update: cleaned up deploy CI job (b73c6dd by George Shestayev)
+* Update: improved output for docker-spin-up CI job (b73c6dd by George Shestayev)
