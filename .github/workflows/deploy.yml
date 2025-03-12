@@ -60,12 +60,7 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
-
-      - name: Connect to Deploy Server
+      - name: Connect and deploy
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ inputs.host }}
