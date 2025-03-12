@@ -34,25 +34,15 @@ on:
         description: 'Git branch or tag to use for the project on the server'
         required: true
         type: string
-      db_migration_cmd:
-        description: 'DB migration command to execute after git update is complete'
+      docker_restart_args:
+        description: 'Arguments to pass to docker restart command'
         required: false
-        default: ''
         type: string
-      clean_cache_cmd:
-        description: 'Command for clearing cache to execute after git update is complete'
-        required: false
         default: ''
-        type: string
       post_cmd:
         description: 'Command to execute after deployment is complete'
         required: false
         default: ''
-        type: string
-      node_version:
-        description: 'Node version to use when deploying'
-        required: false
-        default: '20'
         type: string
 
 jobs:
@@ -116,19 +106,18 @@ jobs:
                 git reset --hard ${{ inputs.ref }}
               fi
             fi
+                       
+            # Rebuild docker image
+            echo "Rebuilding Docker image"
+            ./task.sh build
+            
+            echo "Restarting Docker Services"
+            ./task.sh restart ${{ inputs.docker_restart_args }}
             
             if [ -f "composer.json" ]; then
               echo "Installing composer dependencies"
-              if [ ! -f "composer.phar" ]; then
-                echo "Installing Composer"
-                php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-                php composer-setup.php
-                php -r "unlink('composer-setup.php');"
-              fi
-              echo "Installing Composer dependencies"
-              chmod +x composer.phar
-              php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-              php composer.phar install --no-dev
+              ./task.sh composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+              ./task.sh composer install --no-dev
             fi
             
             if [ -f "package.json" ]; then
@@ -137,58 +126,20 @@ jobs:
               echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
               echo "always-auth=true" >> .npmrc
             
-              export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-              [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
-              if ! command -v nvm &> /dev/null; then
-                echo "Installing NVM"
-                curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-                export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
-                echo "  Using node v${{ inputs.node_version }}"
-                nvm install ${{ inputs.node_version }}
-              fi
-
-              nvm use ${{ inputs.node_version }}
-              if ! command -v yarn &> /dev/null; then
+              if [ -f "yarn.lock" ]; then
                 echo "Installing Yarn"
-                (r=2;while ! npm install -g yarn ; do ((--r))||exit;sleep 5;done)
-              fi
-
-              echo "Installing NPM/Yarn dependencies"
-              # Commands below run yarn in a way it doesn't emit non-zero exit code, so we don't stop,
-              # yet we capture stderr, so we can check it
-              output=$(yarn install 2>&1 || true)
-              echo "$output"
-              # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug 
-              # with yarn authentication
-              if echo "$output" | grep -q "401 Unauthorized"; then
-                echo "Could not install yarn dependencies, retrying..."
-                echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-                echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-                echo "always-auth=true" >> .npmrc
-                rm yarn.lock
-                npm cache clean --force
-                yarn cache clean 
-                echo "Deleted yarn.lock, running yarn install again..."
-                yarn install
-              fi
-            fi
-
-            if [ -f "vendor/bin/phinx" ]; then
-              echo "Executing Phinx migrations"
-              if [ -f "phinx.php" ]; then
-                chmod +x ./vendor/bin/phinx
-                chmod +x ./vendor/robmorgan/phinx/bin/phinx
-                ./vendor/bin/phinx migrate -c phinx.php
-                break
+                ./task.sh yarn install
+              else 
+                echo "Installing NPM"
+                ./task.sh npm install
               fi
             fi
             
-            echo "Executing DB migration command"
-            ${{ inputs.db_migration_cmd }}
-            
-            echo "Executing cache cleaning command"
-            ${{ inputs.clean_cache_cmd }}
+            echo "Running migrations"
+            ./task.sh migrate
+
+            echo "Clearing cache"
+            ./task.sh clear-cache
             
             echo "Executing post-deployment command"
             ${{ inputs.post_cmd }}
