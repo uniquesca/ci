@@ -34,6 +34,11 @@ on:
         description: 'Git branch or tag to use for the project on the server'
         required: true
         type: string
+      docker_restart_args:
+        description: 'Arguments to pass to docker restart command'
+        required: false
+        type: string
+        default: ''
       post_cmd:
         description: 'Command to execute after deployment is complete'
         required: false
@@ -45,12 +50,7 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
-
-      - name: Connect to Deploy Server
+      - name: Connect and deploy
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ inputs.host }}
@@ -112,7 +112,7 @@ jobs:
             ./task.sh build
             
             echo "Restarting Docker Services"
-            ./task.sh restart
+            ./task.sh restart ${{ inputs.docker_restart_args }}
             
             if [ -f "composer.json" ]; then
               echo "Installing composer dependencies"
