@@ -44,7 +44,7 @@ runs:
   using: "composite"
   steps:
     - name: Prepare command to spin up Docker
-      working_directory: ${{ inputs.working_directory }}
+      working-directory: ${{ inputs.working_directory }}
       shell: bash
       id: docker_up_command
       run: |
@@ -103,7 +103,7 @@ runs:
         password: ${{ inputs.docker_password }}
 
     - name: Spin up Docker
-      working_directory: ${{ inputs.working_directory }}
+      working-directory: ${{ inputs.working_directory }}
       run: |
         echo "Running command: ${{ steps.docker_up_command.outputs.cmd }}"
         ${{ steps.docker_up_command.outputs.cmd }}
