@@ -473,3 +473,7 @@
 * New: introduced docker-deploy CI job (b73c6dd by George Shestayev)
 * Update: cleaned up deploy CI job (b73c6dd by George Shestayev)
 * Update: improved output for docker-spin-up CI job (b73c6dd by George Shestayev)
+
+## v3.7.0
+
+* New: added working_directory input for docker-spin-up job (c58210d by George Shestayev)
