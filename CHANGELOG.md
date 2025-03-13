@@ -477,3 +477,7 @@
 ## v3.7.0
 
 * New: added working_directory input for docker-spin-up job (c58210d by George Shestayev)
+
+## v3.7.1
+
+* Fix: fixed syntax issues introduced in the previous changes (40c80bd by George Shestayev)
