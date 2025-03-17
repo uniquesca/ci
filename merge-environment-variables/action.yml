@@ -2,7 +2,7 @@ name: Merge environment variables
 
 inputs:
   variables1:
-    description: 'JSON string representiing object with the neivnronment variables.'
+    description: 'JSON string representiing object with the environment variables.'
     required: true
   variables2:
     description: 'JSON string representing object with replacements.'
