@@ -89,6 +89,7 @@ runs:
         env_variables: ${{ steps.merge_docker_variables.outputs.variables }}
         env_file_stub: .env.dist
         env_file: .env
+        working_directory: ${{ inputs.working_directory }}
 
     - name: Update hosts file
       run: sudo echo "127.0.0.1 ${{ inputs.hostname }}" | sudo tee -a /etc/hosts
