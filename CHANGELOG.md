@@ -481,3 +481,7 @@
 ## v3.7.1
 
 * Fix: fixed syntax issues introduced in the previous changes (40c80bd by George Shestayev)
+
+## v3.7.2
+
+* Update: Add working_directory to Docker config (#12) (2dfa123 by Poraich Troy)
