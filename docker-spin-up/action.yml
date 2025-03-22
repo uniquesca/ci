@@ -72,12 +72,23 @@ runs:
         
         echo "cmd=$cmd" >> $GITHUB_OUTPUT
 
+    - name: Check if .env.dist file exists
+      id: env_config_exists
+      run: |
+        if [ -f ".env.dist" ]; then
+          echo "exists=1" >> $GITHUB_OUTPUT
+        else
+          echo "exists=0" >> $GITHUB_OUTPUT
+        fi
+
     - name: Prepare uid:gid mapping
+      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
       id: uid_gid
       run: echo "result=$(id -u):$(id -g)" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Prepare environment variables for Docker
+      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
       id: merge_docker_variables
       uses: uniquesca/ci/merge-environment-variables@main
       with:
@@ -85,6 +96,7 @@ runs:
         variables2: ${{ inputs.docker_env_variables }}
 
     - name: Prepare Docker config
+      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
       uses: uniquesca/ci/prepare-environment@main
       with:
         env_variables: ${{ steps.merge_docker_variables.outputs.variables }}
