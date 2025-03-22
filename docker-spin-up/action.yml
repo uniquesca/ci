@@ -8,8 +8,9 @@ inputs:
     default: '.'
   docker_env_variables:
     description: 'Environment variables used for Docker config'
-    required: true
+    required: false
     type: string
+    default: '{}'
   hostname:
     description: 'Hostname to use to access application'
     required: true
