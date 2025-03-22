@@ -494,3 +494,7 @@
 * Update: removing multiplatform build for Docker due to performance issues (0276035 by George Shestayev)
 * Update: added QEMU and Docker buildx to support multi-platform build (6456f96 by George Shestayev)
 * Update: enable ARM platform for the Docker images (cf9ef82 by George Shestayev)
+
+## v3.7.4
+
+* Update: hostname input made optional for docker-spin-up job (7007c18 by George Shestayev)

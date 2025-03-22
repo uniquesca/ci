@@ -13,7 +13,7 @@ inputs:
     default: '{}'
   hostname:
     description: 'Hostname to use to access application'
-    required: true
+    required: false
     type: string
   docker_registry:
     description: 'Docker registry to log in'
@@ -93,6 +93,7 @@ runs:
         working_directory: ${{ inputs.working_directory }}
 
     - name: Update hosts file
+      if: ${{ inputs.hostname }}
       run: sudo echo "127.0.0.1 ${{ inputs.hostname }}" | sudo tee -a /etc/hosts
       shell: bash
 
