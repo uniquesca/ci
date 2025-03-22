@@ -485,3 +485,12 @@
 ## v3.7.2
 
 * Update: Add working_directory to Docker config (#12) (2dfa123 by Poraich Troy)
+
+## v3.7.3
+
+* Fix: Docker images are built only on tag push (33fed24 by George Shestayev)
+* Fix: fixed platforms for building docker images (7af73dc by George Shestayev)
+* Update: docker_env_variables made not required in docker-spin-up job (62a89f4 by George Shestayev)
+* Update: removing multiplatform build for Docker due to performance issues (0276035 by George Shestayev)
+* Update: added QEMU and Docker buildx to support multi-platform build (6456f96 by George Shestayev)
+* Update: enable ARM platform for the Docker images (cf9ef82 by George Shestayev)
