@@ -64,10 +64,20 @@ function normalizeGitLog(gitLogContents) {
     }
 
     return normalizedRecords
-        .filter(record => record.length > 0)
+        .filter(function(record) {
+            if (!record.length) return false;
+
+            if (
+                record.startsWith('chore')
+                || record.startsWith('doc')
+                || record.startsWith('ci')
+            ) return false;
+
+            return true;
+        })
         .sort(function (a, b) {
-            const order = ['breaking', 'deprecated', 'fix', 'new', 'update', 'automated', 'documentation', 'refactoring'];
-            const aMatch = a.match(/^\*?\s*(new|update|fix|documentation|refactoring|deprecated|breaking|automated)/i);
+            const order = ['breaking', 'depr', 'fix', 'new', 'update'];
+            const aMatch = a.match(/^\*?\s*(new|update|fix|depr|breaking)/i);
             let aIndex = -1;
             if (aMatch) {
                 aIndex = order.indexOf(aMatch[1].toLowerCase());
@@ -76,7 +86,7 @@ function normalizeGitLog(gitLogContents) {
                 aIndex = 100;
             }
 
-            const bMatch = b.match(/^\*?\s*(new|update|fix|documentation|refactoring|deprecated|breaking|automated)/i);
+            const bMatch = b.match(/^\*?\s*(new|update|fix|depr|breaking)/i);
             let bIndex = -1;
             if (bMatch) {
                 bIndex = order.indexOf(bMatch[1].toLowerCase());
