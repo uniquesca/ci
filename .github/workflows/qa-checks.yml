@@ -151,6 +151,9 @@ jobs:
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
+      - name: Print config file
+        run: cat /home/runner/work/bcpnp-frontend/bcpnp-frontend/config/autoload/local.php
+
       - name: Run DB migration
         if: inputs.use_db == true && env.phpunit == 1
         run: ${{ inputs.db_migration_cmd }}
