@@ -126,9 +126,6 @@ function normalizeGitLogRecord(gitLogRecord) {
             if (messagePart.match(/(Co)?-?authored-by/i)) {
                 return '';
             } else {
-                if (messagePart.match(/automatic commit/i) && author.match(/github actions/i)) {
-                    messagePart = 'Automated: ' + messagePart;
-                }
                 return '* '
                     + messagePart
                         .trim() // Remove spaces
