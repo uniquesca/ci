@@ -66,7 +66,7 @@ function normalizeGitLog(gitLogContents) {
     return normalizedRecords
         .filter(function(record) {
             if (!record.length) return false;
-
+            record = record.toLowerCase();
             if (
                 record.startsWith('chore')
                 || record.startsWith('doc')
