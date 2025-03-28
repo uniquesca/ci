@@ -64,8 +64,9 @@ function normalizeGitLog(gitLogContents) {
     }
 
     return normalizedRecords
-        .filter(function(record) {
+        .filter(function (record) {
             if (!record.length) return false;
+
             record = record.toLowerCase();
             if (
                 record.startsWith('breaking')
@@ -73,9 +74,9 @@ function normalizeGitLog(gitLogContents) {
                 || record.startsWith('fix')
                 || record.startsWith('new')
                 || record.startsWith('update')
-            ) return false;
+            ) return true;
 
-            return true;
+            return false;
         })
         .sort(function (a, b) {
             const order = ['breaking', 'depr', 'fix', 'new', 'update'];
