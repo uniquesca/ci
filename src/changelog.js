@@ -68,9 +68,11 @@ function normalizeGitLog(gitLogContents) {
             if (!record.length) return false;
             record = record.toLowerCase();
             if (
-                record.startsWith('chore')
-                || record.startsWith('doc')
-                || record.startsWith('ci')
+                record.startsWith('breaking')
+                || record.startsWith('depr')
+                || record.startsWith('fix')
+                || record.startsWith('new')
+                || record.startsWith('update')
             ) return false;
 
             return true;
