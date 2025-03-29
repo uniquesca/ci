@@ -1,5 +1,6 @@
 import fs from "fs";
 import cp from "child_process";
+import core from "@actions/core";
 
 // Prepare regex based on version
 function versionToRegex(version) {
@@ -43,8 +44,10 @@ function normalizeChangelog(changelogContents) {
     return changelogContents;
 }
 
-function getGitLog(fromTag, toTag) {
-    const command = "git log --no-merges " + fromTag + ".." + toTag + " --pretty=format:'%B||%h||%an||EOR'";
+function getGitLog(gitPath, fromTag, toTag) {
+    const command = "cd " + gitPath + " && git log --no-merges " + fromTag + ".." + toTag + " --pretty=format:'%B||%h||%an||EOR'";
+    core.debug("Getting git log:");
+    core.debug(command);
     const result = cp.spawnSync('sh', ['-c', command]);
     return result.stdout.toString();
 }
@@ -63,11 +66,35 @@ function normalizeGitLog(gitLogContents) {
         }
     }
 
+    core.debug('=====================================');
+    core.debug('Git log after first step normalization:')
+    core.debug(normalizedRecords);
+    core.debug('=====================================');
+
     return normalizedRecords
-        .filter(record => record.length > 0)
+        .filter(function (record) {
+            if (!record.length) return false;
+
+            record = record.toLowerCase();
+            core.debug(record);
+            if (
+                record.startsWith('* breaking')
+                || record.startsWith('* depr')
+                || record.startsWith('* fix')
+                || record.startsWith('* new')
+                || record.startsWith('* update')
+            ) {
+                core.debug("Record above accepted for changelog.");
+                return true;
+            }
+
+            core.debug("Skipping record above.");
+
+            return false;
+        })
         .sort(function (a, b) {
-            const order = ['breaking', 'deprecated', 'fix', 'new', 'update', 'automated', 'documentation', 'refactoring'];
-            const aMatch = a.match(/^\*?\s*(new|update|fix|documentation|refactoring|deprecated|breaking|automated)/i);
+            const order = ['breaking', 'depr', 'fix', 'new', 'update'];
+            const aMatch = a.match(/^\*?\s*(new|update|fix|depr|breaking)/i);
             let aIndex = -1;
             if (aMatch) {
                 aIndex = order.indexOf(aMatch[1].toLowerCase());
@@ -76,7 +103,7 @@ function normalizeGitLog(gitLogContents) {
                 aIndex = 100;
             }
 
-            const bMatch = b.match(/^\*?\s*(new|update|fix|documentation|refactoring|deprecated|breaking|automated)/i);
+            const bMatch = b.match(/^\*?\s*(new|update|fix|depr|breaking)/i);
             let bIndex = -1;
             if (bMatch) {
                 bIndex = order.indexOf(bMatch[1].toLowerCase());
@@ -96,6 +123,12 @@ function normalizeGitLog(gitLogContents) {
         .join("\n")
 }
 
+/**
+ * Reformats and restructures git log into a format where we can work with it.
+ * No filtering at this stage.
+ * @param gitLogRecord
+ * @returns {(string|string)[]|string}
+ */
 function normalizeGitLogRecord(gitLogRecord) {
     // First we split message into the parts we need
     const [message, hash, author] = gitLogRecord.split('||');
@@ -116,9 +149,6 @@ function normalizeGitLogRecord(gitLogRecord) {
             if (messagePart.match(/(Co)?-?authored-by/i)) {
                 return '';
             } else {
-                if (messagePart.match(/automatic commit/i) && author.match(/github actions/i)) {
-                    messagePart = 'Automated: ' + messagePart;
-                }
                 return '* '
                     + messagePart
                         .trim() // Remove spaces
@@ -130,9 +160,9 @@ function normalizeGitLogRecord(gitLogRecord) {
     );
 }
 
-function appendChangeLog(changelogContents, targetVersion, fromTag, toTag) {
+function appendChangeLog(gitPath, changelogContents, targetVersion, fromTag, toTag) {
     // TODO Improve this allowing to properly print changelog for every tag
-    const gitLog = generateChangelog(fromTag, toTag);
+    const gitLog = generateChangelog(gitPath, fromTag, toTag);
     changelogContents = changelogContents + "\n\n## v" + targetVersion + "\n\n";
     if (gitLog.length) {
         changelogContents = changelogContents + gitLog + "\n";
@@ -145,16 +175,29 @@ function validateVersion(version) {
 }
 
 // Retrieves changes from git log since the last tag and formats the list
-export function generateChangelog(fromTag, toTag) {
-    let gitLog = getGitLog(fromTag, toTag);
+export function generateChangelog(gitPath, fromTag, toTag) {
+    let gitLog = getGitLog(gitPath, fromTag, toTag);
+    core.debug('=====================================');
+    core.debug('Git log:');
+    core.debug(gitLog);
+    core.debug('=====================================');
     if (gitLog.length) {
         gitLog = normalizeGitLog(gitLog);
+        core.debug('=====================================');
+        core.debug('Git log after normalization and filtering:')
+        core.debug(gitLog);
+        core.debug('=====================================');
+        if (!gitLog.length) {
+            gitLog = '*All the thanges in this version are ' +
+                'insignificant and are\nprobably limited to ' +
+                'code quality or infrastructure changes.*'
+        }
     }
     return gitLog;
 }
 
 // Updates changelog file with the changes retrieved from git log
-export function updateChangelog(changelogPath, targetVersion, fromTag, toTag) {
+export function updateChangelog(gitPath, changelogPath, targetVersion, fromTag, toTag) {
     if (!validateVersion(targetVersion)) {
         console.error('Target version ' + targetVersion + ' does not seem to be correct version.');
         process.exit(1);
@@ -163,7 +206,7 @@ export function updateChangelog(changelogPath, targetVersion, fromTag, toTag) {
     let changelogContents = fs.readFileSync(changelogPath, 'utf8').toString();
     changelogContents = cleanupChangelogIfAlreadyHasTargetVersion(changelogContents, targetVersion);
     changelogContents = normalizeChangelog(changelogContents);
-    changelogContents = appendChangeLog(changelogContents, targetVersion, fromTag, toTag);
+    changelogContents = appendChangeLog(gitPath, changelogContents, targetVersion, fromTag, toTag);
 
     fs.writeFileSync(changelogPath, changelogContents);
 }

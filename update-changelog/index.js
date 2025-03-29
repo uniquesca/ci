@@ -1,8 +1,9 @@
 import core from "@actions/core";
 import fs from "fs";
 import { updateChangelog, generateChangelog } from "../src/changelog.js";
-import { getLastTag, getTag } from "../src/git.js";
+import { getLastGitTag, getGitTag } from "../src/git.js";
 
+let gitPath = '.';
 const changelogPath = core.getInput('changelog_path');
 const targetVersion = core.getInput('target_version');
 const mode = core.getInput('mode');
@@ -19,19 +20,19 @@ if (!mode) {
 let startTag, endTag;
 if (!offset) {
     offset = 0;
-    startTag = getLastTag();
+    startTag = getLastGitTag(gitPath);
     endTag = 'HEAD';
 }
 else {
-    startTag = getTag(Number(offset) + 1);
-    endTag = getTag(offset)
+    startTag = getGitTag(gitPath, Number(offset) + 1);
+    endTag = getGitTag(gitPath, offset)
 }
 
 if (mode == 'raw') {
-    console.log('Generating raw changelog...')
-    const changelog = generateChangelog(startTag, endTag);
+    core.info('Generating raw changelog...')
+    const changelog = generateChangelog(gitPath, startTag, endTag);
     fs.writeFileSync(changelogPath, changelog);
 } else {
-    console.log('Updating changelog in normal (non-raw) mode...')
-    updateChangelog(changelogPath, targetVersion, startTag, endTag);
+    core.info('Updating changelog in normal (non-raw) mode...')
+    updateChangelog(gitPath, changelogPath, targetVersion, startTag, endTag);
 }
