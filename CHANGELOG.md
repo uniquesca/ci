@@ -498,3 +498,10 @@
 ## v3.7.4
 
 * Update: hostname input made optional for docker-spin-up job (7007c18 by George Shestayev)
+
+## v3.7.5
+
+* Fix: added missing shell property (fe709a8 by George Shestayev)
+* Update: automated commits now prefixed with `Ci` (b6a7959 by George Shestayev)
+* Update: improved changelog generation (b6a7959 by George Shestayev)
+* Update: made env config preparation in docker-spin-up job optional (06feeb4 by George Shestayev)

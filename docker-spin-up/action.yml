@@ -74,6 +74,7 @@ runs:
 
     - name: Check if .env.dist file exists
       id: env_config_exists
+      shell: bash
       run: |
         if [ -f ".env.dist" ]; then
           echo "exists=1" >> $GITHUB_OUTPUT
