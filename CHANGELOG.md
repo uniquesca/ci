@@ -498,3 +498,16 @@
 ## v3.7.4
 
 * Update: hostname input made optional for docker-spin-up job (7007c18 by George Shestayev)
+
+## v3.7.5
+
+* Fix: added missing shell property (fe709a8 by George Shestayev)
+* Update: automated commits now prefixed with `Ci` (b6a7959 by George Shestayev)
+* Update: improved changelog generation (b6a7959 by George Shestayev)
+* Update: made env config preparation in docker-spin-up job optional (06feeb4 by George Shestayev)
+* Chore: updated debugging in changelog generation (07538c6 by George Shestayev)
+* Chore: fixed issue with changelog filtering (07538c6 by George Shestayev)
+* Chore: fixed changelog record processing (2dd7aa3 by George Shestayev)
+* Chore: changed changelog record processing (de08c62 by George Shestayev)
+* Chore: fixed changelog record processing (f98489c by George Shestayev)
+* Chore: fixed changelog record filtration (0c1ff64 by George Shestayev)
