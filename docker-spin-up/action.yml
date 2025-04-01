@@ -40,6 +40,11 @@ inputs:
     description: 'Alternative command to run docker'
     required: false
     type: string
+  sleep:
+    description: 'Number of second to sleep after docker has spun up'
+    required: false
+    type: number
+    default: 0
 
 runs:
   using: "composite"
@@ -124,3 +129,7 @@ runs:
         echo "Running command: ${{ steps.docker_up_command.outputs.cmd }}"
         ${{ steps.docker_up_command.outputs.cmd }}
       shell: bash
+
+    - name: Sleep (if needed)
+      if: ${{ inputs.sleep > 0 }}
+      run: sleep ${{ inputs.sleep }}
