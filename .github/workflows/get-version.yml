@@ -31,3 +31,4 @@ jobs:
           else 
             echo "Unable to determine version from $ref"
           fi
+
