@@ -159,8 +159,8 @@ jobs:
 
       - name: Commit changes
         run: |
-          git config --local user.email "gha@uniques.ca"
-          git config --local user.name "GitHub Actions"
+          git config --local user.email "service@uniques.ca"
+          git config --local user.name "CI"
 
           if [ -f "package.json" ]; then
             git add package.json
@@ -176,4 +176,4 @@ jobs:
           
           git clean -fd
           
-          git diff --staged --quiet || (git commit -m "Ci: automatic commit for the new release: #${GITHUB_SHA}" && git push)
+          git diff --staged --quiet || (git commit -m "CI: automatic commit for the new release: #${GITHUB_SHA} [skip ci]" && git push)

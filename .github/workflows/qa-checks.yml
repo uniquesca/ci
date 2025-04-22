@@ -39,16 +39,6 @@ on:
         required: false
         type: string
         default: ''
-      generate_coverage_badge:
-        description: 'Whether a unit test coverage badge needs to be generated and committed'
-        required: false
-        default: true
-        type: boolean
-      coverage_badge_file:
-        description: 'Path to a coverage badge file - ignored if `generate_coverage_badge` is not set to `true`'
-        required: false
-        default: 'coverage.svg'
-        type: string
       env_variables:
         description: 'JSON string representing an object with environment variables to set up an environment'
         required: false
