@@ -5,7 +5,9 @@ export function getLastGitTag(gitPath) {
     const lastTagCommand = "cd " + gitPath + " && git describe --abbrev=0 --tags";
     core.debug('Getting last git tag:');
     core.debug(lastTagCommand);
-    return cp.execSync(lastTagCommand).toString().trim();
+    const result = cp.execSync(lastTagCommand);
+    core.debug(result.toString().trim());
+    return result.toString().trim();
 }
 
 export function getGitTag(gitPath, offset) {
@@ -13,5 +15,6 @@ export function getGitTag(gitPath, offset) {
     core.debug('Getting git tag:');
     core.debug(getTagCommand);
     const result = cp.spawnSync('sh', ['-c', getTagCommand]);
+    core.debug(result.stdout.toString().trim());
     return result.stdout.toString().trim();
 }

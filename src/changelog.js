@@ -203,10 +203,10 @@ export function updateChangelog(gitPath, changelogPath, targetVersion, fromTag, 
         process.exit(1);
     }
 
-    let changelogContents = fs.readFileSync(changelogPath, 'utf8').toString();
+    let changelogContents = fs.readFileSync(gitPath + '/' + changelogPath, 'utf8').toString();
     changelogContents = cleanupChangelogIfAlreadyHasTargetVersion(changelogContents, targetVersion);
     changelogContents = normalizeChangelog(changelogContents);
     changelogContents = appendChangeLog(gitPath, changelogContents, targetVersion, fromTag, toTag);
 
-    fs.writeFileSync(changelogPath, changelogContents);
+    fs.writeFileSync(gitPath + '/' + changelogPath, changelogContents);
 }

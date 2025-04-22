@@ -40,6 +40,7 @@ inputs:
     description: 'Alternative command to run docker'
     required: false
     type: string
+    default: 'docker compose up'
   sleep:
     description: 'Number of second to sleep after docker has spun up'
     required: false
