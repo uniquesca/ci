@@ -2,19 +2,16 @@ import core from "@actions/core";
 import fs from "fs";
 import { updateChangelog, generateChangelog } from "../src/changelog.js";
 import { getLastGitTag, getGitTag } from "../src/git.js";
+import process from "process";
 
 let gitPath = '.';
-const changelogPath = core.getInput('changelog_path');
-const targetVersion = core.getInput('target_version');
-const mode = core.getInput('mode');
-const offset = core.getInput('offset');
+const changelogPath = core.getInput('changelog_path') || process.argv[2];
+const targetVersion = core.getInput('target_version') || process.argv[3];
+let mode = core.getInput('mode') || process.argv[4] || 'normal';
+let offset = core.getInput('offset') || process.argv[5];
 if (!changelogPath || !targetVersion) {
     console.error('Usage: node changelog.js CHANGELOG_PATH TARGET_VERSION ["normal"|"raw"] [OFFSET]');
     process.exit(1);
-}
-
-if (!mode) {
-    mode = 'normal';
 }
 
 let startTag, endTag;
