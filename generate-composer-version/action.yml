@@ -1,15 +1,15 @@
 name: Inject version into composer.json
 
 inputs:
+  github_ref:
+    description: 'Ref to get version from'
+    required: true
+    type: string
   working_directory:
     description: 'Directory containing composer.json'
     required: false
     type: string
     default: '.'
-  github_ref:
-    description: 'Ref to get version from'
-    required: true
-    type: string
 
 runs:
   using: "composite"
