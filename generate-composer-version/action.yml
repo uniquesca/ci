@@ -6,18 +6,27 @@ inputs:
     required: false
     type: string
     default: '.'
-  version:
-    description: 'Version to inject into composer.json'
+  github_ref:
+    description: 'Ref to get version from'
     required: true
     type: string
 
 runs:
   using: "composite"
   steps:
-    - name: Set Composer version from Git tag
-      working-directory: ${{ inputs.working_directory }}
+    - name: Extract version from ref
+      id: get-version
+      shell: bash
       run: |
-        VERSION="${{ inputs.version }}"
+        version="${{ inputs.github_ref##*/ }}"
+        echo "Extracted version: $version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Set Composer version in composer.json
+      working-directory: ${{ inputs.working_directory }}
+      shell: bash
+      run: |
+        VERSION="${{ steps.get-version.outputs.version }}"
         echo "Setting version in composer.json to $VERSION"
 
         if jq -e '.version' composer.json > /dev/null; then
@@ -27,3 +36,4 @@ runs:
           echo '"version" not found in composer.json. Adding version field'
           jq --arg version "$VERSION" '. + {version: $version}' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
         fi
+        cat composer.json
