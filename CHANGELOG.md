@@ -518,3 +518,7 @@
 * Fix: fixed sleep step in docker spin up job (2e35b34 by George Shestayev)
 * Update: using docker compose up & down instead of restart on docker deploy (7874601 by George Shestayev)
 * Update: using --force-restart as a default argument for docker compose up on docker deploy (7874601 by George Shestayev)
+
+## v3.8.2
+
+* Fix: removing default command for docker spin up action as it's supposed to be calculated (59e6fa7 by George Shestayev)
