@@ -512,3 +512,9 @@
 * Fix: use inputs.ref when generating version instead of GITHUB_REF (#13) (c32d883 by Poraich Troy)
 * New: introduced prepare-pull-request CI job (472486e by George Shestayev)
 * New: added `sleep` input for docker-spin-up job (34e2e7d by George Shestayev)
+
+## v3.8.1
+
+* Fix: fixed sleep step in docker spin up job (2e35b34 by George Shestayev)
+* Update: using docker compose up & down instead of restart on docker deploy (7874601 by George Shestayev)
+* Update: using --force-restart as a default argument for docker compose up on docker deploy (7874601 by George Shestayev)
