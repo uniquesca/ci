@@ -134,3 +134,4 @@ runs:
     - name: Sleep (if needed)
       if: ${{ inputs.sleep > 0 }}
       run: sleep ${{ inputs.sleep }}
+      shell: bash
