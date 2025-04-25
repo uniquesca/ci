@@ -18,9 +18,17 @@ runs:
       id: get-version
       shell: bash
       run: |
-        version="${{ inputs.github_ref##*/ }}"
-        echo "Extracted version: $version"
+        ref="$GITHUB_REF"
+        if [[ "$ref" =~ ^refs/heads/release/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          version="${ref#refs/heads/release/}"
         echo "version=$version" >> "$GITHUB_OUTPUT"
+        elif [[ "$ref" =~ ^refs/heads/hotfix/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          version="${ref#refs/heads/hotfix/}"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        else
+          echo "Unable to determine version from ref: $ref"
+          exit 2
+        fi
 
     - name: Set Composer version in composer.json
       working-directory: ${{ inputs.working_directory }}
@@ -36,4 +44,3 @@ runs:
           echo '"version" not found in composer.json. Adding version field'
           jq --arg version "$VERSION" '. + {version: $version}' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
         fi
-        cat composer.json
