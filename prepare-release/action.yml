@@ -11,6 +11,11 @@ inputs:
     type: string
     default: '.'
 
+outputs:
+  version:
+    description: 'Extracted version from Git ref'
+    value: ${{ steps.get-version.outputs.version }}
+
 runs:
   using: "composite"
   steps:
@@ -18,13 +23,13 @@ runs:
       id: get-version
       shell: bash
       run: |
-        ref="$GITHUB_REF"
+        ref="${{ inputs.github_ref }}"
         if [[ "$ref" =~ ^refs/heads/release/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           version="${ref#refs/heads/release/}"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
         elif [[ "$ref" =~ ^refs/heads/hotfix/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           version="${ref#refs/heads/hotfix/}"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
         else
           echo "Unable to determine version from ref: $ref"
           exit 2
