@@ -191,7 +191,11 @@ jobs:
           if [ -f "package.json" ]; then
             git add package.json
           fi
-          
+
+          if [ -f "composer.json" ]; then
+            git add composer.json
+          fi
+
           if ${{ inputs.update_db == true }}; then
             git add ${{ inputs.db_dump_path }}
           fi
