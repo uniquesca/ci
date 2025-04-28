@@ -126,12 +126,6 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Get version from ref
-        if: ${{ steps.check-composer.outputs.exists == 'true' }}
-        uses: uniquesca/ci/get-version@main
-        with:
-          ref: ${{ inputs.github_ref }}
-
       - name: Set Composer version in composer.json
         if: ${{ steps.check-composer.outputs.exists == 'true' }}
         working-directory: ${{ inputs.working_directory }}
