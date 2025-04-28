@@ -24,6 +24,11 @@ on:
         required: false
         default: 'CHANGELOG.md'
         type: string
+      update_composer:
+        description: 'Whether composer.json should be updated'
+        required: false
+        default: false
+        type: boolean
       update_db:
         description: 'Whether DB dump should be updated'
         required: false
@@ -114,6 +119,28 @@ jobs:
         run: |
           if [ -f "package.json" ]; then
             npm pkg set version=${{ inputs.version }}
+          fi
+
+      - name: Get version from ref
+        if: ${{ inputs.update_composer == true }}
+        uses: uniquesca/ci/get-version@main
+        with:
+          ref: ${{ inputs.github_ref }}
+
+      - name: Set Composer version in composer.json
+        if: ${{ inputs.update_composer == true }}
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+          echo "Setting version in composer.json to $VERSION"
+          
+          if jq -e '.version' composer.json > /dev/null; then
+          echo "Version found in composer.json. Updating version."
+          jq --arg version "$VERSION" '.version = $version' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
+          else
+          echo '"version" not found in composer.json. Adding version field'
+          jq --arg version "$VERSION" '. + {version: $version}' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
           fi
 
       - name: Update changelog file
