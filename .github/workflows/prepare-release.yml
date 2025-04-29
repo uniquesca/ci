@@ -116,6 +116,32 @@ jobs:
             npm pkg set version=${{ inputs.version }}
           fi
 
+      - name: Check if composer.json exists
+        id: check-composer
+        run: |
+          if [ -f "${{ inputs.working_directory }}/composer.json" ]; then
+            echo "composer.json file exists — will inject version."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set Composer version in composer.json
+        if: ${{ steps.check-composer.outputs.exists == 'true' }}
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        run: |
+          composer_version="${{ inputs.version }}"
+          echo "Setting version in composer.json to $composer_version"
+
+          if jq -e '.version' composer.json > /dev/null; then
+            echo "Version found in composer.json. Updating version."
+            jq --arg version "$composer_version" '.version = $version' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
+          else
+            echo '"version" not found in composer.json. Adding version field'
+            jq --arg version "$composer_version" '. + {version: $version}' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
+          fi
+
       - name: Update changelog file
         if: ${{ inputs.generate_changelog == true }}
         uses: uniquesca/ci/update-changelog@main
@@ -165,7 +191,11 @@ jobs:
           if [ -f "package.json" ]; then
             git add package.json
           fi
-          
+
+          if [ -f "composer.json" ]; then
+            git add composer.json
+          fi
+
           if ${{ inputs.update_db == true }}; then
             git add ${{ inputs.db_dump_path }}
           fi
