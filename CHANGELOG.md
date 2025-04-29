@@ -526,3 +526,7 @@
 ## v3.9.0
 
 * Update: prepare-release job now updated version in composer.json file (#14) (52b3619 by Poraich Troy)
+
+## v3.9.1
+
+* Fix: remove inputs.working_directory which is not passed into workflow and assume composer.json exists in the current path (#15) (d33f97e by Poraich Troy)
