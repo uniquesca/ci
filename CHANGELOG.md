@@ -522,3 +522,7 @@
 ## v3.8.2
 
 * Fix: removing default command for docker spin up action as it's supposed to be calculated (59e6fa7 by George Shestayev)
+
+## v3.9.0
+
+* Update: prepare-release job now updated version in composer.json file (#14) (52b3619 by Poraich Troy)
