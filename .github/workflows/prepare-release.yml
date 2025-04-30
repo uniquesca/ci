@@ -182,6 +182,7 @@ jobs:
           auto-start: true
 
       - name: Start MySQL and create a database
+        if: inputs.use_db || inputs.update_db
         shell: bash
         run: mysql -u root -proot --execute="CREATE DATABASE prepare_release;"
 
