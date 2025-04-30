@@ -199,7 +199,7 @@ jobs:
       - name: Run SQL
         if: inputs.update_db && inputs.sql_command
         run: |
-          mysql -u root -proot --execute="${{ inputs.sql_command }}"
+          mysql -u root -proot -D prepare_release --execute="${{ inputs.sql_command }}"
 
       - name: Export DB dump
         if: inputs.update_db

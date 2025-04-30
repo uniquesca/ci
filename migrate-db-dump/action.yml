@@ -49,7 +49,7 @@ runs:
     - name: Run SQL
       if: ${{ inputs.sql_command }}
       run: |
-        mysql -u root -proot --execute="${{ inputs.sql_command }}"
+        mysql -u root -proot -D mysql_migration_db --execute="${{ inputs.sql_command }}"
 
     - name: Export DB
       uses: uniquesca/ci/mysql-export@main
