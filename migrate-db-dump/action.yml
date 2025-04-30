@@ -7,6 +7,10 @@ inputs:
   migration_command:
     description: 'DB migration command'
     required: true
+  sql_command:
+    description: 'SQL to execute after migration - usually for cleanup purposes'
+    required: false
+    type: string
   env_variables:
     description: 'JSON string representing an object with environment variables to set up an environment'
     required: false
@@ -41,6 +45,11 @@ runs:
     - name: Run DB migration
       shell: bash
       run: ${{ inputs.migration_command }}
+
+    - name: Run SQL
+      if: ${{ inputs.sql_command }}
+      run: |
+        mysql -u root -proot --execute="${{ inputs.sql_command }}"
 
     - name: Export DB
       uses: uniquesca/ci/mysql-export@main

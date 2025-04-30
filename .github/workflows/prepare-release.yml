@@ -34,6 +34,10 @@ on:
         required: false
         default: false
         type: boolean
+      sql_command:
+        description: 'SQL to run before exporting DB - usually for cleanup'
+        required: false
+        type: string
       mysql_version:
         description: 'Version of MySQL to set up'
         required: false
@@ -102,8 +106,6 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.get-environment.outputs.env) }}
     runs-on: ${{ matrix.env.os }}
-    env:
-      npm: 0
     steps:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -194,6 +196,11 @@ jobs:
         if: inputs.use_db || inputs.update_db
         run: ${{ inputs.migration_command }}
 
+      - name: Run SQL
+        if: inputs.update_db && inputs.sql_command
+        run: |
+          mysql -u root -proot --execute="${{ inputs.sql_command }}"
+
       - name: Export DB dump
         if: inputs.update_db
         uses: uniquesca/ci/mysql-export@main
@@ -236,9 +243,10 @@ jobs:
           push_badge: false
 
       - name: Update package version
-        if: env.npm == 1
         run: |
-          npm pkg set version=${{ inputs.version }}
+          if [ -f "package.json" ]; then
+            npm pkg set version=${{ inputs.version }}
+          fi
 
       - name: Run additional release preparation comand
         run: ${{ inputs.post_cmd }}
