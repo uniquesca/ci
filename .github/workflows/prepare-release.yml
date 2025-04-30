@@ -129,6 +129,7 @@ jobs:
 
       - name: Check if composer.json exists
         id: check-composer
+        working-directory: ${{ github.workspace }}
         run: |
           if [ -f "composer.json" ]; then
             echo "composer.json file exists — will inject version."
@@ -211,7 +212,7 @@ jobs:
 
       - name: Set Composer version in composer.json
         if: ${{ steps.check-composer.outputs.exists == 'true' }}
-        working-directory: ${{ inputs.working_directory }}
+        working-directory: ${{ github.workspace }}
         shell: bash
         run: |
           composer_version="${{ inputs.version }}"
