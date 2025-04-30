@@ -80,7 +80,7 @@ on:
       generate_coverage_badge:
         description: 'Whether a unit test coverage badge needs to be generated and committed'
         required: false
-        default: true
+        default: false
         type: boolean
       coverage_badge_file:
         description: 'Path to a coverage badge file - ignored if `generate_coverage_badge` is not set to `true`'
@@ -273,7 +273,7 @@ jobs:
             git add CHANGELOG.md
           fi
           
-          if ${{ inputs.generate_coverage_badge == true }}; then
+          if ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}; then
             git add ${{ inputs.coverage_badge_file }}
           fi
           
