@@ -530,3 +530,9 @@
 ## v3.9.1
 
 * Fix: remove inputs.working_directory which is not passed into workflow and assume composer.json exists in the current path (#15) (d33f97e by Poraich Troy)
+
+## v3.10.0
+
+* BREAKING: removed prepare-pull-request job (8a64680 by George Shestayev)
+* New: added sql_command input for prepare-pr and migrate-db jobs (35f1608 by George Shestayev)
+* Update: prepare-release job now runs phpunit and generates coverage badge (8a64680 by George Shestayev)

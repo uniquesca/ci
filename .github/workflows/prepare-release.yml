@@ -24,11 +24,20 @@ on:
         required: false
         default: 'CHANGELOG.md'
         type: string
+      use_db:
+        description: 'Whether DB should be set up'
+        required: false
+        default: false
+        type: boolean
       update_db:
         description: 'Whether DB dump should be updated'
         required: false
         default: false
         type: boolean
+      sql_command:
+        description: 'SQL to run before exporting DB - usually for cleanup'
+        required: false
+        type: string
       mysql_version:
         description: 'Version of MySQL to set up'
         required: false
@@ -68,6 +77,16 @@ on:
         required: false
         default: '{}'
         type: string
+      generate_coverage_badge:
+        description: 'Whether a unit test coverage badge needs to be generated and committed'
+        required: false
+        default: false
+        type: boolean
+      coverage_badge_file:
+        description: 'Path to a coverage badge file - ignored if `generate_coverage_badge` is not set to `true`'
+        required: false
+        default: 'coverage.svg'
+        type: string
 
 jobs:
   get-environment:
@@ -87,8 +106,6 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.get-environment.outputs.env) }}
     runs-on: ${{ matrix.env.os }}
-    env:
-      npm: 0
     steps:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -110,12 +127,6 @@ jobs:
       - name: Run pre command
         run: ${{ inputs.pre_cmd }}
 
-      - name: Update package version
-        run: |
-          if [ -f "package.json" ]; then
-            npm pkg set version=${{ inputs.version }}
-          fi
-
       - name: Check if composer.json exists
         id: check-composer
         run: |
@@ -125,6 +136,78 @@ jobs:
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Check if we have PHPUnit
+        run: |
+          if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
+            echo "phpunit=1" >> $GITHUB_ENV
+          else
+            echo "No PHPUnit configuration file found, skipping tests."
+          fi
+
+      - name: Prepare environment variables
+        if: env.phpunit == 1
+        id: merge_environment_vars
+        uses: uniquesca/ci/merge-environment-variables@main
+        with:
+          variables1: ${{ inputs.env_variables }}
+          variables2: '{"db.name":"prepare_release","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
+
+      - name: Set up PHPUnit environment file
+        if: env.phpunit == 1
+        uses: uniquesca/ci/prepare-environment@main
+        with:
+          env_file: "phpunit.xml"
+          env_file_stub: "phpunit.xml.dist"
+          env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
+
+      - name: Set up default environment file
+        if: env.phpunit == 1
+        uses: uniquesca/ci/prepare-environment@main
+        with:
+          env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
+
+      - name: Install dependencies
+        uses: uniquesca/ci/install-packages@main
+        with:
+          access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+
+      - name: Set up MySQL
+        if: inputs.use_db || inputs.update_db
+        uses: shogo82148/actions-setup-mysql@v1
+        with:
+          mysql-version: ${{ inputs.mysql_version }}
+          my-cnf: ${{ inputs.mysql_config }}
+          root-password: 'root'
+          auto-start: true
+
+      - name: Start MySQL and create a database
+        if: inputs.use_db || inputs.update_db
+        shell: bash
+        run: mysql -u root -proot --execute="CREATE DATABASE prepare_release;"
+
+      - name: Import DB
+        if: inputs.use_db || inputs.update_db
+        uses: uniquesca/ci/mysql-import@main
+        with:
+          dump_file_path: ${{ inputs.db_dump_path }}
+          db_name: prepare_release
+
+      - name: Run DB migration
+        if: inputs.use_db || inputs.update_db
+        run: ${{ inputs.migration_command }}
+
+      - name: Run SQL
+        if: inputs.update_db && inputs.sql_command
+        run: |
+          mysql -u root -proot -D prepare_release --execute="${{ inputs.sql_command }}"
+
+      - name: Export DB dump
+        if: inputs.update_db
+        uses: uniquesca/ci/mysql-export@main
+        with:
+          dump_file_path: ${{ inputs.db_dump_path }}
+          db_name: prepare_release
 
       - name: Set Composer version in composer.json
         if: ${{ steps.check-composer.outputs.exists == 'true' }}
@@ -149,36 +232,22 @@ jobs:
           changelog_path: ${{ inputs.changelog_path }}
           target_version: ${{ inputs.version }}
 
-      - name: Set up MySQL
-        if: inputs.update_db == true
-        uses: shogo82148/actions-setup-mysql@v1
-        with:
-          mysql-version: ${{ inputs.mysql_version }}
-          my-cnf: ${{ inputs.mysql_config }}
-          root-password: 'root'
-          auto-start: true
+      - name: Run PHPUnit
+        if: env.phpunit == 1
+        run: php ./vendor/bin/phpunit --configuration phpunit.xml
 
-      - name: Migrate DB dump
-        if: ${{ inputs.update_db == true }}
-        uses: uniquesca/ci/migrate-db-dump@main
+      - name: Generate coverage badge
+        if: ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}
+        uses: timkrase/phpunit-coverage-badge@v1.2.1
         with:
-          db_dump_path: ${{ inputs.db_dump_path }}
-          migration_command: ${{ inputs.migration_command }}
-          env_variables: ${{ inputs.env_variables }}
-
-      - name: Debug DB dump
-        if: ${{ inputs.update_db == true }}
-        run: cat ${{ inputs.db_dump_path }}
-
-      - name: Install dependencies
-        uses: uniquesca/ci/install-packages@main
-        with:
-          access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+          coverage_badge_path: ${{ inputs.coverage_badge_file }}
+          push_badge: false
 
       - name: Update package version
-        if: env.npm == 1
         run: |
-          npm pkg set version=${{ inputs.version }}
+          if [ -f "package.json" ]; then
+            npm pkg set version=${{ inputs.version }}
+          fi
 
       - name: Run additional release preparation comand
         run: ${{ inputs.post_cmd }}
@@ -202,6 +271,10 @@ jobs:
           
           if ${{ inputs.generate_changelog == true }}; then
             git add CHANGELOG.md
+          fi
+          
+          if ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}; then
+            git add ${{ inputs.coverage_badge_file }}
           fi
           
           git clean -fd
