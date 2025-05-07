@@ -6,8 +6,8 @@ on:
       - '*'
 
 jobs:
-  docker-prod:
-    name: PROD
+  docker-build:
+    name: Build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -44,3 +44,4 @@ jobs:
           context: docker/php-dev/${{ matrix.php-version }}
           push: true
           tags: ghcr.io/uniquesca/php-dev:${{ matrix.php-version }}
+

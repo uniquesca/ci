@@ -107,13 +107,6 @@ jobs:
         env: ${{ fromJSON(needs.get-environment.outputs.env) }}
     runs-on: ${{ matrix.env.os }}
     steps:
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.env.php.version }}
-          extensions: ${{ matrix.env.php.extensions }}
-          ini-values: xdebug.mode="coverage"
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -166,6 +159,14 @@ jobs:
         uses: uniquesca/ci/prepare-environment@main
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
+
+      - name: Set up PHP
+        if: steps.check-composer.outputs.exists == 'true' || env.phpunit == 1
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.env.php.version }}
+          extensions: ${{ matrix.env.php.extensions }}
+          ini-values: xdebug.mode="coverage"
 
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@main
