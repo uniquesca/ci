@@ -19,7 +19,6 @@ RUN apk update && apk upgrade && \
       opcache \
       pdo_mysql \
       simplexml \
-      soap \
       sockets \
       tidy \
       xml \
