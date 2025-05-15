@@ -536,3 +536,11 @@
 * BREAKING: removed prepare-pull-request job (8a64680 by George Shestayev)
 * New: added sql_command input for prepare-pr and migrate-db jobs (35f1608 by George Shestayev)
 * Update: prepare-release job now runs phpunit and generates coverage badge (8a64680 by George Shestayev)
+
+## v3.11.0
+
+* BREAKING: composer_update, composer_install_cmd and composer_update_cmd inputs are replaced by composer_cmd in install-packages job (f8dd17a by George Shestayev)
+* New: added composer_lock input to install-packages job allowing to use non-default lock file when installing packages (f8dd17a by George Shestayev)
+* Update: improved qa-checks job to use alternative lock files when on an alternative (non-locked) php version (f8dd17a by George Shestayev)
+* Update: setting up PHP in prepare-release only if necessary (f9baba2 by George Shestayev)
+* Update: removing SOAP PHP extension from base Docker images (f9baba2 by George Shestayev)
