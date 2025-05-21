@@ -544,3 +544,7 @@
 * Update: improved qa-checks job to use alternative lock files when on an alternative (non-locked) php version (f8dd17a by George Shestayev)
 * Update: setting up PHP in prepare-release only if necessary (f9baba2 by George Shestayev)
 * Update: removing SOAP PHP extension from base Docker images (f9baba2 by George Shestayev)
+
+## v3.11.1
+
+* Fix: fixed SQL command execution step not having shell specified in migrate-db-dump job (22e460b by George Shestayev)

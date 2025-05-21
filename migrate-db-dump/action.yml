@@ -48,6 +48,7 @@ runs:
 
     - name: Run SQL
       if: ${{ inputs.sql_command }}
+      shell: bash
       run: |
         mysql -u root -proot -D mysql_migration_db --execute="${{ inputs.sql_command }}"
 
