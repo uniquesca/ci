@@ -11,17 +11,14 @@ ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/do
 RUN apk update && apk upgrade && \
     set -eux; \
 	chmod +x /usr/local/bin/install-php-extensions && install-php-extensions \
-      dom \
       gettext \
       gd \
       imagick \
       intl \
       opcache \
       pdo_mysql \
-      simplexml \
       sockets \
       tidy \
-      xml \
       zip \
 	;
 
