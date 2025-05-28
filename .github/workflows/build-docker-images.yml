@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - '*'
+    branches:
+      - 'feature/php-versions'
 
 jobs:
   docker-build:
@@ -12,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: [ 5.6, 8.1, 8.2 ]
+        php-version: [ 5.6, 8.1, 8.2, 8.3, 8.4 ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
