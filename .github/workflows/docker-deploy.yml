@@ -140,11 +140,15 @@ jobs:
               fi
             fi
             
-            echo "Running migrations"
-            ./task.sh migrate
+            if ./task.sh supports migrate > /dev/null; then
+              echo "Running migrations"
+              ./task.sh migrate
+            fi
 
-            echo "Clearing cache"
-            ./task.sh clear-cache
+            if ./task.sh supports clear-cache > /dev/null; then
+              echo "Clearing cache"
+              ./task.sh clear-cache
+            fi
             
             echo "Executing post-deployment command"
             ${{ inputs.post_cmd }}
