@@ -6,5 +6,3 @@ RUN apk update && apk upgrade && \
 	chmod +x /usr/local/bin/install-php-extensions && install-php-extensions \
       xdebug \
 	;
-
-RUN apt-get update && apt-get install msmtp msmtp-mta -y
