@@ -91,8 +91,8 @@ app="$docker_compose exec --tty -u $(id -u):$(id -g) $app_service"
 # whatever your application supports.                                              #
 ####################################################################################
 
-commands=("build" "up" "down" "restart" "connect" "exec" "bash" "composer" "yarn" \
-  "officio" "phinx" "migrate" "cs-check" "cs-fix" "psalm" "test" "clear-cache")
+commands=("build" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
+  "officio" "yarn" "phinx" "migrate" "cs-check" "cs-fix" "psalm" "test" "clear-cache")
 
 
 # Function to check if a value is in the commands list
@@ -161,6 +161,12 @@ if [ "$1" == "restart" ]; then
   exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose restart $*"
 fi
 
+# docker compose logs
+if [ "$1" == "logs" ]; then
+  shift
+  exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose logs $*"
+fi
+
 # Enter the app container
 if [ "$1" == "connect" ]; then
   exec env UID=$(id -u) GID=$(id -g) bash -c "$app bash"
@@ -188,12 +194,6 @@ fi
 if [ "$1" == "yarn" ]; then
   shift
   exec env UID=$(id -u) GID=$(id -g) bash -c "$app bash -c '. \$NVM_DIR/nvm.sh && nvm use default && yarn $*'"
-fi
-
-# Execute officio.phar commands in the app container
-if [ "$1" == "officio" ]; then
-  shift
-  exec env UID=$(id -u) GID=$(id -g) bash -c "$app php officio.phar $*"
 fi
 
 # Phinx for DB migrations
@@ -232,7 +232,7 @@ fi
 
 # Cache clear
 if [ "$1" == "clear-cache" ]; then
-    exec bash -c 'rm var/cache/* -rf && rm public/cache/* -rf && echo "OK"'
+    exec bash -c '(rm data/cache/* -rf && echo "OK")'
 fi
 
 echo "No command found with given name: $1"
