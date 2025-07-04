@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 
+### BOOTSTRAP CODE #################################################################
+# There is usually no need to modify this                                          #
+####################################################################################
+script_path="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+infrastructure_path="$script_path"
+
+# require default env file
+env_file="$infrastructure_path/.env"
+if test -f "$env_file"; then
+  source $env_file
+fi
+
 ### INTEGRATION CONFIGURATION ######################################################
 # Things that HAVE to be configured when integration task.sh with your application #
 ####################################################################################
@@ -30,15 +42,6 @@ behind_proxy="${BEHIND_PROXY:-1}"
 # section. Make sure to scroll down and adjust your commands  depending on what    #
 # is available in your application                                                 #
 ####################################################################################
-
-script_path="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-infrastructure_path="$script_path"
-
-# require default env file
-env_file="$infrastructure_path/.env"
-if test -f "$env_file"; then
-  source $env_file
-fi
 
 if [ "$behind_proxy" == 1 ]; then
   vhost_filename="vhost.conf"
