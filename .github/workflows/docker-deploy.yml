@@ -119,12 +119,15 @@ jobs:
             echo "Starting Docker Services"
             ./task.sh up -d ${{ inputs.docker_up_args }}
             
+            rm -f auth.json
             if [ -f "composer.json" ]; then
               echo "Installing composer dependencies"
               ./task.sh composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
               ./task.sh composer install --no-dev
             fi
+            rm -f auth.json
             
+            rm -f .npmrc
             if [ -f "package.json" ]; then
               echo "Preparing .npmrc file"
               echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
@@ -139,6 +142,7 @@ jobs:
                 ./task.sh npm install
               fi
             fi
+            rm -f .npmrc
             
             if ./task.sh supports migrate > /dev/null; then
               echo "Running migrations"

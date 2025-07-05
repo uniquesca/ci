@@ -101,6 +101,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       if: steps.composer.outputs.detected == 1 && inputs.composer_cmd != ''
       run: |
+        rm -f auth.json
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
         echo "Installing dependencies via Composer using command: ${{ steps.vars.outputs.composer_cmd }}"
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
@@ -114,6 +115,7 @@ runs:
           rm composer.lock
           mv composer.lock_ composer.lock
         fi
+        rm -f auth.json
 
     - name: Check if we have NPM or Yarn to install
       working-directory: ${{ inputs.working_directory }}
@@ -138,6 +140,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       if: steps.npm_yarn.outputs.npm == 1 || steps.npm_yarn.outputs.yarn == 1
       run: |
+        rm -f .npmrc
         echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
         echo "//npm.pkg.github.com/:_authToken=${{ inputs.access_token }}" >> .npmrc
 
@@ -206,3 +209,10 @@ runs:
         fi
         echo "Installing dependencies via Yarn using command: ${{ steps.vars.outputs.yarn_install_cmd }}"
         ${{ steps.vars.outputs.yarn_install_cmd }}
+
+    - name: Remove .npmrc file
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      if: steps.npm_yarn.outputs.npm == 1 || steps.npm_yarn.outputs.yarn == 1
+      run: |
+        rm -f .npmrc
