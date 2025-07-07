@@ -117,6 +117,7 @@ jobs:
               fi
             fi
             
+            rm -f auth.json
             if [ -f "composer.json" ]; then
               echo "Installing composer dependencies"
               if [ ! -f "composer.phar" ]; then
@@ -130,7 +131,9 @@ jobs:
               php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
               php composer.phar install --no-dev
             fi
+            rm -f auth.json
             
+            rm -f .npmrc
             if [ -f "package.json" ]; then
               echo "Preparing .npmrc file"
               echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
@@ -173,6 +176,7 @@ jobs:
                 yarn install
               fi
             fi
+            rm -f .npmrc
 
             if [ -f "vendor/bin/phinx" ]; then
               echo "Executing Phinx migrations"
