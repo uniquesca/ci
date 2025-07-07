@@ -1,4 +1,4 @@
-FROM ghcr.io/uniquesca/php-demo:8.2 AS php-apache
+FROM ghcr.io/uniquesca/php-demo:8.4 AS php-apache
 
 # Add xdebug
 RUN apk update && apk upgrade && \
