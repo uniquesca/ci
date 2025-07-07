@@ -554,4 +554,6 @@
 * BREAKING: CI now cleans up .npmrc and auth.json files after installing dependencies to avoid personal tokens exposure (6b97d50 by George Shestayev)
 * BREAKING: use task.sh supports ability to check if migration and cache clearing are necessary during autodeployment (c012097 by George Shestayev)
 * New: added task.sh file stub (712bfca by George Shestayev)
+* New: added Docker images for php8.3 and php8.4 (9f535aab by George Shestayev)
+* Update: added mapping for XDEBUG_DEMO env variable (9f535aab by George Shestayev)
 * Update: removing msmtp from Docker images (712bfca by George Shestayev)
