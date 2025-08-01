@@ -96,6 +96,7 @@ jobs:
       env: ${{ steps.env.outputs.env }}
     steps:
       - uses: actions/checkout@v4
+
       - id: env
         uses: uniquesca/ci/get-default-ci-environment@main
 

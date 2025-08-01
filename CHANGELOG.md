@@ -557,3 +557,8 @@
 * New: added Docker images for php8.3 and php8.4 (9f535aab by George Shestayev)
 * Update: added mapping for XDEBUG_DEMO env variable (9f535aab by George Shestayev)
 * Update: removing msmtp from Docker images (712bfca by George Shestayev)
+
+## v3.13.0
+
+* Update: added cron to the docker images (6c8b3cc by George Shestayev)
+* Update: cache in install-packages now take composer.json and package.json files into key generation to accommodate libraries (6c8b3cc by George Shestayev)
