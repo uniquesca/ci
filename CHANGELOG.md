@@ -567,3 +567,7 @@
 
 * Fix: fixed the issue with composer cache dir in install-packages CI (b7d52be by George Shestayev)
 * Update: improved the process of determining cache key for install-packages CI (b7d52be by George Shestayev)
+
+## v3.14.2
+
+* Fix: fixed missing working directory property in install-package CI job (b62e501 by George Shestayev)
