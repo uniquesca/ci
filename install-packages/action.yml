@@ -89,6 +89,7 @@ runs:
     - name: Composer cache key
       if: steps.composer.outputs.detected == 1 && steps.composer_cache_dir.outputs.path
       id: composer_cache_key_file
+      shell: bash
       run: |
         if [[ -f "composer.lock" ]]; then
           echo "file=composer.lock" >> $GITHUB_OUTPUT
@@ -169,6 +170,7 @@ runs:
     - name: NPM cache key
       if: steps.npm_yarn.outputs.npm == 1 && steps.npm_cache_dir.outputs.path
       id: npm_cache_key_file
+      shell: bash
       run: |
         if [[ -f "package-lock.json" ]]; then
           echo "file=package-lock.json" >> $GITHUB_OUTPUT
@@ -210,6 +212,7 @@ runs:
     - name: Yarn cache key
       if: steps.npm_yarn.outputs.yarn == 1 && steps.yarn_cache_dir.outputs.path
       id: yarn_cache_key_file
+      shell: bash
       run: |
         if [[ -f "yarn.lock" ]]; then
           echo "file=yarn.lock" >> $GITHUB_OUTPUT
