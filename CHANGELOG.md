@@ -562,3 +562,8 @@
 
 * Update: added cron to the docker images (6c8b3cc by George Shestayev)
 * Update: cache in install-packages now take composer.json and package.json files into key generation to accommodate libraries (6c8b3cc by George Shestayev)
+
+## v3.14.0
+
+* Fix: fixed the issue with composer cache dir in install-packages CI (b7d52be by George Shestayev)
+* Update: improved the process of determining cache key for install-packages CI (b7d52be by George Shestayev)
