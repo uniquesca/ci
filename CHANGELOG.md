@@ -577,3 +577,7 @@
 * New: added supercronic to all docker images (934ab66 by George Shestayev)
 * Update: rework Docker image structure to improve caching and speed up the building time
 * Update: added `ll` alias for `ls -al` command
+
+## v3.15.1
+
+* Fix: fixed docker image build settings (89cac1b by George Shestayev)
