@@ -1,14 +1,21 @@
 FROM php:8.1-apache AS php-apache
 
-# Replace sh with bash
-RUN rm /bin/sh && ln -s /bin/bash /bin/sh
-
-# Apache config
-RUN a2enmod ssl rewrite headers
-
-# PHP config
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
-RUN apk update && apk upgrade && \
+ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
+
+ENV COMPOSER_HOME=/.composer/
+ENV NVM_DIR=/usr/local/nvm
+ENV YARN_CACHE_FOLDER=/yarn/cache/
+
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint
+
+RUN \
+    # Replace sh with bash \
+    rm /bin/sh && ln -s /bin/bash /bin/sh \
+    # Apache config \
+    a2enmod ssl rewrite headers \
+    # PHP config \
+    apk update && apk upgrade && \
     set -eux; \
 	chmod +x /usr/local/bin/install-php-extensions && install-php-extensions \
       dom \
@@ -23,25 +30,19 @@ RUN apk update && apk upgrade && \
       tidy \
       xml \
       zip \
-	;
-
-# Additional software
-RUN apt-get update && apt-get install default-mysql-client jq zip git nano cron -y
-
-# Set up Composer
-ENV COMPOSER_HOME=/.composer/
-RUN mkdir -p $COMPOSER_HOME \
-    && chmod 777 $COMPOSER_HOME -Rf
-
-# Set up Yarn
-ENV NVM_DIR=/usr/local/nvm
-ENV YARN_CACHE_FOLDER=/yarn/cache/
-# TODO See if we want more persistent cache for Yarn
-RUN mkdir -p $YARN_CACHE_FOLDER \
+    # Additional software \
+    apt-get update && apt-get install default-mysql-client jq zip git nano -y \
+    # Set up Composer \
+    mkdir -p $COMPOSER_HOME \
+    && chmod 777 $COMPOSER_HOME -Rf \
+    # Set up Yarn \
+    # TODO See if we want more persistent cache for Yarn \
+    mkdir -p $YARN_CACHE_FOLDER \
     && chmod 777 $YARN_CACHE_FOLDER -Rf \
     && touch /.yarnrc \
-    && chmod 666 /.yarnrc
-RUN mkdir -p $NVM_DIR \
+    && chmod 666 /.yarnrc \
+    # Set up npm \
+    mkdir -p $NVM_DIR \
     && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
     && . $NVM_DIR/nvm.sh \
     && nvm install 20 \
@@ -49,7 +50,15 @@ RUN mkdir -p $NVM_DIR \
     && nvm use default \
     && npm install -g yarn \
     && mkdir /.npm -p \
-    && chmod 777 /.npm -Rf
+    && chmod 777 /.npm -Rf \
+    # Add cron (supercronic) and an entrypoint \
+    chmod +x /usr/local/bin/entrypoint \
+    chmod +x /usr/local/bin/supercronic \
+    # Add 'll' alias to bash profile for all users \
+    echo "alias ll='ls -al'" >> /etc/bash.bashrc
+
+ENTRYPOINT ["entrypoint"]
+CMD ["apache2-foreground"]
 
 # Final touch
 EXPOSE 80 443
