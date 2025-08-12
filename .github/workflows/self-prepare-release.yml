@@ -14,6 +14,6 @@ jobs:
     needs: version
     uses: ./.github/workflows/prepare-release.yml
     secrets:
-      UNIQUES_GITHUB_ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      UNIQUES_GITHUB_ACCESS_TOKEN: ${{ secrets.GHA_PUBLIC_ACCESS_TOKEN }}
     with:
       version: ${{ needs.version.outputs.version }}

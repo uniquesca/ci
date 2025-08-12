@@ -15,4 +15,4 @@ jobs:
       - uses: uniquesca/ci/publish-github-release@main
         with:
           release_version: ${{ steps.get_version.outputs.version }}
-          repo_token: ${{ secrets.PUBLIC_ACCESS_TOKEN }}
+          repo_token: ${{ secrets.GHA_PUBLIC_ACCESS_TOKEN }}
