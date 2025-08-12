@@ -41,7 +41,7 @@ jobs:
       - name: Build and push DEV Docker image
         uses: docker/build-push-action@v6
         with:
-          context: docker/php-dev/${{ matrix.php-version }}
+          file: docker/php-dev/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-dev:${{ matrix.php-version }}
 
