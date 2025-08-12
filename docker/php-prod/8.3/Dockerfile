@@ -53,7 +53,9 @@ RUN \
     && chmod 777 /.npm -Rf \
     # Add cron (supercronic) and an entrypoint \
     chmod +x /usr/local/bin/entrypoint \
-    chmod +x /usr/local/bin/supercronic
+    chmod +x /usr/local/bin/supercronic\
+    # Add 'll' alias to bash profile for all users \
+    echo "alias ll='ls -al'" >> /etc/bash.bashrc
 
 ENTRYPOINT ["entrypoint"]
 CMD ["apache2-foreground"]
