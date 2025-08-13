@@ -8,6 +8,7 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/
 ENV YARN_CACHE_FOLDER=/yarn/cache/
+ENV INSTALL_PHP_EXTENSIONS_NO_DEPS=1
 
 RUN \
     set -eux; \
@@ -15,17 +16,39 @@ RUN \
     # Replace sh with bash \
     rm /bin/sh && ln -s /bin/bash /bin/sh; \
     \
+    # Upgrade everything and install additional tools\
+    apt-get update && apt-get upgrade -y && apt-get install -y \
+      default-mysql-client  \
+      jq  \
+      zip  \
+      git  \
+      nano \
+      libfreetype6 \
+      libjpeg62-turbo \
+      libpng-dev \
+      libxpm4 \
+      libwebp-dev \
+      libavif-dev \
+      libaom-dev \
+      libdav1d-dev \
+      libmagickwand-dev \
+      libmagickcore-dev \
+      libicu-dev \
+      libtidy-dev \
+      libzip-dev \
+      libmbedtls-dev \
+      && pecl install imagick \
+      && docker-php-ext-enable imagick; \
+    \
     # Apache config \
     a2enmod ssl rewrite headers; \
     \
     # PHP config \
-    apk update && apk upgrade -y \
-	&& chmod +x /usr/local/bin/install-php-extensions \
+	chmod +x /usr/local/bin/install-php-extensions \
     && install-php-extensions \
       dom \
       gettext \
       gd \
-      imagick \
       intl \
       opcache \
       pdo_mysql \
@@ -34,9 +57,6 @@ RUN \
       tidy \
       xml \
       zip; \
-    \
-    # Additional software \
-    apt-get update && apt-get install default-mysql-client jq zip git nano -y; \
     \
     # Add cron (supercronic) and an entrypoint \
     chmod +x /usr/local/bin/entrypoint; \
