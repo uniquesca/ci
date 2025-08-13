@@ -27,14 +27,14 @@ jobs:
       - name: Build and push PROD Docker image
         uses: docker/build-push-action@v6
         with:
-          context: docker/php-prod/${{ matrix.php-version }}
+          file: docker/php-prod/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-prod:${{ matrix.php-version }}
 
       - name: Build and push DEMO Docker image
         uses: docker/build-push-action@v6
         with:
-          context: docker/php-demo/${{ matrix.php-version }}
+          file: docker/php-demo/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-demo:${{ matrix.php-version }}
 
