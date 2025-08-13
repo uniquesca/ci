@@ -581,3 +581,7 @@
 ## v3.15.1
 
 * Fix: fixed docker image build settings (89cac1b by George Shestayev)
+
+## v3.15.2
+
+* Fix: fixed docker image builds (63fc359 by George Shestayev)
