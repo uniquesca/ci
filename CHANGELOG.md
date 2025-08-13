@@ -589,3 +589,7 @@
 ## v3.15.3
 
 * Fix: fixed docker image builds (4d7cef9 by George Shestayev)
+
+## v3.15.4
+
+* Fix: fixed docker image builds (17a3a35 by George Shestayev)
