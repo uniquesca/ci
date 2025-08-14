@@ -3,7 +3,7 @@ FROM php:8.3-apache AS php-apache
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
 
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint
+COPY src/entrypoint.sh /usr/local/bin/entrypoint
 
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/
