@@ -94,7 +94,7 @@ app="$docker_compose exec --tty -u $(id -u):$(id -g) $app_service"
 # whatever your application supports.                                              #
 ####################################################################################
 
-commands=("build" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
+commands=("build" "pull" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
   "officio" "yarn" "phinx" "migrate" "cs-check" "cs-fix" "psalm" "test" "clear-cache")
 
 
@@ -144,6 +144,12 @@ echo " ⏩  Running command: $1"
 if [ "$1" == "build" ]; then
   shift
   exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose build $*"
+fi
+
+# docker compose pull
+if [ "$1" == "pull" ]; then
+  shift
+  exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose pull $*"
 fi
 
 # docker compose up

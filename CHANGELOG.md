@@ -593,3 +593,9 @@
 ## v3.15.4
 
 * Fix: fixed docker image builds (17a3a35 by George Shestayev)
+
+## v3.16.0
+
+* New: introduce mode for docker deployments, so we can either rebuild or pull or do nothing (210ff61 by George Shestayev)
+* New: added task.sh pull command (a2363ebe by George Shestayev)
+* Update: minor improvements to task.sh default code (210ff61 by George Shestayev)
