@@ -599,3 +599,7 @@
 * New: introduce mode for docker deployments, so we can either rebuild or pull or do nothing (210ff61 by George Shestayev)
 * New: added task.sh pull command (a2363ebe by George Shestayev)
 * Update: minor improvements to task.sh default code (210ff61 by George Shestayev)
+
+## v3.16.1
+
+* Fix: fixed docker entrypoint to run crontab AND apache foreground, also check for crontab to be present (6dd5fb5 by George Shestayev)
