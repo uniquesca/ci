@@ -94,7 +94,7 @@ app="$docker_compose exec --tty -u $(id -u):$(id -g) $app_service"
 # whatever your application supports.                                              #
 ####################################################################################
 
-commands=("build" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
+commands=("build" "pull" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
   "officio" "yarn" "phinx" "migrate" "cs-check" "cs-fix" "psalm" "test" "clear-cache")
 
 
@@ -111,39 +111,45 @@ is_supported() {
 
 # Check if $1 is provided
 if [[ -z "$1" ]]; then
-  echo "❌ No command provided. Supported commands: ${commands[*]}"
+  echo " ❌  No command provided. Supported commands: ${commands[*]}"
   exit 1
 fi
 
 # This provides an ability to check if a command is supported or not
 if [ "$1" == "supports" ]; then
   if [[ -z "$2" ]]; then
-    echo "❌ No command specified to check."
+    echo " ❌  No command specified to check."
     exit 1
   fi
   if is_supported "$2"; then
-    echo "✅ Command '$2' is supported."
+    echo " ✅  Command '$2' is supported."
     exit 0
   else
-    echo "❌ Command '$2' is NOT supported."
+    echo " ❌  Command '$2' is NOT supported."
     exit 1
   fi
 fi
 
 # Check if $1 is in the list
 if ! is_supported "$1"; then
-  echo "❌ Command '$1' is not supported."
-  echo "✅ Supported commands are: ${commands[*]}"
+  echo " ❌  Command '$1' is not supported."
+  echo " ✅  Supported commands are: ${commands[*]}"
   exit 1
 fi
 
 # If valid, proceed
-echo "✅ Running command: $1"
+echo " ⏩  Running command: $1"
 
 # docker compose build
 if [ "$1" == "build" ]; then
   shift
   exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose build $*"
+fi
+
+# docker compose pull
+if [ "$1" == "pull" ]; then
+  shift
+  exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose pull $*"
 fi
 
 # docker compose up
@@ -235,7 +241,7 @@ fi
 
 # Cache clear
 if [ "$1" == "clear-cache" ]; then
-    exec bash -c '(rm data/cache/* -rf && echo "OK")'
+    exec bash -c ":"
 fi
 
 echo "No command found with given name: $1"
