@@ -146,6 +146,12 @@ if [ "$1" == "build" ]; then
   exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose build $*"
 fi
 
+# docker compose pull
+if [ "$1" == "pull" ]; then
+  shift
+  exec env UID=$(id -u) GID=$(id -g) bash -c "$docker_compose pull $*"
+fi
+
 # docker compose up
 if [ "$1" == "up" ]; then
   shift
