@@ -94,7 +94,7 @@ app="$docker_compose exec --tty -u $(id -u):$(id -g) $app_service"
 # whatever your application supports.                                              #
 ####################################################################################
 
-commands=("build" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
+commands=("build" "pull" "up" "down" "restart" "logs" "connect" "exec" "bash" "composer" \
   "officio" "yarn" "phinx" "migrate" "cs-check" "cs-fix" "psalm" "test" "clear-cache")
 
 
