@@ -1,4 +1,4 @@
-FROM php:8.2-apache AS php-apache
+FROM php:8.2-apache-bookworm AS php-apache
 
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
@@ -22,23 +22,7 @@ RUN \
       jq  \
       zip  \
       git  \
-      nano \
-      libfreetype6 \
-      libjpeg62-turbo \
-      libpng-dev \
-      libxpm4 \
-      libwebp-dev \
-      libavif-dev \
-      libaom-dev \
-      libdav1d-dev \
-      libmagickwand-dev \
-      libmagickcore-dev \
-      libicu-dev \
-      libtidy-dev \
-      libzip-dev \
-      libmbedtls-dev \
-      && pecl install imagick \
-      && docker-php-ext-enable imagick; \
+      nano; \
     \
     # Apache config \
     a2enmod ssl rewrite headers; \
@@ -49,6 +33,7 @@ RUN \
       dom \
       gettext \
       gd \
+      imagick \
       intl \
       opcache \
       pdo_mysql \
