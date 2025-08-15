@@ -606,5 +606,9 @@
 
 ## v3.16.2
 
-*All the thanges in this version are insignificant and are
-probably limited to code quality or infrastructure changes.*
+* All the thanges in this version are insignificant and are
+* probably limited to code quality or infrastructure changes.*
+
+## v3.16.3
+
+* Fix: fixing base image versions to avoid Debian Trixie as it causes issues with PHP imagick and imap extensions (0b60773 by George Shestayev)
