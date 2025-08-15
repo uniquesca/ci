@@ -603,3 +603,8 @@
 ## v3.16.1
 
 * Fix: fixed docker entrypoint to run crontab AND apache foreground, also check for crontab to be present (6dd5fb5 by George Shestayev)
+
+## v3.16.2
+
+*All the thanges in this version are insignificant and are
+probably limited to code quality or infrastructure changes.*
