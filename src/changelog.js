@@ -188,9 +188,9 @@ export function generateChangelog(gitPath, fromTag, toTag) {
         core.debug(gitLog);
         core.debug('=====================================');
         if (!gitLog.length) {
-            gitLog = '*All the thanges in this version are ' +
+            gitLog = '*All the changes in this version are ' +
                 'insignificant and are\nprobably limited to ' +
-                'code quality or infrastructure changes.*'
+                'code quality or infrastructure.*'
         }
     }
     return gitLog;
