@@ -28,7 +28,10 @@ jobs:
           elif [[ "$ref" =~ ^refs/heads/hotfix/[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             version="${ref#refs/heads/hotfix/}"
             echo "version=$version" >> "$GITHUB_OUTPUT"
-          else 
+          elif [[ "$ref" =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            version="${ref#refs/tags/}"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
             echo "Unable to determine version from $ref"
             exit 2
           fi
