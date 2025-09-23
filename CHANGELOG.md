@@ -615,5 +615,9 @@
 
 ## v3.17.0
 
-*All the changes in this version are insignificant and are
-probably limited to code quality or infrastructure.*
+* All the changes in this version are insignificant and are
+* probably limited to code quality or infrastructure.*
+
+## v3.18.0
+
+* Update: improved get-version CI job to support tags (8869198 by George Shestayev)
