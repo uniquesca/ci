@@ -185,9 +185,9 @@ jobs:
       - name: Run Psalm
         run: |
           if [[ -f "psalm.xml" ]]; then
-            ./vendor/bin/psalm --show-info=true
+            ./vendor/bin/psalm
           elif [[ -f "psalm.xml.dist" ]]; then
-            ./vendor/bin/psalm --config=psalm.xml.dist --show-info=true
+            ./vendor/bin/psalm --config=psalm.xml.dist
           else
             echo "No Psalm configuration file found, skipping code check."
           fi
