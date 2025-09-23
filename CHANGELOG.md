@@ -612,3 +612,8 @@
 ## v3.16.3
 
 * Fix: fixing base image versions to avoid Debian Trixie as it causes issues with PHP imagick and imap extensions (0b60773 by George Shestayev)
+
+## v3.17.0
+
+*All the changes in this version are insignificant and are
+probably limited to code quality or infrastructure.*
