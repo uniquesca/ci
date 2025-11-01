@@ -92,7 +92,7 @@ runs:
       uses: cuchi/jinja2-action@v1.3.0
       with:
         template: ${{ steps.env_file_stub.outputs.env_file_stub }}
-        output_file: ${{ steps.env_file.outputs.env_file_stub }}
+        output_file: ${{ steps.env_file.outputs.env_file }}
         data_file: __variables.json
         data_format: json
 
