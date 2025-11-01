@@ -103,6 +103,17 @@ runs:
           echo "$VARIABLES" | jq '.' > __variables.json
         fi
         
+        # Convert dot notation to nested objects
+        echo "✅ Converting dot notation to nested objects..."
+        RESULT=$(echo "$RESULT" | jq '
+          reduce (to_entries[] | select(.key | contains("."))) as $item (
+            .;
+            ($item.key | split(".")) as $path |
+            setpath($path; $item.value) |
+            del(.[$item.key])
+          )
+        ')
+        
         echo "$RESULT" | jq '.'
         echo "$RESULT" > __variables.json
 
