@@ -17,10 +17,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Get default environment
-      id: env
-      uses: uniquesca/ci/get-default-ci-environment@main
-
     - name: Get env file stub path
       id: env_file_stub
       shell: bash
@@ -81,12 +77,42 @@ runs:
         # Also set as output
         echo "env_file=$ENV_FILE" >> $GITHUB_OUTPUT
 
-    - name: Write down variables into a file
+    - name: Prepare variables - optional remapping
       shell: bash
       run: |
-        cat << 'EOF' > __variables.json
-          ${{ inputs.env_variables }}
-        EOF
+        VARIABLES='${{ inputs.env_variables }}'
+    
+        # Validate variables input
+        echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
+    
+        # Try to read token_mappings
+        if [ -f "_ci_environment.json" ]; then
+          MAPPINGS=$(jq '.token_mappings // null' _ci_environment.json 2>/dev/null)
+        else
+          MAPPINGS="null"
+        fi
+    
+        if [ "$MAPPINGS" != "null" ]; then
+          echo "✅ Applying token mappings..."
+          jq -n \
+            --argjson mappings "$MAPPINGS" \
+            --argjson variables "$VARIABLES" \
+            '
+            $variables |
+            reduce ($mappings | to_entries[]) as $mapping (
+              .;
+              if has($mapping.key) then
+              .[$mapping.value] = .[$mapping.key] |
+              del(.[$mapping.key])
+            else
+              .
+            end
+          )
+          ' > __variables.json
+        else
+          echo "ℹ️ No token mappings, using env_variables as-is"
+          echo "$VARIABLES" | jq '.' > __variables.json
+        fi
 
     - name: Process config with Jinja2
       uses: cuchi/jinja2-action@v1.3.0
