@@ -95,9 +95,9 @@ runs:
         if [ "$MAPPINGS" != "null" ]; then
           echo "✅ Applying token mappings..."
           RESULT=$(jq -n \
-          --argjson mappings "$MAPPINGS" \
-          --argjson variables "$VARIABLES" \
-          '$variables | reduce ($mappings | to_entries[]) as $m (.; if has($m.key) then .[$m.value] = .[$m.key] | del(.[$m.key]) else . end)')
+            --argjson mappings "$MAPPINGS" \
+            --argjson variables "$VARIABLES" \
+            '$variables | reduce ($mappings | to_entries[]) as $m (.; if has($m.value) then .[$m.key] = .[$m.value] else . end)')
         else
           echo "ℹ️ No token mappings, using env_variables as-is"
           echo "$VARIABLES" | jq '.' > __variables.json
