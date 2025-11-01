@@ -4,6 +4,8 @@ import process from "process";
 import {CiEnvironment} from "../src/classes/CiEnvironment.js";
 import {CiEnvVariableMapper} from "../src/classes/CiEnvVariableMapper.js";
 
+// IMPORTANT: THIS IS RETIRED AND JINJA2 IS USED INSTEAD
+
 let workingDir = core.getInput('working_directory');
 if (workingDir) {
     process.chdir(workingDir);
@@ -18,7 +20,7 @@ if (!config || config == '') {
     config = env.env_file;
 }
 if (!config || config == '') {
-    core.info("Environment file not found, exiting.");
+
     process.exit();
 }
 
