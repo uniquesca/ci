@@ -23,6 +23,7 @@ runs:
 
     - name: Get env file stub path
       id: env_file_stub
+      shell: bash
       run: |
         ENV_FILE_STUB="${{ inputs.env_file_stub }}"
     
@@ -52,6 +53,7 @@ runs:
 
     - name: Get env file path
       id: env_file
+      shell: bash
       run: |
         ENV_FILE="${{ inputs.env_file }}"
         
@@ -80,6 +82,7 @@ runs:
         echo "env_file=$ENV_FILE" >> $GITHUB_OUTPUT
 
     - name: Write down variables into a file
+      shell: bash
       run: |
         cat << 'EOF' > __variables.json
           ${{ inputs.env_variables }}
@@ -95,4 +98,5 @@ runs:
 
     - name: Cleanup variables
       if: always()
+      shell: bash
       run: rm __variables.json
