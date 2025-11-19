@@ -228,6 +228,7 @@ runs:
 
     - name: Remove Yarn lock (hack)
       if: inputs.remove_yarn_lock_hack == 'true'
+      shell: bash
       run: |
         # This is a hack because otherwise Yarn can't just download private packages =/
         if [ -f "yarn.lock" ]; then
