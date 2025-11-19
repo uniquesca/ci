@@ -625,3 +625,7 @@
 ## v3.19.0
 
 * Update: added remove_yarn_lock_hack input to install-packages job (bb891f6 by George Shestayev)
+
+## v3.19.1
+
+* Fix: fixed issue with missing shell in the new step in the install-packages job (1c1d678e by George Shestayev)
