@@ -44,6 +44,10 @@ inputs:
     description: 'Command to install Yarn'
     required: false
     default: "yarn install --production=false"
+  remove_yarn_lock_hack:
+    description: 'Hack to remove yarn lock file before yarn install'
+    required: false
+    default: true
   cache_key:
     description: 'Cache key fraction to add to make cache unique'
     required: false
@@ -52,16 +56,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Set up variables
-      id: vars
-      shell: bash
-      run: |
-        echo "composer_cache_dir=${{ inputs.composer_cache_dir }}" >> $GITHUB_OUTPUT
-        echo "composer_cmd=${{ inputs.composer_cmd }}" >> $GITHUB_OUTPUT
-        echo "npm_install_cmd=${{ inputs.npm_install_cmd }}" >> $GITHUB_OUTPUT
-        echo "npm_update_cmd=${{ inputs.npm_update_cmd }}" >> $GITHUB_OUTPUT
-        echo "yarn_install_cmd=${{ inputs.yarn_install_cmd }}" >> $GITHUB_OUTPUT
-
     - name: Check if we have Composer to install
       shell: bash
       id: composer
@@ -115,13 +109,13 @@ runs:
       run: |
         rm -f auth.json
         composer config --auth github-oauth.github.com ${{ inputs.access_token }}
-        echo "Installing dependencies via Composer using command: ${{ steps.vars.outputs.composer_cmd }}"
+        echo "Installing dependencies via Composer using command: ${{ inputs.composer_cmd }}"
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
           mv composer.lock composer.lock_
           cp ${{ inputs.composer_lock }} composer.lock
         fi
         
-        ${{ steps.vars.outputs.composer_cmd }}
+        ${{ inputs.composer_cmd }}
         
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
           rm composer.lock
@@ -196,8 +190,8 @@ runs:
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
       run: |
-        echo "Installing dependencies via NPM using command: ${{ steps.vars.outputs.npm_install_cmd }}"
-        ${{ steps.vars.outputs.npm_install_cmd }}
+        echo "Installing dependencies via NPM using command: ${{ inputs.npm_install_cmd }}"
+        ${{ inputs.npm_install_cmd }}
 
     - name: Get Yarn cache directory
       shell: bash
@@ -232,6 +226,14 @@ runs:
         restore-keys: |
           ${{ runner.os }}-yarn-
 
+    - name: Remove Yarn lock (hack)
+      if: inputs.remove_yarn_lock_hack == 'true'
+      run: |
+        # This is a hack because otherwise Yarn can't just download private packages =/
+        if [ -f "yarn.lock" ]; then
+          rm yarn.lock
+        fi
+
     - name: Install Yarn dependencies
       shell: bash
       working-directory: ${{ inputs.working_directory }}
@@ -239,12 +241,8 @@ runs:
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
       run: |
-        # This is a hack because otherwise Yarn can't just download private packages =/
-        if [ -f "yarn.lock" ]; then
-          rm yarn.lock
-        fi
-        echo "Installing dependencies via Yarn using command: ${{ steps.vars.outputs.yarn_install_cmd }}"
-        ${{ steps.vars.outputs.yarn_install_cmd }}
+        echo "Installing dependencies via Yarn using command: ${{ inputs.yarn_install_cmd }}"
+        ${{ inputs.yarn_install_cmd }}
 
     - name: Remove .npmrc file
       shell: bash
