@@ -621,3 +621,7 @@
 ## v3.18.0
 
 * Update: improved get-version CI job to support tags (8869198 by George Shestayev)
+
+## v3.19.0
+
+* Update: added remove_yarn_lock_hack input to install-packages job (bb891f6 by George Shestayev)
