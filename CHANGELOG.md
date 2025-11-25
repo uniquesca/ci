@@ -629,3 +629,8 @@
 ## v3.19.1
 
 * Fix: fixed issue with missing shell in the new step in the install-packages job (1c1d678e by George Shestayev)
+
+## v4.0.0
+
+* New: added PHP-FPM and Apache Docker containers (9a149cc by George Shestayev)
+* Update: allowed 4-digit version in get-version CI job (9a149cc by George Shestayev)
