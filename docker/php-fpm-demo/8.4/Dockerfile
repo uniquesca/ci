@@ -1,0 +1,1 @@
+FROM ghcr.io/uniquesca/php-fpm-prod:8.4 AS php-apache
