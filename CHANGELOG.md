@@ -634,3 +634,7 @@
 
 * New: added PHP-FPM and Apache Docker containers (9a149cc by George Shestayev)
 * Update: allowed 4-digit version in get-version CI job (9a149cc by George Shestayev)
+
+## v4.0.1
+
+* Fix: removing setting environment variable for Apache for FPM images (9b5b83b by George Shestayev)
