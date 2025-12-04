@@ -638,3 +638,7 @@
 ## v4.0.1
 
 * Fix: removing setting environment variable for Apache for FPM images (9b5b83b by George Shestayev)
+
+## v4.1.0
+
+* Update: introduced an ability to map PHP FPM container's application URL to Apache container (23cb72e by George Shestayev)
