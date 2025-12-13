@@ -124,7 +124,11 @@ runs:
           )
         ')
         
-        echo "$VARIABLES" | jq '.'
+        # Debug variables
+        if [[ "${RUNNER_DEBUG:-0}" == "1" ]]; then
+          echo "$VARIABLES" | jq '.'
+        fi
+        
         echo "$VARIABLES" > __variables.json
 
     - name: Process config with Jinja2
