@@ -15,5 +15,127 @@ inputs:
     required: true
 
 runs:
-  using: 'node20'
-  main: 'index.js'
+  using: "composite"
+  steps:
+    - name: Get env file stub path
+      id: env_file_stub
+      shell: bash
+      run: |
+        ENV_FILE_STUB="${{ inputs.env_file_stub }}"
+    
+        if [ -z "$ENV_FILE_STUB" ]; then
+          echo "⚠️ Input env_file_stub is empty, checking _ci_environment.json"
+        
+          if [ ! -f "_ci_environment.json" ]; then
+            echo "❌ Error: env_file_stub not provided and _ci_environment.json file not found"
+            exit 1
+          fi
+
+          # Try to read env_file_stub property
+          ENV_FILE_STUB=$(jq -r '.env_file_stub // empty' _ci_environment.json)
+    
+          if [ -z "$ENV_FILE_STUB" ]; then
+            echo "❌ Error: env_file_stub property not found in _ci_environment.json"
+            exit 1
+          fi
+
+          echo "✅ Using env_file_stub from _ci_environment.json: $ENV_FILE_STUB"
+        else
+          echo "✅ Using env_file_stub from input: $ENV_FILE_STUB"
+        fi
+        
+        # Also set as output
+        echo "env_file_stub=$ENV_FILE_STUB" >> $GITHUB_OUTPUT
+
+    - name: Get env file path
+      id: env_file
+      shell: bash
+      run: |
+        ENV_FILE="${{ inputs.env_file }}"
+        
+        if [ -z "$ENV_FILE" ]; then
+          echo "⚠️ Input env_file is empty, checking _ci_environment.json"
+        
+          if [ ! -f "_ci_environment.json" ]; then
+            echo "❌ Error: env_file not provided and _ci_environment.json file not found"
+            exit 1
+          fi
+
+          # Try to read env_file property
+          ENV_FILE=$(jq -r '.env_file // empty' _ci_environment.json)
+        
+          if [ -z "$ENV_FILE" ]; then
+            echo "❌ Error: env_file property not found in _ci_environment.json"
+            exit 1
+          fi
+
+          echo "✅ Using env_file from _ci_environment.json: $ENV_FILE"
+        else
+          echo "✅ Using env_file from input: $ENV_FILE"
+        fi
+        
+        # Also set as output
+        echo "env_file=$ENV_FILE" >> $GITHUB_OUTPUT
+
+    - name: Prepare variables - applying fallbacks
+      shell: bash
+      run: |
+        VARIABLES='${{ inputs.env_variables }}'
+    
+        # Validate variables input
+        echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
+
+        # Load environment JSON
+        ENVIRONMENT=$(cat _ci_environment.json)
+        FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
+    
+        for ENTRY in $FALLBACKS; do
+          KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
+          FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
+        
+          # Skip if variable is already defined
+          if echo "$VARIABLES" | jq -e --arg K "$KEY" 'has($K)' >/dev/null; then
+            continue
+          fi
+      
+          if [[ "$FALLBACK" == \$* ]]; then
+            # Fallback points to another variable
+            REFERENCE="${FALLBACK:1}"
+            if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
+              echo "Error: Referenced variable $REFERENCE is not found." >&2
+              exit 1
+            fi
+            REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
+            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
+          else
+            # Fallback is a literal value
+            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
+          fi
+        done
+        
+        # Convert dot notation to nested objects
+        echo "✅ Converting dot notation to nested objects..."
+        VARIABLES=$(echo "$VARIABLES" | jq '
+          reduce (to_entries[] | select(.key | contains("."))) as $item (
+            .;
+            ($item.key | split(".")) as $path |
+            setpath($path; $item.value) |
+            del(.[$item.key])
+          )
+        ')
+        
+        echo "$VARIABLES" | jq '.'
+        echo "$VARIABLES" > __variables.json
+
+    - name: Process config with Jinja2
+      uses: cuchi/jinja2-action@v1.3.0
+      with:
+        template: ${{ steps.env_file_stub.outputs.env_file_stub }}
+        output_file: ${{ steps.env_file.outputs.env_file }}
+        data_file: __variables.json
+        data_format: json
+
+    - name: Cleanup variables
+      if: always()
+      shell: bash
+      run: rm __variables.json
