@@ -642,3 +642,9 @@
 ## v4.1.0
 
 * Update: introduced an ability to map PHP FPM container's application URL to Apache container (23cb72e by George Shestayev)
+
+## v5.0.0
+
+* BREAKING: hardcoded environment templating is replaced with Jinja2 (b45d888 by George Shestayev)
+* BREAKING: removed environment token mapping (b45d888 by George Shestayev)
+* New: introduced environment token fallbacks (b45d888 by George Shestayev)
