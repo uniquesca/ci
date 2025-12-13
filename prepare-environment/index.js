@@ -4,6 +4,8 @@ import process from "process";
 import {CiEnvironment} from "../src/classes/CiEnvironment.js";
 import {CiEnvVariableMapper} from "../src/classes/CiEnvVariableMapper.js";
 
+// IMPORTANT: THIS IS RETIRED AND JINJA2 IS USED INSTEAD
+
 let workingDir = core.getInput('working_directory');
 if (workingDir) {
     process.chdir(workingDir);
