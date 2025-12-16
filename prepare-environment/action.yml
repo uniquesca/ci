@@ -13,11 +13,9 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
     - name: Get environment configs
       id: config-list
+      shell: bash
       run: |
         echo "Reading configs from ${{ inputs.working_directory }}/_ci_environment.json"
         configs=$(jq -c '.config[]' "${{ inputs.working_directory }}/_ci_environment.json")
