@@ -27,7 +27,6 @@ runs:
       id: config-list
       shell: bash
       run: |
-        ls -al
         echo "Reading configs from ${{ inputs.working_directory }}/_ci_environment.json"
         configs=$(jq -c '.configs[]' "${{ inputs.working_directory }}/_ci_environment.json")
         echo "configs<<EOF" >> $GITHUB_OUTPUT
@@ -88,7 +87,11 @@ runs:
           echo "$VARIABLES" | jq '.'
         fi
         
-        echo "variables=$VARIABLES" >> $GITHUB_OUTPUT
+        {
+          echo 'variables<<EOF'
+          echo "$VARIABLES"
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
 
     - name: Process configs
       shell: bash
