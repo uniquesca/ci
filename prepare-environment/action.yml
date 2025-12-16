@@ -98,7 +98,10 @@ runs:
     - name: Process configs
       shell: bash
       run: |
-        printf "%s\n" "${{ steps.config-list.outputs.configs }}" | while read -r cfg; do
+        # Write the output back into a file so newlines are preserved
+        echo "${{ steps.config-list.outputs.configs }}" > configs.txt
+    
+        while read -r cfg; do
           STUB=$(echo "$cfg" | jq -r '.stub')
           DEST=$(echo "$cfg" | jq -r '.path')
 
@@ -106,4 +109,5 @@ runs:
 
           # Process template with JSON variables
           echo "${{ steps.prepare-variables.outputs.variables}}" | jinja2 "$STUB" -o "$DEST" --format=json
-        done
+        done < configs.txt
+        rm configs.txt -rf
