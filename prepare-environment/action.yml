@@ -98,12 +98,12 @@ runs:
     - name: Process configs
       shell: bash
       run: |
-        printf "%s\n" "${{ steps.config-list.outputs.configs }}" | while read cfg; do
+        printf "%s\n" "${{ steps.config-list.outputs.configs }}" | while read -r cfg; do
           STUB=$(echo "$cfg" | jq -r '.stub')
-          PATH=$(echo "$cfg" | jq -r '.path')
+          DEST=$(echo "$cfg" | jq -r '.path')
 
-          echo "Processing config stub $STUB using Jinja2 into $PATH"
+          echo "Processing config stub $STUB using Jinja2 into $DEST"
 
           # Process template with JSON variables
-          echo "${{ steps.prepare-variables.outputs.variables}}" | jinja2 "$STUB" -o "$PATH" --format=json
+          echo "${{ steps.prepare-variables.outputs.variables}}" | jinja2 "$STUB" -o "$DEST" --format=json
         done
