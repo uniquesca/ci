@@ -1,10 +1,15 @@
-name: Prepare environment consisting of multiple configs
+name: Process multiple config templates
 
+on:
+  workflow_call:
 inputs:
   working_directory:
     description: 'Working directory for this action, defaults to the current worker directory'
     required: false
     default: "."
+  configs:
+    description: 'JSON string array with configs to process'
+    required: true
   env_variables:
     description: 'JSON string object with information about variables and mappings. See more in the documentation.'
     required: true
@@ -12,7 +17,11 @@ inputs:
 
 runs:
   using: "composite"
+
   steps:
+    - name: Install Jinja2 CLI
+      run: pip install jinja2-cli[yaml,json]
+
     - name: Get environment configs
       id: config-list
       shell: bash
@@ -23,14 +32,71 @@ runs:
         echo "$configs" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
 
+    - name: Prepare variables - applying fallbacks
+      id: prepare-variables
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        VARIABLES='${{ inputs.env_variables }}'
+        
+        # Validate variables input
+        echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
+
+        # Load environment JSON
+        ENVIRONMENT=$(cat _ci_environment.json)
+        FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
+        
+        for ENTRY in $FALLBACKS; do
+          KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
+          FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
+        
+          # Skip if variable is already defined
+          if echo "$VARIABLES" | jq -e --arg K "$KEY" 'has($K)' >/dev/null; then
+            continue
+          fi
+        
+          if [[ "$FALLBACK" == \$* ]]; then
+            # Fallback points to another variable
+            REFERENCE="${FALLBACK:1}"
+            if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
+              echo "Error: Referenced variable $REFERENCE is not found." >&2
+              exit 1
+            fi
+            REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
+            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
+          else
+            # Fallback is a literal value
+            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
+          fi
+        done
+        
+        # Convert dot notation to nested objects
+        echo "✅ Converting dot notation to nested objects..."
+        VARIABLES=$(echo "$VARIABLES" | jq '
+          reduce (to_entries[] | select(.key | contains("."))) as $item (
+            .;
+            ($item.key | split(".")) as $path |
+            setpath($path; $item.value) |
+            del(.[$item.key])
+          )
+        ')
+        
+        # Debug variables
+        if [[ "${RUNNER_DEBUG:-0}" == "1" ]]; then
+          echo "$VARIABLES" | jq '.'
+        fi
+        
+        echo "variables=$VARIABLES" >> $GITHUB_OUTPUT
 
     - name: Process configs
-      uses: uniquesca/ci/prepare-config@feature/multiple-configs
-      with:
-        working_directory: ${{ inputs.working_directory }}
-        env_file_stub: ${{ fromJson(matrix.config).stub }}
-        env_file: ${{ fromJson(matrix.config).path }}
-        env_variables: ${{ inputs.env_variables }}
-      strategy:
-        matrix:
-          config: ${{ steps.config-list.outputs.configs }}
+      shell: bash
+      run: |
+        echo "${{ steps.config-list.outputs.configs }}" | while read cfg; do
+          STUB=$(echo "$cfg" | jq -r '.stub')
+          PATH=$(echo "$cfg" | jq -r '.path')
+
+          echo "Processing config stub $STUB using Jinja2 into $PATH"
+
+          # Process template with JSON variables
+          echo "${{ steps.prepare-variables.outputs.variables}}" | jinja2 "$STUB" -o "$PATH" --format=json
+        done
