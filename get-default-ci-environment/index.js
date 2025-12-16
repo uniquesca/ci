@@ -25,7 +25,7 @@ try {
         job = new CiPhpJob({
             os: "ubuntu-latest",
             php: new CiPhpVersion({
-                version: "8.1",
+                version: "8.2",
                 extensions: "xdebug"
             }),
             default: true,

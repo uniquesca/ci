@@ -38,7 +38,7 @@ runs:
         variables2: '{"db.dbname":"mysql_migration_db","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
     - name: Set up environment
-      uses: uniquesca/ci/prepare-environment@main
+      uses: uniquesca/ci/prepare-environment@feature/multiple-configs
       with:
         env_variables: ${{ steps.merge-environment-vars.outputs.variables }}
 
