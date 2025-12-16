@@ -29,9 +29,11 @@ runs:
       run: |
         echo "Reading configs from ${{ inputs.working_directory }}/_ci_environment.json"
         configs=$(jq -c '.configs[]' "${{ inputs.working_directory }}/_ci_environment.json")
-        echo "configs<<EOF" >> $GITHUB_OUTPUT
-        echo "$configs" >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+        {
+          echo 'configs<<EOF'
+          echo "$configs"
+          echo 'EOF'
+        } >> $GITHUB_OUTPUT
 
     - name: Prepare variables - applying fallbacks
       id: prepare-variables
