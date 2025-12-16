@@ -20,6 +20,7 @@ runs:
 
   steps:
     - name: Install Jinja2 CLI
+      shell: bash
       run: pip install jinja2-cli[yaml,json]
 
     - name: Get environment configs
