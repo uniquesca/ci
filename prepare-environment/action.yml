@@ -27,6 +27,7 @@ runs:
       id: config-list
       shell: bash
       run: |
+        ls -al
         echo "Reading configs from ${{ inputs.working_directory }}/_ci_environment.json"
         configs=$(jq -c '.config[]' "${{ inputs.working_directory }}/_ci_environment.json")
         echo "configs<<EOF" >> $GITHUB_OUTPUT
