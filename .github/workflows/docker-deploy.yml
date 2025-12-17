@@ -43,8 +43,13 @@ on:
         required: false
         type: string
         default: '--force-recreate'
+      runner_pre_cmd:
+        description: 'Command to execute on the RUNNER before preparing the environment'
+        required: false
+        default: ''
+        type: string
       post_cmd:
-        description: 'Command to execute after deployment is complete'
+        description: 'Command to execute on the REMOTE after deployment is complete'
         required: false
         default: ''
         type: string
@@ -54,14 +59,38 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Connect and deploy
-        uses: appleboy/ssh-action@v0.1.8
+      - name: Checkout application repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Pre-process command
+        run: |
+          ${{ inputs.runner_pre_cmd }}
+
+      - name: Process configs
+        uses: uniquesca/ci/prepare-environment@main
+        with:
+          env_variables: ${{ inputs.env_variables }}
+
+      - name: Upload configs
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ inputs.host }}
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
-          script_stop: false
+          source: |
+            jq -r '[.configs[].path] | join(",")' _ci_environment.json
+          target: ${{ inputs.deployment_path }}
+
+      - name: Connect and deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
           script: |
             # Making it more strict for the script to fail in case of an error
             set -eux;

@@ -23,18 +23,6 @@ runs:
       shell: bash
       run: pip install jinja2-cli[yaml,json]
 
-    - name: Get environment configs
-      id: config-list
-      shell: bash
-      run: |
-        echo "Reading configs from ${{ inputs.working_directory }}/_ci_environment.json"
-        configs=$(jq -c '.configs[]' "${{ inputs.working_directory }}/_ci_environment.json")
-        {
-          echo 'configs<<EOF'
-          echo "$configs"
-          echo 'EOF'
-        } >> $GITHUB_OUTPUT
-
     - name: Prepare variables - applying fallbacks
       id: prepare-variables
       shell: bash
@@ -94,12 +82,7 @@ runs:
     - name: Process configs
       shell: bash
       run: |
-        # Write the output back into a file so newlines are preserved
-        cat > __configs.json <<EOF
-          ${{ steps.config-list.outputs.configs }}
-        EOF
-  
-        while read -r cfg; do
+        jq -c '.configs[]' _ci_environment.json | while read -r cfg; do
           STUB=$(echo "$cfg" | jq -r '.stub')
           DEST=$(echo "$cfg" | jq -r '.path')
 
@@ -107,11 +90,10 @@ runs:
 
           # Process template with JSON variables
           jinja2 "$STUB" -o "$DEST" --format=json __variables.json
-        done < __configs.json
+        done
 
     - name: Cleanup
       if: ${{ always() }}
       shell: bash
       run: |
-        rm __configs.json -r
         rm __variables.json -r
