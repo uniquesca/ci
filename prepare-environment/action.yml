@@ -99,8 +99,10 @@ runs:
       shell: bash
       run: |
         # Write the output back into a file so newlines are preserved
-        echo "${{ steps.config-list.outputs.configs }}" > configs.txt
-    
+        cat > configs.txt <<EOF
+          ${{ steps.config-list.outputs.configs }}
+        EOF
+  
         while read -r cfg; do
           STUB=$(echo "$cfg" | jq -r '.stub')
           DEST=$(echo "$cfg" | jq -r '.path')
