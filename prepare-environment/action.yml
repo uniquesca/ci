@@ -89,17 +89,13 @@ runs:
           echo "$VARIABLES" | jq '.'
         fi
         
-        {
-          echo 'variables<<EOF'
-          echo "$VARIABLES"
-          echo 'EOF'
-        } >> "$GITHUB_OUTPUT"
+        echo "$VARIABLES" > __variables.json
 
     - name: Process configs
       shell: bash
       run: |
         # Write the output back into a file so newlines are preserved
-        cat > configs.txt <<EOF
+        cat > __configs.json <<EOF
           ${{ steps.config-list.outputs.configs }}
         EOF
   
@@ -110,6 +106,12 @@ runs:
           echo "Processing config stub $STUB using Jinja2 into $DEST"
 
           # Process template with JSON variables
-          echo "${{ steps.prepare-variables.outputs.variables}}" | jinja2 "$STUB" -o "$DEST" --format=json
-        done < configs.txt
-        rm configs.txt -rf
+          jinja2 "$STUB" -o "$DEST" --format=json __variables.json
+        done < __configs.json
+
+    - name: Cleanup
+      if: ${{ always() }}
+      shell: bash
+      run: |
+        rm __configs.json -r
+        rm __variables.json -r
