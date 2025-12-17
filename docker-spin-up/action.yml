@@ -91,7 +91,6 @@ runs:
         variables2: ${{ inputs.env_variables }}
 
     - name: Prepare environment
-      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
       uses: uniquesca/ci/prepare-environment@feature/multiple-configs
       with:
         env_variables: ${{ steps.merge_env_variables.outputs.variables }}
