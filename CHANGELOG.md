@@ -668,3 +668,7 @@
 ## v5.0.5
 
 * Fix: adding a check for __variables.json file to exist before deleting it (7d86cd0 by George Shestayev)
+
+## v5.0.6
+
+* Fix: adding a check for _ci_environment.json file to exist before reading token fallbacks from it (c27ae20 by George Shestayev)
