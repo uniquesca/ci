@@ -664,3 +664,7 @@
 ## v5.0.4
 
 * Fix: exiting gracefully if no env_file_stub or env_file provide and no _ci_environment file found in prepare-environment job (13e2495 by George Shestayev)
+
+## v5.0.5
+
+* Fix: adding a check for __variables.json file to exist before deleting it (7d86cd0 by George Shestayev)

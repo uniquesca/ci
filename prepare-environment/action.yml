@@ -147,4 +147,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       if: always()
       shell: bash
-      run: rm __variables.json
+      run: |
+        if [ -f __variables.json ]; then
+          rm __variables.json
+        fi
