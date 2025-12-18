@@ -660,3 +660,7 @@
 ## v5.0.3
 
 * Fix: fixed path to variables json file when processing a config (7fc4526 by George Shestayev)
+
+## v5.0.4
+
+* Fix: exiting gracefully if no env_file_stub or env_file provide and no _ci_environment file found in prepare-environment job (13e2495 by George Shestayev)
