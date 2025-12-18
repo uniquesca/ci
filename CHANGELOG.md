@@ -648,3 +648,7 @@
 * BREAKING: hardcoded environment templating is replaced with Jinja2 (b45d888 by George Shestayev)
 * BREAKING: removed environment token mapping (b45d888 by George Shestayev)
 * New: introduced environment token fallbacks (b45d888 by George Shestayev)
+
+## v5.0.1
+
+* Fix: fixed working directory usage in prepare-environment action (6e13599 by George Shestayev)
