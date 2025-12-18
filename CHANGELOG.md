@@ -672,3 +672,7 @@
 ## v5.0.6
 
 * Fix: adding a check for _ci_environment.json file to exist before reading token fallbacks from it (c27ae20 by George Shestayev)
+
+## v5.0.7
+
+* Fix: skipping Jinja2 processing if there is no env_file_stub or env_file (b5d67e2 by George Shestayev)

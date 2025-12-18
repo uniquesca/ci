@@ -140,6 +140,7 @@ runs:
 
     - name: Process config with Jinja2
       uses: cuchi/jinja2-action@v1.3.0
+      if: (steps.env_file_stub.outputs.env_file_stub != '') && (steps.env_file.outputs.env_file != '')
       with:
         template: ${{ inputs.working_directory }}/${{ steps.env_file_stub.outputs.env_file_stub }}
         output_file: ${{ inputs.working_directory }}/${{ steps.env_file.outputs.env_file }}
