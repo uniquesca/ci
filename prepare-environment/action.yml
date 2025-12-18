@@ -29,8 +29,8 @@ runs:
           echo "⚠️ Input env_file_stub is empty, checking _ci_environment.json"
         
           if [ ! -f "_ci_environment.json" ]; then
-            echo "❌ Error: env_file_stub not provided and _ci_environment.json file not found"
-            exit 1
+            echo "⚠️ env_file_stub not provided and _ci_environment.json file not found. Exiting."
+            exit 0
           fi
 
           # Try to read env_file_stub property
@@ -60,8 +60,8 @@ runs:
           echo "⚠️ Input env_file is empty, checking _ci_environment.json"
         
           if [ ! -f "_ci_environment.json" ]; then
-            echo "❌ Error: env_file not provided and _ci_environment.json file not found"
-            exit 1
+            echo "⚠️ env_file not provided and _ci_environment.json file not found"
+            exit 0
           fi
 
           # Try to read env_file property
