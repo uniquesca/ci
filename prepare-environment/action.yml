@@ -140,7 +140,7 @@ runs:
       with:
         template: ${{ inputs.working_directory }}/${{ steps.env_file_stub.outputs.env_file_stub }}
         output_file: ${{ inputs.working_directory }}/${{ steps.env_file.outputs.env_file }}
-        data_file: __variables.json
+        data_file: ${{ inputs.working_directory }}/__variables.json
         data_format: json
 
     - name: Cleanup variables
