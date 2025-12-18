@@ -4,6 +4,7 @@ inputs:
   working_directory:
     description: 'Working directory for this action, defaults to the current worker directory'
     required: false
+    default: '.'
   env_file:
     description: 'Path to environment file. This has higher priority than the one defined in the CI environment config.'
     required: false
@@ -20,6 +21,7 @@ runs:
     - name: Get env file stub path
       id: env_file_stub
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         ENV_FILE_STUB="${{ inputs.env_file_stub }}"
     
@@ -50,6 +52,7 @@ runs:
     - name: Get env file path
       id: env_file
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         ENV_FILE="${{ inputs.env_file }}"
         
@@ -79,6 +82,7 @@ runs:
 
     - name: Prepare variables - applying fallbacks
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         VARIABLES='${{ inputs.env_variables }}'
     
@@ -133,6 +137,7 @@ runs:
 
     - name: Process config with Jinja2
       uses: cuchi/jinja2-action@v1.3.0
+      working-directory: ${{ inputs.working_directory }}
       with:
         template: ${{ steps.env_file_stub.outputs.env_file_stub }}
         output_file: ${{ steps.env_file.outputs.env_file }}
@@ -140,6 +145,7 @@ runs:
         data_format: json
 
     - name: Cleanup variables
+      working-directory: ${{ inputs.working_directory }}
       if: always()
       shell: bash
       run: rm __variables.json
