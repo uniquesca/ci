@@ -652,3 +652,7 @@
 ## v5.0.1
 
 * Fix: fixed working directory usage in prepare-environment action (6e13599 by George Shestayev)
+
+## v5.0.2
+
+* Fix: fixed working directory in Jinja2 step in prepare-environment action (d7645720 by George Shestayev)
