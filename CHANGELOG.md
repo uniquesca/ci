@@ -656,3 +656,7 @@
 ## v5.0.2
 
 * Fix: fixed working directory in Jinja2 step in prepare-environment action (d7645720 by George Shestayev)
+
+## v5.0.3
+
+* Fix: fixed path to variables json file when processing a config (7fc4526 by George Shestayev)
