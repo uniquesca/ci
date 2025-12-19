@@ -113,7 +113,12 @@ jobs:
             # Making it more strict for the script to fail in case of an error
             set -eux;
             
-            echo "Changing work dir"
+            if [ ! -d "${{ inputs.deployment_path }}" ]; then
+              # Create recursively
+              mkdir -p "${{ inputs.deployment_path }}"
+            fi
+              
+            # Change into the directory
             cd ${{ inputs.deployment_path }}
             
             echo "Cleaning git"
