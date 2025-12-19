@@ -84,7 +84,7 @@ runs:
           STUB=$(echo "$cfg" | jq -r '.stub')
           DEST=$(echo "$cfg" | jq -r '.path')
 
-          echo "Processing config stub $STUB using Jinja2 into $DEST"
+          echo " ⏩ Jinja2: processing $STUB -> $DEST"
 
           # Process template with JSON variables
           jinja2 "$STUB" -o "$DEST" --format=json __variables.json
