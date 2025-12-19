@@ -12,6 +12,9 @@ on:
       NODE_AUTH_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: false
+      ENV_VARIABLES:
+        description: 'Environment variables to set on the remote server'
+        required: false
     inputs:
       host:
         description: 'Address of the server'
@@ -53,11 +56,6 @@ on:
         required: false
         default: ''
         type: string
-      env_variables:
-        description: 'Environment variables to set on the remote server'
-        required: false
-        type: string
-        default: ''
 
 jobs:
   deploy:
@@ -66,23 +64,23 @@ jobs:
     steps:
       - name: Checkout application repository
         uses: actions/checkout@v4
-        if: ${{ inputs.env_variables != '' }}
+        if: ${{ secrets.ENV_VARIABLES != '' }}
         with:
           ref: ${{ inputs.ref }}
 
       - name: Pre-process command
-        if: ${{ inputs.env_variables != '' }}
+        if: ${{ secrets.ENV_VARIABLES != '' }}
         run: |
           ${{ inputs.runner_pre_cmd }}
 
       - name: Process configs
-        if: ${{ inputs.env_variables != '' }}
+        if: ${{ secrets.ENV_VARIABLES != '' }}
         uses: uniquesca/ci/prepare-environment@feature/multiple-configs
         with:
-          env_variables: ${{ inputs.env_variables }}
+          env_variables: ${{ secrets.ENV_VARIABLES }}
 
       - name: Upload configs
-        if: ${{ inputs.env_variables != '' }}
+        if: ${{ secrets.ENV_VARIABLES != '' }}
         uses: appleboy/scp-action@v1
         with:
           host: ${{ inputs.host }}
