@@ -80,6 +80,7 @@ jobs:
       # This has to be done before the configs are uploaded
       - name: Initialize deployment environment if necessary
         uses: appleboy/ssh-action@v1
+        id: initialize
         with:
           host: ${{ inputs.host }}
           username: ${{ inputs.username }}
@@ -95,6 +96,9 @@ jobs:
               echo "Git not initialized, cloning repository..."
               REPO_URL="git@github.com:${{ github.repository }}.git"
               git clone "$REPO_URL" "${{ inputs.deployment_path }}"
+              echo "<<<OUTPUT::0>>>
+            else
+              echo "<<<OUTPUT::1>>>
             fi
 
       - name: Process configs
@@ -121,6 +125,13 @@ jobs:
           target: ${{ inputs.deployment_path }}
           command_timeout: 1m
 
+      - name: Checking if the repo was just initialized
+        id: initalized
+        run: |
+          RAW="${{ steps.initialize.outputs.stdout }}"
+          RESULT=$(echo "$RAW" | grep -o '<<<OUTPUT::[01]>>>' | sed 's/<<<OUTPUT:://;s/>>>//')
+          echo "result=$RESULT" >> $GITHUB_OUTPUT
+
       - name: Connect and deploy
         uses: appleboy/ssh-action@v1
         with:
@@ -135,7 +146,18 @@ jobs:
             
             # Change into the directory
             cd ${{ inputs.deployment_path }}
-  
+            
+            # Run init script if repo was just initialized and init script is provided
+            INITALIZED="${{ steps.parse_result.outputs.result }}"
+
+            # Always parse init_script from JSON
+            INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
+
+            if [ "$RESULT" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
+              echo "Repo is freshly initialized, running init script: $INIT_SCRIPT"
+              bash "$INIT_SCRIPT"
+            fi
+
             echo "Cleaning git"
             git clean -fd
             
