@@ -99,6 +99,7 @@ jobs:
           port: ${{ inputs.port }}
           source: ${{ steps.upload_paths.outputs.paths }}
           target: ${{ inputs.deployment_path }}
+          command_timeout: 1m
 
       - name: Connect and deploy
         uses: appleboy/ssh-action@v1
@@ -107,6 +108,7 @@ jobs:
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
+          command_timeout: 3m
           script: |
             # Making it more strict for the script to fail in case of an error
             set -eux;
