@@ -51,6 +51,7 @@ runs:
             REFERENCE="${FALLBACK:1}"
             if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
               echo "Error: Referenced variable $REFERENCE is not found." >&2
+              echo "$VARIABLES" | jq '.'
               exit 1
             fi
             REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
