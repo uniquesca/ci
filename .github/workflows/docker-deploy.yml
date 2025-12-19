@@ -113,11 +113,6 @@ jobs:
             # Making it more strict for the script to fail in case of an error
             set -eux;
             
-            if [ ! -d "${{ inputs.deployment_path }}" ]; then
-              # Create recursively
-              mkdir -p "${{ inputs.deployment_path }}"
-            fi
-
             # Check if it's already a git repo
             if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
               echo "Git not initialized, cloning repository..."
