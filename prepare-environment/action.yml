@@ -7,9 +7,6 @@ inputs:
     description: 'Working directory for this action, defaults to the current worker directory'
     required: false
     default: "."
-  configs:
-    description: 'JSON string array with configs to process'
-    required: true
   env_variables:
     description: 'JSON string object with information about variables and mappings. See more in the documentation.'
     required: true

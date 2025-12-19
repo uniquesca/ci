@@ -69,7 +69,7 @@ jobs:
           ${{ inputs.runner_pre_cmd }}
 
       - name: Process configs
-        uses: uniquesca/ci/prepare-environment@main
+        uses: uniquesca/ci/prepare-environment@feature/multiple-configs
         with:
           env_variables: ${{ inputs.env_variables }}
 
