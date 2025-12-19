@@ -126,7 +126,7 @@ jobs:
           command_timeout: 1m
 
       - name: Checking if the repo was just initialized
-        id: initalized
+        id: previously_initialized
         run: |
           RAW="${{ steps.initialize.outputs.stdout }}"
           RESULT=$(echo "$RAW" | grep -o '<<<OUTPUT::[01]>>>' | sed 's/<<<OUTPUT:://;s/>>>//')
@@ -147,13 +147,14 @@ jobs:
             # Change into the directory
             cd ${{ inputs.deployment_path }}
             
-            # Run init script if repo was just initialized and init script is provided
-            INITALIZED="${{ steps.initalized.outputs.result }}"
+            # Check if the repo was previously initialized
+            INITALIZED="${{ steps.previously_initialized.outputs.result }}"
 
             # Always parse init_script from JSON
             INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
 
-            if [ "$RESULT" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
+            # Run init script if it's provided and it's a freshly initialized repo 
+            if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
               echo "Repo is freshly initialized, running init script: $INIT_SCRIPT"
               bash "$INIT_SCRIPT"
             fi
