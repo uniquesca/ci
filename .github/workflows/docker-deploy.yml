@@ -77,6 +77,26 @@ jobs:
         run: |
           ${{ inputs.runner_pre_cmd }}
 
+      # This has to be done before the configs are uploaded
+      - name: Initialize deployment environment if necessary
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          command_timeout: 3m
+          script: |
+            # Making it more strict for the script to fail in case of an error
+            set -eux;
+            
+            # Check if it's already a git repo
+            if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
+              echo "Git not initialized, cloning repository..."
+              REPO_URL="${{ github.server_url }}/${{ github.repository }}.git"
+              git clone "$REPO_URL" "${{ inputs.deployment_path }}"
+            fi
+
       - name: Process configs
         if: ${{ inputs.prepare_environment }}
         uses: uniquesca/ci/prepare-environment@feature/multiple-configs
@@ -112,13 +132,6 @@ jobs:
           script: |
             # Making it more strict for the script to fail in case of an error
             set -eux;
-            
-            # Check if it's already a git repo
-            if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
-              echo "Git not initialized, cloning repository..."
-              REPO_URL="${{ github.server_url }}/${{ github.repository }}.git"
-              git clone "$REPO_URL" "${{ inputs.deployment_path }}"
-            fi
             
             # Change into the directory
             cd ${{ inputs.deployment_path }}
