@@ -95,8 +95,7 @@ jobs:
             # Check if it's already a git repo
             if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
               echo "Git not initialized, cloning repository..."
-              REPO_URL="git@github.com:${{ github.repository }}.git"
-              git clone "$REPO_URL" "${{ inputs.deployment_path }}"
+              git clone clone --branch "${{ inputs.ref }}" --single-branch "git@github.com:${{ github.repository }}.git" "${{ inputs.deployment_path }}"
               echo "<<<OUTPUT::0>>>"
             else
               echo "<<<OUTPUT::1>>>"
@@ -151,6 +150,8 @@ jobs:
             # Check if the repo was previously initialized
             INITALIZED="${{ steps.previously_initialized.outputs.result }}"
 
+            cat _ci_environment.json
+            
             # Always parse init_script from JSON
             INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
 
