@@ -47,7 +47,7 @@ on:
         type: string
         default: '--force-recreate'
       runner_pre_cmd:
-        description: 'Command to execute on the RUNNER before preparing the environment'
+        description: 'Command to execute on the RUNNER before preparing the environment. Used ONLY if prepare_environment is set to true.'
         required: false
         default: ''
         type: string
@@ -56,7 +56,11 @@ on:
         required: false
         default: ''
         type: string
-
+      prepare_environment:
+        description: 'Flag whether environment configs should be processed'
+        required: false
+        default: true
+        type: boolean
 jobs:
   deploy:
     name: Deploy
@@ -64,23 +68,23 @@ jobs:
     steps:
       - name: Checkout application repository
         uses: actions/checkout@v4
-        if: ${{ secrets.ENV_VARIABLES != '' }}
+        if: ${{ inputs.prepare_environment }}
         with:
           ref: ${{ inputs.ref }}
 
       - name: Pre-process command
-        if: ${{ secrets.ENV_VARIABLES != '' }}
+        if: ${{ inputs.prepare_environment }}
         run: |
           ${{ inputs.runner_pre_cmd }}
 
       - name: Process configs
-        if: ${{ secrets.ENV_VARIABLES != '' }}
+        if: ${{ inputs.prepare_environment }}
         uses: uniquesca/ci/prepare-environment@feature/multiple-configs
         with:
           env_variables: ${{ secrets.ENV_VARIABLES }}
 
       - name: Upload configs
-        if: ${{ secrets.ENV_VARIABLES != '' }}
+        if: ${{ inputs.prepare_environment }}
         uses: appleboy/scp-action@v1
         with:
           host: ${{ inputs.host }}
