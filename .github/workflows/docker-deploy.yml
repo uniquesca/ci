@@ -96,9 +96,9 @@ jobs:
               echo "Git not initialized, cloning repository..."
               REPO_URL="git@github.com:${{ github.repository }}.git"
               git clone "$REPO_URL" "${{ inputs.deployment_path }}"
-              echo "<<<OUTPUT::0>>>
+              echo "<<<OUTPUT::0>>>"
             else
-              echo "<<<OUTPUT::1>>>
+              echo "<<<OUTPUT::1>>>"
             fi
 
       - name: Process configs
