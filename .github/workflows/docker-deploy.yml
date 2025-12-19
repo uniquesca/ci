@@ -83,6 +83,12 @@ jobs:
         with:
           env_variables: ${{ secrets.ENV_VARIABLES }}
 
+      - name: Prepare upload paths
+        id: upload_paths
+        run: |
+          PATHS=$(jq -r '[.configs[].path] | join(",")' _ci_environment.json)
+          echo "paths=$PATHS" >> $GITHUB_OUTPUT
+
       - name: Upload configs
         if: ${{ inputs.prepare_environment }}
         uses: appleboy/scp-action@v1
@@ -91,8 +97,7 @@ jobs:
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
-          source: |
-            jq -r '[.configs[].path] | join(",")' _ci_environment.json
+          source: ${{ steps.upload_paths.outputs.paths }}
           target: ${{ inputs.deployment_path }}
 
       - name: Connect and deploy
