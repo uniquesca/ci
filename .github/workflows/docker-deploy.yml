@@ -117,10 +117,17 @@ jobs:
               # Create recursively
               mkdir -p "${{ inputs.deployment_path }}"
             fi
-              
+
+            # Check if it's already a git repo
+            if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
+              echo "Git not initlaized, cloning repository..."
+              REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git
+              git clone "$REPO_URL" "${{ inputs.deployment_path }}"
+            fi
+            
             # Change into the directory
             cd ${{ inputs.deployment_path }}
-            
+  
             echo "Cleaning git"
             git clean -fd
             
