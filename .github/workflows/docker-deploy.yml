@@ -120,8 +120,8 @@ jobs:
 
             # Check if it's already a git repo
             if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
-              echo "Git not initlaized, cloning repository..."
-              REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git
+              echo "Git not initialized, cloning repository..."
+              REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
               git clone "$REPO_URL" "${{ inputs.deployment_path }}"
             fi
             
