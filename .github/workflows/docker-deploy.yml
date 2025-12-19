@@ -129,9 +129,9 @@ jobs:
       - name: Checking if the repo was just initialized
         id: previously_initialized
         run: |
-          RAW="${{ steps.initialize.outputs.stdout }}"
-          RESULT=$(echo "$RAW" | grep -o '<<<OUTPUT::[01]>>>' | sed 's/<<<OUTPUT:://;s/>>>//')
-          echo "result=$RESULT" >> $GITHUB_OUTPUT
+          RAW=$(printf %s "${{ steps.initialize.outputs.stdout }}")
+          RESULT=$(echo "$RAW" | grep -o '<<<OUTPUT::[01]>>>' | tail -n1 | sed -E 's/<<<OUTPUT::([01])>>>/\1/')
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
 
       - name: Connect and deploy
         uses: appleboy/ssh-action@v1
