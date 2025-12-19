@@ -148,7 +148,7 @@ jobs:
             cd ${{ inputs.deployment_path }}
             
             # Run init script if repo was just initialized and init script is provided
-            INITALIZED="${{ steps.parse_result.outputs.result }}"
+            INITALIZED="${{ steps.initalized.outputs.result }}"
 
             # Always parse init_script from JSON
             INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
