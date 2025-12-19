@@ -95,7 +95,7 @@ jobs:
             # Check if it's already a git repo
             if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
               echo "Git not initialized, cloning repository..."
-              git clone clone --branch "${{ inputs.ref }}" --single-branch "git@github.com:${{ github.repository }}.git" "${{ inputs.deployment_path }}"
+              git clone --branch "${{ inputs.ref }}" --single-branch "git@github.com:${{ github.repository }}.git" "${{ inputs.deployment_path }}"
               echo "<<<OUTPUT::0>>>"
             else
               echo "<<<OUTPUT::1>>>"
