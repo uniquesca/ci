@@ -679,3 +679,11 @@
 
 ## v6.0.0
 
+* BREAKING: prepare-environment action renamed to prepare-config (985f7ae by George Shestayev)
+* BREAKING: docker_env_variables in docker-spin-up job renamed to env_variables (985f7ae by George Shestayev)
+* New: introduced new prepare-environment action that can process multiple configs at once (985f7ae by George Shestayev)
+* New: docker-deploy CI job will checkout the repo, process environment configs and upload them as part of deployment process (985f7ae by George Shestayev)
+* New: introduced runner_pre_cmd input in docker-deploy CI job (985f7ae by George Shestayev)
+* New: adding ability to run init script when a repo is freshly initialized (985f7ae by George Shestayev)
+* Update: updated workflows to use new prepare-environment workflow (985f7ae by George Shestayev)
+* Update: default PHP switched to 8.2 (985f7ae by George Shestayev)
