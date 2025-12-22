@@ -91,7 +91,7 @@ runs:
         variables2: ${{ inputs.env_variables }}
 
     - name: Prepare environment
-      uses: uniquesca/ci/prepare-environment@feature/multiple-configs
+      uses: uniquesca/ci/prepare-environment@main
       with:
         env_variables: ${{ steps.merge_env_variables.outputs.variables }}
         working_directory: ${{ inputs.working_directory }}

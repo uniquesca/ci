@@ -103,7 +103,7 @@ jobs:
 
       - name: Process configs
         if: ${{ inputs.prepare_environment }}
-        uses: uniquesca/ci/prepare-environment@feature/multiple-configs
+        uses: uniquesca/ci/prepare-environment@main
         with:
           env_variables: ${{ secrets.ENV_VARIABLES }}
 

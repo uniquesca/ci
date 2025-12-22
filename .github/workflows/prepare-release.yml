@@ -149,7 +149,7 @@ jobs:
 
       - name: Prepare environment configs
         if: env.phpunit == 1
-        uses: uniquesca/ci/prepare-environment@feature/multiple-configs
+        uses: uniquesca/ci/prepare-environment@main
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
