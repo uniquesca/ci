@@ -34,6 +34,7 @@ runs:
         ENVIRONMENT=$(cat _ci_environment.json)
         FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
         
+        # WARNING: AI says this will cause an issue if values have spaces
         for ENTRY in $FALLBACKS; do
           KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
           FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
