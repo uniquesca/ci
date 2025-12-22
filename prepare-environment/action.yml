@@ -34,7 +34,8 @@ runs:
         ENVIRONMENT=$(cat _ci_environment.json)
         FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
         
-        echo "$FALLBACKS" | while read -r ENTRY; do
+        # WARNING: AI says this will cause an issue if values have spaces
+        for ENTRY in $FALLBACKS; do
           KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
           FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
         
@@ -52,9 +53,11 @@ runs:
             fi
             REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
             VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
+            echo "Adding fallback variable $KEY pointing to $REFERENCE"
           else
             # Fallback is a literal value
             VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
+            echo "Adding fallback variable $KEY"
           fi
         done
         
@@ -68,12 +71,7 @@ runs:
             del(.[$item.key])
           )
         ')
-        
-        # Debug variables
-        if [[ "${RUNNER_DEBUG:-0}" == "1" ]]; then
-          echo "$VARIABLES" | jq '.'
-        fi
-        
+                
         echo "$VARIABLES" > __variables.json
 
     - name: Process configs

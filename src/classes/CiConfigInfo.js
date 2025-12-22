@@ -1,8 +1,8 @@
 import {CiPhpVersion} from "./CiPhpVersion.js";
 
 export class CiConfigInfo {
-    stub: string;
-    path: string;
+    stub = "";
+    path = "";
 
     constructor(input) {
         const copy = {...input};
