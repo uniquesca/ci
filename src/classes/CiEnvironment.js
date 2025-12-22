@@ -1,10 +1,12 @@
 import core from "@actions/core";
 import fs from "fs";
 import {CiPhpJob} from "./CiPhpJob.js";
+import {CiConfigInfo} from "./CiConfigInfo.js";
 
 export class CiEnvironment {
     configs = {};
     token_fallbacks = {};
+    init_script = "";
 
     // Array of CiJob classes
     job_matrix = [
