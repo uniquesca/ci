@@ -691,3 +691,7 @@
 ## v6.0.1
 
 * Fix: syntax fix in prepare-environment job (528dda2 by George Shestayev)
+
+## v6.0.2
+
+* Fix: fixed loop issue in prepare-environment job (232b1f0 by George Shestayev)
