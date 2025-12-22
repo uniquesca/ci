@@ -687,3 +687,7 @@
 * New: adding ability to run init script when a repo is freshly initialized (985f7ae by George Shestayev)
 * Update: updated workflows to use new prepare-environment workflow (985f7ae by George Shestayev)
 * Update: default PHP switched to 8.2 (985f7ae by George Shestayev)
+
+## v6.0.1
+
+* Fix: syntax fix in prepare-environment job (528dda2 by George Shestayev)
