@@ -701,3 +701,7 @@
 * Fix: fixed missing import for CIConfigInfo (364419b by George Shestayev)
 * Fix: fixing syntax issue in CiConfigInfo (364419b by George Shestayev)
 * Fix: fixed loop using subshell in prepare-environment job (364419b by George Shestayev)
+
+## v6.0.4
+
+* Fix: added working directory to all steps in prepare-environment job (4134e13 by George Shestayev)
