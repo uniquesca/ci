@@ -57,7 +57,7 @@ jobs:
 
       - name: Get QA matrix
         id: matrix
-        uses: uniquesca/ci/qa-ci-matrix@main
+        uses: uniquesca/ci/qa-ci-matrix@feature/fix-prep-env
 
   qa:
     name: Run QA checks
