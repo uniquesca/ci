@@ -65,8 +65,8 @@ runs:
               # Fallback is a literal value
               VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
             fi
-          done
-        fi
+          fi
+        done
         
         # Convert dot notation to nested objects
         echo "✅ Converting dot notation to nested objects..."
