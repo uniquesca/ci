@@ -61,11 +61,6 @@ runs:
           fi
         done
         
-        if [[ "$ACTIONS_STEP_DEBUG" == "true" || "$RUNNER_DEBUG" == "1" ]]; then
-          echo "Debug: VARIABLES with processed fallbacks:"
-          echo "$VARIABLES" | jq .
-        fi
-        
         # Convert dot notation to nested objects
         echo "✅ Converting dot notation to nested objects..."
         VARIABLES=$(echo "$VARIABLES" | jq '
@@ -76,13 +71,7 @@ runs:
             del(.[$item.key])
           )
         ')
-        
-        # Debug variables
-        if [[ "${RUNNER_DEBUG:-0}" == "1" ]]; then
-          echo "Debug: VARIABLES converted into Jinja2-compatible JSON:"
-          echo "$VARIABLES" | jq '.'
-        fi
-        
+                
         echo "$VARIABLES" > __variables.json
 
     - name: Process configs
