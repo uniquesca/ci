@@ -648,3 +648,31 @@
 * BREAKING: hardcoded environment templating is replaced with Jinja2 (b45d888 by George Shestayev)
 * BREAKING: removed environment token mapping (b45d888 by George Shestayev)
 * New: introduced environment token fallbacks (b45d888 by George Shestayev)
+
+## v5.0.1
+
+* Fix: fixed working directory usage in prepare-environment action (6e13599 by George Shestayev)
+
+## v5.0.2
+
+* Fix: fixed working directory in Jinja2 step in prepare-environment action (d7645720 by George Shestayev)
+
+## v5.0.3
+
+* Fix: fixed path to variables json file when processing a config (7fc4526 by George Shestayev)
+
+## v5.0.4
+
+* Fix: exiting gracefully if no env_file_stub or env_file provide and no _ci_environment file found in prepare-environment job (13e2495 by George Shestayev)
+
+## v5.0.5
+
+* Fix: adding a check for __variables.json file to exist before deleting it (7d86cd0 by George Shestayev)
+
+## v5.0.6
+
+* Fix: adding a check for _ci_environment.json file to exist before reading token fallbacks from it (c27ae20 by George Shestayev)
+
+## v5.0.7
+
+* Fix: skipping Jinja2 processing if there is no env_file_stub or env_file (b5d67e2 by George Shestayev)

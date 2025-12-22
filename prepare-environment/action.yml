@@ -51,13 +51,22 @@ runs:
               echo "$VARIABLES" | jq '.' >&2
               exit 1
             fi
-            REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
-            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
-          else
-            # Fallback is a literal value
-            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
-          fi
-        done
+        
+            if [[ "$FALLBACK" == \$* ]]; then
+              # Fallback points to another variable
+              REFERENCE="${FALLBACK:1}"
+              if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
+                echo "Error: Referenced variable $REFERENCE is not found." >&2
+                exit 1
+              fi
+              REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
+              VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
+            else
+              # Fallback is a literal value
+              VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
+            fi
+          done
+        fi
         
         # Convert dot notation to nested objects
         echo "✅ Converting dot notation to nested objects..."
