@@ -3,17 +3,15 @@ import fs from "fs";
 import {CiPhpJob} from "./CiPhpJob.js";
 
 export class CiEnvironment {
-    env_file = '';
-    env_file_stub = '';
-    token_mappings = {};
-
+    configs = {};
+    token_fallbacks = {};
 
     // Array of CiJob classes
     job_matrix = [
         new CiPhpJob({
             os: "ubuntu-latest",
             php: {
-                version: "8.1",
+                version: "8.2",
                 extensions: "xdebug"
             },
             default: true,
@@ -26,6 +24,10 @@ export class CiEnvironment {
 
         if (copy.job_matrix) {
             copy.job_matrix = copy.job_matrix.map(jobInfo => new CiPhpJob(jobInfo));
+        }
+
+        if (copy.configs) {
+            copy.configs = copy.configs.map(config => new CiConfigInfo(config));
         }
 
         Object.assign(this, copy);

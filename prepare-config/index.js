@@ -13,19 +13,16 @@ if (workingDir) {
 
 // Retrieving environment from the file
 const env = CiEnvironment.fromEnvironmentFile();
-const configs = env.configs;
 
-for (const config of configs) {
-    let stub = config.stub;
-    let path = config.path;
-
-    // Copying stub file if exists
-    if (stub !== '' && fs.existsSync(stub)) {
-        fs.copyFileSync(stub, path);
-        core.info("Copied config stub " + stub + " into " + path);
-    }
+// Checking config file path - firstly from intput, then - from environment file
+let config = core.getInput('env_file');
+if (!config || config == '') {
+    config = env.env_file;
 }
-
+if (!config || config == '') {
+    core.info("Environment file not found, exiting.");
+    process.exit();
+}
 
 // Copying stub file if exists - firstly from intput, then - from environment file
 let configStub = core.getInput('env_file_stub');
