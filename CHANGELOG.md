@@ -676,3 +676,6 @@
 ## v5.0.7
 
 * Fix: skipping Jinja2 processing if there is no env_file_stub or env_file (b5d67e2 by George Shestayev)
+
+## v6.0.0
+
