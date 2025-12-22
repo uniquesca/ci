@@ -34,7 +34,7 @@ runs:
         ENVIRONMENT=$(cat _ci_environment.json)
         FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
         
-        for ENTRY in $FALLBACKS; do
+        echo "$FALLBACKS" | while read -r ENTRY; do
           KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
           FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
         
@@ -48,23 +48,13 @@ runs:
             REFERENCE="${FALLBACK:1}"
             if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
               echo "Error: Referenced variable $REFERENCE is not found." >&2
-              echo "$VARIABLES" | jq '.' >&2
               exit 1
             fi
-        
-            if [[ "$FALLBACK" == \$* ]]; then
-              # Fallback points to another variable
-              REFERENCE="${FALLBACK:1}"
-              if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
-                echo "Error: Referenced variable $REFERENCE is not found." >&2
-                exit 1
-              fi
-              REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
-              VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
-            else
-              # Fallback is a literal value
-              VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
-            fi
+            REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
+            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
+          else
+            # Fallback is a literal value
+            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
           fi
         done
         
