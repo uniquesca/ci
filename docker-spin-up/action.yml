@@ -6,7 +6,7 @@ inputs:
     required: false
     type: string
     default: '.'
-  docker_env_variables:
+  env_variables:
     description: 'Environment variables used for Docker config'
     required: false
     type: string
@@ -78,37 +78,22 @@ runs:
         
         echo "cmd=$cmd" >> $GITHUB_OUTPUT
 
-    - name: Check if .env.dist file exists
-      id: env_config_exists
-      shell: bash
-      run: |
-        if [ -f ".env.dist" ]; then
-          echo "exists=1" >> $GITHUB_OUTPUT
-        else
-          echo "exists=0" >> $GITHUB_OUTPUT
-        fi
-
     - name: Prepare uid:gid mapping
-      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
       id: uid_gid
       run: echo "result=$(id -u):$(id -g)" >> $GITHUB_OUTPUT
       shell: bash
 
-    - name: Prepare environment variables for Docker
-      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
-      id: merge_docker_variables
+    - name: Prepare environment variables
+      id: merge_env_variables
       uses: uniquesca/ci/merge-environment-variables@main
       with:
         variables1: ${{ format('{{"docker.user_map":"{0}"}}', steps.uid_gid.outputs.result) }}
-        variables2: ${{ inputs.docker_env_variables }}
+        variables2: ${{ inputs.env_variables }}
 
-    - name: Prepare Docker config
-      if: ${{ steps.env_config_exists.outputs.exists == 1 }}
+    - name: Prepare environment
       uses: uniquesca/ci/prepare-environment@main
       with:
-        env_variables: ${{ steps.merge_docker_variables.outputs.variables }}
-        env_file_stub: .env.dist
-        env_file: .env
+        env_variables: ${{ steps.merge_env_variables.outputs.variables }}
         working_directory: ${{ inputs.working_directory }}
 
     - name: Update hosts file

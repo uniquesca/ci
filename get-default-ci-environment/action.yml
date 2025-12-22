@@ -4,6 +4,7 @@ outputs:
   env:
     description: 'Retrieved default environment from _ci_environment.json file and compatible with Uniques CI framework'
 
+# TODO This job is named badly and need to be reworked to stray away from PHP
 runs:
   using: 'node20'
   main: 'index.js'
