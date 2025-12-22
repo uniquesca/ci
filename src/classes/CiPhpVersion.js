@@ -1,5 +1,5 @@
 export class CiPhpVersion {
-    version = "8.1";
+    version = "8.2";
     extensions = "";
 
     constructor(input) {

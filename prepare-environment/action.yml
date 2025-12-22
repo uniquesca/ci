@@ -1,107 +1,55 @@
-name: Prepare environment config
+name: Process multiple config templates
 
+on:
+  workflow_call:
 inputs:
   working_directory:
     description: 'Working directory for this action, defaults to the current worker directory'
     required: false
-    default: '.'
-  env_file:
-    description: 'Path to environment file. This has higher priority than the one defined in the CI environment config.'
-    required: false
-  env_file_stub:
-    description: 'Path to environment stub file. This has higher priority than the one defined in the CI environment config.'
-    required: false
+    default: "."
   env_variables:
     description: 'JSON string object with information about variables and mappings. See more in the documentation.'
     required: true
 
+
 runs:
   using: "composite"
+
   steps:
-    - name: Get env file stub path
-      id: env_file_stub
+    - name: Install Jinja2 CLI
       shell: bash
-      working-directory: ${{ inputs.working_directory }}
-      run: |
-        ENV_FILE_STUB="${{ inputs.env_file_stub }}"
-    
-        if [ -z "$ENV_FILE_STUB" ]; then
-          echo "⚠️ Input env_file_stub is empty, checking _ci_environment.json"
-        
-          if [ ! -f "_ci_environment.json" ]; then
-            echo "⚠️ env_file_stub not provided and _ci_environment.json file not found. Exiting."
-            exit 0
-          fi
-
-          # Try to read env_file_stub property
-          ENV_FILE_STUB=$(jq -r '.env_file_stub // empty' _ci_environment.json)
-    
-          if [ -z "$ENV_FILE_STUB" ]; then
-            echo "❌ Error: env_file_stub property not found in _ci_environment.json"
-            exit 1
-          fi
-
-          echo "✅ Using env_file_stub from _ci_environment.json: $ENV_FILE_STUB"
-        else
-          echo "✅ Using env_file_stub from input: $ENV_FILE_STUB"
-        fi
-        
-        # Also set as output
-        echo "env_file_stub=$ENV_FILE_STUB" >> $GITHUB_OUTPUT
-
-    - name: Get env file path
-      id: env_file
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
-      run: |
-        ENV_FILE="${{ inputs.env_file }}"
-        
-        if [ -z "$ENV_FILE" ]; then
-          echo "⚠️ Input env_file is empty, checking _ci_environment.json"
-        
-          if [ ! -f "_ci_environment.json" ]; then
-            echo "⚠️ env_file not provided and _ci_environment.json file not found"
-            exit 0
-          fi
-
-          # Try to read env_file property
-          ENV_FILE=$(jq -r '.env_file // empty' _ci_environment.json)
-        
-          if [ -z "$ENV_FILE" ]; then
-            echo "❌ Error: env_file property not found in _ci_environment.json"
-            exit 1
-          fi
-
-          echo "✅ Using env_file from _ci_environment.json: $ENV_FILE"
-        else
-          echo "✅ Using env_file from input: $ENV_FILE"
-        fi
-        
-        # Also set as output
-        echo "env_file=$ENV_FILE" >> $GITHUB_OUTPUT
+      run: pip install jinja2-cli[yaml,json]
 
     - name: Prepare variables - applying fallbacks
+      id: prepare-variables
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
         VARIABLES='${{ inputs.env_variables }}'
-    
+        
         # Validate variables input
         echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
 
-        # Check if _ci_environment.json exists
-        if [ -f _ci_environment.json ]; then
-          # Load environment JSON
-          ENVIRONMENT=$(cat _ci_environment.json)
-          FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
-      
-          for ENTRY in $FALLBACKS; do
-            KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
-            FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
-          
-            # Skip if variable is already defined
-            if echo "$VARIABLES" | jq -e --arg K "$KEY" 'has($K)' >/dev/null; then
-              continue
+        # Load environment JSON
+        ENVIRONMENT=$(cat _ci_environment.json)
+        FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
+        
+        for ENTRY in $FALLBACKS; do
+          KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
+          FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
+        
+          # Skip if variable is already defined
+          if echo "$VARIABLES" | jq -e --arg K "$KEY" 'has($K)' >/dev/null; then
+            continue
+          fi
+        
+          if [[ "$FALLBACK" == \$* ]]; then
+            # Fallback points to another variable
+            REFERENCE="${FALLBACK:1}"
+            if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
+              echo "Error: Referenced variable $REFERENCE is not found." >&2
+              echo "$VARIABLES" | jq '.' >&2
+              exit 1
             fi
         
             if [[ "$FALLBACK" == \$* ]]; then
@@ -138,20 +86,21 @@ runs:
         
         echo "$VARIABLES" > __variables.json
 
-    - name: Process config with Jinja2
-      uses: cuchi/jinja2-action@v1.3.0
-      if: (steps.env_file_stub.outputs.env_file_stub != '') && (steps.env_file.outputs.env_file != '')
-      with:
-        template: ${{ inputs.working_directory }}/${{ steps.env_file_stub.outputs.env_file_stub }}
-        output_file: ${{ inputs.working_directory }}/${{ steps.env_file.outputs.env_file }}
-        data_file: ${{ inputs.working_directory }}/__variables.json
-        data_format: json
-
-    - name: Cleanup variables
-      working-directory: ${{ inputs.working_directory }}
-      if: always()
+    - name: Process configs
       shell: bash
       run: |
-        if [ -f __variables.json ]; then
-          rm __variables.json
-        fi
+        jq -c '.configs[]' _ci_environment.json | while read -r cfg; do
+          STUB=$(echo "$cfg" | jq -r '.stub')
+          DEST=$(echo "$cfg" | jq -r '.path')
+
+          echo " ⏩ Jinja2: processing $STUB -> $DEST"
+
+          # Process template with JSON variables
+          jinja2 "$STUB" -o "$DEST" --format=json __variables.json
+        done
+
+    - name: Cleanup
+      if: ${{ always() }}
+      shell: bash
+      run: |
+        rm __variables.json -r

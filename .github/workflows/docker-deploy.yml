@@ -12,6 +12,9 @@ on:
       NODE_AUTH_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: false
+      ENV_VARIABLES:
+        description: 'Environment variables to set on the remote server'
+        required: false
     inputs:
       host:
         description: 'Address of the server'
@@ -43,32 +46,121 @@ on:
         required: false
         type: string
         default: '--force-recreate'
-      post_cmd:
-        description: 'Command to execute after deployment is complete'
+      runner_pre_cmd:
+        description: 'Command to execute on the RUNNER before preparing the environment. Used ONLY if prepare_environment is set to true.'
         required: false
         default: ''
         type: string
-
+      post_cmd:
+        description: 'Command to execute on the REMOTE after deployment is complete'
+        required: false
+        default: ''
+        type: string
+      prepare_environment:
+        description: 'Flag whether environment configs should be processed'
+        required: false
+        default: true
+        type: boolean
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Connect and deploy
-        uses: appleboy/ssh-action@v0.1.8
+      - name: Checkout application repository
+        uses: actions/checkout@v4
+        if: ${{ inputs.prepare_environment }}
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Pre-process command
+        if: ${{ inputs.prepare_environment }}
+        run: |
+          ${{ inputs.runner_pre_cmd }}
+
+      # This has to be done before the configs are uploaded
+      - name: Initialize deployment environment if necessary
+        uses: appleboy/ssh-action@v1
+        id: initialize
         with:
           host: ${{ inputs.host }}
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
-          script_stop: false
+          command_timeout: 5m
+          capture_stdout: true
           script: |
             # Making it more strict for the script to fail in case of an error
             set -eux;
             
-            echo "Changing work dir"
+            # Check if it's already a git repo
+            if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
+              echo "Git not initialized, cloning repository..."
+              git clone --branch "${{ inputs.ref }}" --single-branch "git@github.com:${{ github.repository }}.git" "${{ inputs.deployment_path }}"
+              echo "<<<OUTPUT::0>>>"
+            else
+              echo "<<<OUTPUT::1>>>"
+            fi
+
+      - name: Process configs
+        if: ${{ inputs.prepare_environment }}
+        uses: uniquesca/ci/prepare-environment@main
+        with:
+          env_variables: ${{ secrets.ENV_VARIABLES }}
+
+      - name: Prepare upload paths
+        id: upload_paths
+        run: |
+          PATHS=$(jq -r '[.configs[].path] | join(",")' _ci_environment.json)
+          echo "paths=$PATHS" >> $GITHUB_OUTPUT
+
+      - name: Upload configs
+        if: ${{ inputs.prepare_environment }}
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          source: ${{ steps.upload_paths.outputs.paths }}
+          target: ${{ inputs.deployment_path }}
+          command_timeout: 1m
+
+      - name: Checking if the repo was just initialized
+        id: previously_initialized
+        run: |
+          RAW=$(printf %s "${{ steps.initialize.outputs.stdout }}")
+          RESULT=$(echo "$RAW" | grep -o '<<<OUTPUT::[01]>>>' | tail -n1 | sed -E 's/<<<OUTPUT::([01])>>>/\1/')
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+
+      - name: Connect and deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          command_timeout: 3m
+          script: |
+            # Making it more strict for the script to fail in case of an error
+            set -eux;
+            
+            # Change into the directory
             cd ${{ inputs.deployment_path }}
             
+            # Check if the repo was previously initialized
+            INITALIZED="${{ steps.previously_initialized.outputs.result }}"
+
+            cat _ci_environment.json
+            
+            # Always parse init_script from JSON
+            INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
+
+            # Run init script if it's provided and it's a freshly initialized repo 
+            if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
+              echo "Repo is freshly initialized, running init script: $INIT_SCRIPT"
+              bash "$INIT_SCRIPT"
+            fi
+
             echo "Cleaning git"
             git clean -fd
             
