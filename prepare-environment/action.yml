@@ -78,7 +78,7 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
-        jq -c '.configs[]' _ci_environment.json | while read -r cfg; do
+        jq -c '.configs[]?' _ci_environment.json | while read -r cfg; do
           STUB=$(echo "$cfg" | jq -r '.stub')
           DEST=$(echo "$cfg" | jq -r '.path')
 
