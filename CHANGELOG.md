@@ -705,3 +705,7 @@
 ## v6.0.4
 
 * Fix: added working directory to all steps in prepare-environment job (4134e13 by George Shestayev)
+
+## v6.0.5
+
+* Update: skipping configs processing in case list of configs is missing or empty in CI environment (4477328 by George Shestayev)
