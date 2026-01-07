@@ -30,9 +30,13 @@ runs:
         # Validate variables input
         echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
 
-        # Load environment JSON
-        ENVIRONMENT=$(cat _ci_environment.json)
-        FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
+        # Load environment JSON only if file exists
+        if [[ -f _ci_environment.json ]]; then
+          ENVIRONMENT=$(< _ci_environment.json)
+          FALLBACKS=($(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64'))
+        else
+          FALLBACKS=()
+        fi
         
         # WARNING: AI says this will cause an issue if values have spaces
         for ENTRY in $FALLBACKS; do
