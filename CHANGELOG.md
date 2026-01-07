@@ -713,3 +713,7 @@
 ## v6.0.6
 
 * Update: making _ci_environment.json file optional in prepare-environment action (cd4c86a by George Shestayev)
+
+## v6.0.7
+
+* Update: making _ci_environment.json file optional in prepare-environment action (2c6247f by George Shestayev)
