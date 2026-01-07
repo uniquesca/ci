@@ -717,3 +717,7 @@
 ## v6.0.7
 
 * Update: making _ci_environment.json file optional in prepare-environment action (2c6247f by George Shestayev)
+
+## v6.0.8
+
+* Fix: regression fix in processing CI token fallbacks (de9576d by George Shestayev)
