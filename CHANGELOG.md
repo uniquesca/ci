@@ -709,3 +709,7 @@
 ## v6.0.5
 
 * Update: skipping configs processing in case list of configs is missing or empty in CI environment (4477328 by George Shestayev)
+
+## v6.0.6
+
+* Update: making _ci_environment.json file optional in prepare-environment action (cd4c86a by George Shestayev)
