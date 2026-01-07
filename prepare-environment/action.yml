@@ -40,8 +40,8 @@ runs:
         echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
 
         # Load environment JSON only if file exists
-        ENVIRONMENT=$(< _ci_environment.json)
-        FALLBACKS=($(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64'))
+        ENVIRONMENT=$(cat _ci_environment.json)
+        FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
         
         # WARNING: AI says this will cause an issue if values have spaces
         for ENTRY in $FALLBACKS; do
