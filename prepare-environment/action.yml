@@ -18,25 +18,30 @@ runs:
   steps:
     - name: Install Jinja2 CLI
       shell: bash
-      run: pip install jinja2-cli[yaml,json]
+      run: |
+        if [ ! -f _ci_environment.json ]; then
+          echo "No CI envornment file — skipping composite action"
+          exit 0
+        fi
+        pip install jinja2-cli[yaml,json]
 
     - name: Prepare variables - applying fallbacks
       id: prepare-variables
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
+        if [ ! -f _ci_environment.json ]; then
+          exit 0
+        fi
+        
         VARIABLES='${{ inputs.env_variables }}'
         
         # Validate variables input
         echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
 
         # Load environment JSON only if file exists
-        if [[ -f _ci_environment.json ]]; then
-          ENVIRONMENT=$(< _ci_environment.json)
-          FALLBACKS=($(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64'))
-        else
-          FALLBACKS=()
-        fi
+        ENVIRONMENT=$(< _ci_environment.json)
+        FALLBACKS=($(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64'))
         
         # WARNING: AI says this will cause an issue if values have spaces
         for ENTRY in $FALLBACKS; do
@@ -82,6 +87,10 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working_directory }}
       run: |
+        if [ ! -f _ci_environment.json ]; then
+          exit 0
+        fi
+        
         jq -c '.configs[]?' _ci_environment.json | while read -r cfg; do
           STUB=$(echo "$cfg" | jq -r '.stub')
           DEST=$(echo "$cfg" | jq -r '.path')
@@ -97,4 +106,6 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       shell: bash
       run: |
-        rm __variables.json -r
+        if [  -f __variables.json ]; then
+          rm __variables.json -r
+        fi
