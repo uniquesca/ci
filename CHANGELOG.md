@@ -721,3 +721,8 @@
 ## v6.0.8
 
 * Fix: regression fix in processing CI token fallbacks (de9576d by George Shestayev)
+
+## v6.0.9
+
+* Fix: fixed jinja2 call (3bd519c by George Shestayev)
+* Fix: fixed logic for processing variables even if there is no _ci_environment.json file (faa5779 by George Shestayev)
