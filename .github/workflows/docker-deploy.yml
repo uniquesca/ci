@@ -196,7 +196,10 @@ jobs:
 
               if [[ "$branch_exists" -gt 0 ]]; then
                 echo "Remote branch $ref exists, performing hard reset to it"
-                git fetch origin "$ref"
+            
+                # Force-create the remote-tracking branch
+                git fetch origin "$ref:refs/remotes/origin/$ref"
+
                 git reset --hard "origin/$ref"
               else
                 echo "Remote branch $ref not found, performing hard reset"
