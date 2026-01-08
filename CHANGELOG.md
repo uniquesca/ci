@@ -726,3 +726,7 @@
 
 * Fix: fixed jinja2 call (3bd519c by George Shestayev)
 * Fix: fixed logic for processing variables even if there is no _ci_environment.json file (faa5779 by George Shestayev)
+
+## v6.0.10
+
+* Update: improved robustness in the code for updating a branch during autodeployment (3613e61 by George Shestayev)
