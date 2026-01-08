@@ -192,14 +192,15 @@ jobs:
               echo "Pull request not detected"
               echo "Checking if remote branch exists"
               # This is just regular branch
-              branch_exists="$(git ls-remote --heads origin $ref | wc -l)"
+              branch_exists="$(git ls-remote --heads origin "$ref" | wc -l)"
 
-              if [[ branch_exists > 0 ]]; then
-                echo "Remote branch ${{ inputs.ref }} exists, performing hard reset to it"
-                git reset --hard origin/${{ inputs.ref }}
+              if [[ "$branch_exists" -gt 0 ]]; then
+                echo "Remote branch $ref exists, performing hard reset to it"
+                git fetch origin "$ref"
+                git reset --hard "origin/$ref"
               else
-                echo "Remote branch ${{ inputs.ref }} not found, performing hard reset"
-                git reset --hard ${{ inputs.ref }}
+                echo "Remote branch $ref not found, performing hard reset"
+                git reset --hard $ref
               fi
             fi
             
