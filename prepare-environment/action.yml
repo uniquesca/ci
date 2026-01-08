@@ -29,46 +29,46 @@ runs:
       id: prepare-variables
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      run: |
-        if [ ! -f _ci_environment.json ]; then
-          exit 0
-        fi
-        
+      run: |       
         VARIABLES='${{ inputs.env_variables }}'
         
         # Validate variables input
         echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
 
-        # Load environment JSON only if file exists
-        ENVIRONMENT=$(cat _ci_environment.json)
-        FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
-        
-        # WARNING: AI says this will cause an issue if values have spaces
-        for ENTRY in $FALLBACKS; do
-          KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
-          FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
-        
-          # Skip if variable is already defined
-          if echo "$VARIABLES" | jq -e --arg K "$KEY" 'has($K)' >/dev/null; then
-            continue
-          fi
-        
-          if [[ "$FALLBACK" == \$* ]]; then
-            # Fallback points to another variable
-            REFERENCE="${FALLBACK:1}"
-            if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
-              echo "Error: Referenced variable $REFERENCE is not found." >&2
-              exit 1
+
+        # Handling fallbacks if defined
+        if [ -f _ci_environment.json ]; then
+          # Load environment JSON only if file exists
+          ENVIRONMENT=$(cat _ci_environment.json)
+          FALLBACKS=$(echo "$ENVIRONMENT" | jq -r '.token_fallbacks // empty | to_entries[] | @base64')
+          
+          # WARNING: AI says this will cause an issue if values have spaces
+          for ENTRY in $FALLBACKS; do
+            KEY=$(echo "$ENTRY" | base64 --decode | jq -r '.key')
+            FALLBACK=$(echo "$ENTRY" | base64 --decode | jq -r '.value')
+          
+            # Skip if variable is already defined
+            if echo "$VARIABLES" | jq -e --arg K "$KEY" 'has($K)' >/dev/null; then
+              continue
             fi
-            REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
-            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
-            echo "Adding fallback variable $KEY pointing to $REFERENCE"
-          else
-            # Fallback is a literal value
-            VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
-            echo "Adding fallback variable $KEY"
-          fi
-        done
+          
+            if [[ "$FALLBACK" == \$* ]]; then
+              # Fallback points to another variable
+              REFERENCE="${FALLBACK:1}"
+              if ! echo "$VARIABLES" | jq -e --arg R "$REFERENCE" 'has($R)' >/dev/null; then
+                echo "Error: Referenced variable $REFERENCE is not found." >&2
+                exit 1
+              fi
+              REF_VALUE=$(echo "$VARIABLES" | jq -r --arg R "$REFERENCE" '.[$R]')
+              VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$REF_VALUE" '.[$K]=$V')
+              echo "Adding fallback variable $KEY pointing to $REFERENCE"
+            else
+              # Fallback is a literal value
+              VARIABLES=$(echo "$VARIABLES" | jq --arg K "$KEY" --arg V "$FALLBACK" '.[$K]=$V')
+              echo "Adding fallback variable $KEY"
+            fi
+          done
+        fi
         
         # Convert dot notation to nested objects
         echo "✅ Converting dot notation to nested objects..."
@@ -89,6 +89,11 @@ runs:
       run: |
         if [ ! -f _ci_environment.json ]; then
           exit 0
+        fi
+        
+        if [ ! -f __variables.json ]; then
+          echo "❌ Variables file not found."
+          exit 1
         fi
         
         jq -c '.configs[]?' _ci_environment.json | while read -r cfg; do
