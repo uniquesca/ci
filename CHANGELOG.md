@@ -730,3 +730,7 @@
 ## v6.0.10
 
 * Update: improved robustness in the code for updating a branch during autodeployment (3613e61 by George Shestayev)
+
+## v6.0.11
+
+* Update: improved robustness in the code for updating a branch during autodeployment (b3a0223 by George Shestayev)
