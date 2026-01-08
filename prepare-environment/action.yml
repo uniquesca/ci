@@ -103,7 +103,7 @@ runs:
           echo " ⏩ Jinja2: processing $STUB -> $DEST"
 
           # Process template with JSON variables
-          jinja2 "$STUB" -o "$DEST" --format=json __variables.json
+          jinja2 -o "$DEST" -f json "$STUB" __variables.json
         done
 
     - name: Cleanup
