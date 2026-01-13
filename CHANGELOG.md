@@ -754,3 +754,7 @@
 * Fix: fixed cloning code in the deployment job that makes git stuck with a wrong ref (27e9e13 by George Shestayev)
 * Update: --remove-orphans and --build arguments added to default docker deploy ones (58fdd57 by George Shestayev)
 * Update: running CI init script if defined in docker-spin-up job (24e0027e by George Shestayev)
+
+## v6.2.0
+
+* Update: in docker-spin-up job variables are dumped into a file that is exposed to INIT_SCRIPT via VARIABLES_FILE env var (8591f0f by George Shestayev)
