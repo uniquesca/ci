@@ -742,3 +742,8 @@
 ## v6.0.13
 
 * Update: improved robustness in the code for updating the code from git during autodeployment (055daa8 by George Shestayev)
+
+## v6.0.14
+
+* Update: improved robustness in the code for updating the code from git during autodeployment (6f318b7 by George Shestayev)
+* Update: improved robustness in the code for updating the code from git during autodeployment (d08049f by George Shestayev)
