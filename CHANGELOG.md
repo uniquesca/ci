@@ -764,3 +764,7 @@
 ## v6.2.1
 
 * Fix: fixed code responsible for writing env variables into a temporary exposed file (a143675 by George Shestayev)
+
+## v6.2.2
+
+* Fix: fixed code responsible for writing env variables into a temporary exposed file (59f2e83 by George Shestayev)
