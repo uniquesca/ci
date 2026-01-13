@@ -164,11 +164,14 @@ jobs:
             echo "Cleaning git"
             git clean -fd
             
+            echo "Ensuring we are not on a deleted branch"
+            git checkout --detach || true
+            
             echo "Pruning git"
             git remote prune origin
             
             echo "Retrieving the latest updates"
-            git fetch
+            git fetch --prune
 
             # This part is commented because it doesn't work well - if there are any changes done, 
             # or some commits are ahead autodeployment will fail
