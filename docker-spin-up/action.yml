@@ -91,8 +91,20 @@ runs:
         
         # Run init script if it's provided and it's a freshly initialized repo 
         if [ -n "$INIT_SCRIPT" ]; then
+          # Create a secure temporary file
+          VARIABLES_FILE=$(mktemp)
+    
+          # Dump env variables into the file
+          printf '%s\n' "${{ inputs.env_variables }}" > "$VARIABLES_FILE"
+        
+          # Export so INIT_SCRIPT can access it
+          export VARIABLES_FILE
+      
           echo "Running init script: $INIT_SCRIPT"
           bash "$INIT_SCRIPT"
+        
+          # Cleanup
+          rm -f "$VARIABLES_FILE"
         fi
 
     - name: Prepare environment variables
