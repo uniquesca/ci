@@ -74,9 +74,11 @@ jobs:
           if [ -n "$INIT_SCRIPT" ]; then
             # Create a secure temporary file
             VARIABLES_FILE=$(mktemp)
-        
-            # Dump env variables into the file
-            printf '%s\n' "${{ secrets.ENV_VARIABLES }}" > "$VARIABLES_FILE"
+          
+            # Write JSON exactly as provided
+            cat <<'EOF' > "$VARIABLES_FILE"
+              ${{ secrets.ENV_VARIABLES }}
+            EOF
         
             # Export so INIT_SCRIPT can access it
             export VARIABLES_FILE
@@ -170,9 +172,11 @@ jobs:
             if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
               # Create a secure temporary file
               VARIABLES_FILE=$(mktemp)
-              
-              # Dump env variables into the file
-              printf '%s\n' "${{ secrets.ENV_VARIABLES }}" > "$VARIABLES_FILE"
+            
+              # Write JSON exactly as provided
+              cat <<'EOF' > "$VARIABLES_FILE"
+                ${{ secrets.ENV_VARIABLES }}
+              EOF
               
               # Export so INIT_SCRIPT can access it
               export VARIABLES_FILE
