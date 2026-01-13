@@ -747,3 +747,8 @@
 
 * Update: improved robustness in the code for updating the code from git during autodeployment (6f318b7 by George Shestayev)
 * Update: improved robustness in the code for updating the code from git during autodeployment (d08049f by George Shestayev)
+
+## v6.1.0
+
+* Fix: fixed cloning code in the deployment job that makes git stuck with a wrong ref (27e9e13 by George Shestayev)
+* Update: --remove-orphans and --build arguments added to default docker deploy ones (58fdd57 by George Shestayev)
