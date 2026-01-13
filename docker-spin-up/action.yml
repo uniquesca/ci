@@ -83,6 +83,18 @@ runs:
       run: echo "result=$(id -u):$(id -g)" >> $GITHUB_OUTPUT
       shell: bash
 
+    - name: Run init script if defined
+      shell: bash
+      run: |
+        # Parse init_script from JSON
+        INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
+        
+        # Run init script if it's provided and it's a freshly initialized repo 
+        if [ -n "$INIT_SCRIPT" ]; then
+          echo "Running init script: $INIT_SCRIPT"
+          bash "$INIT_SCRIPT"
+        fi
+
     - name: Prepare environment variables
       id: merge_env_variables
       uses: uniquesca/ci/merge-environment-variables@main

@@ -148,8 +148,6 @@ jobs:
             # Check if the repo was previously initialized
             INITALIZED="${{ steps.previously_initialized.outputs.result }}"
 
-            cat _ci_environment.json
-            
             # Always parse init_script from JSON
             INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
 
