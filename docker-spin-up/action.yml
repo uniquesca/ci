@@ -93,11 +93,9 @@ runs:
         if [ -n "$INIT_SCRIPT" ]; then
           # Create a secure temporary file
           VARIABLES_FILE=$(mktemp)
-    
-          # Write JSON exactly as provided
-          cat <<'EOF' > "$VARIABLES_FILE"
-            ${{ inputs.env_variables }}
-          EOF
+        
+          VARIABLES='${{ inputs.env_variables }}'
+          echo "$VARIABLES" > "$VARIABLES_FILE"
   
           # Export so INIT_SCRIPT can access it
           export VARIABLES_FILE
