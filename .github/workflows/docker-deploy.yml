@@ -37,15 +37,11 @@ on:
         description: 'Git branch or tag to use for the project on the server'
         required: true
         type: string
-      mode:
-        description: 'Can be pull, build or skip it otherwise'
-        required: false
-        type: string
       docker_up_args:
         description: 'Arguments to pass to docker up command'
         required: false
         type: string
-        default: '--force-recreate'
+        default: '--force-recreate --remove-orphans --build'
       runner_pre_cmd:
         description: 'Command to execute on the RUNNER before preparing the environment. Used ONLY if prepare_environment is set to true.'
         required: false
@@ -223,19 +219,6 @@ jobs:
                 echo "Remote branch $ref not found, performing hard reset"
                 git reset --hard $ref
               fi
-            fi
-            
-            # TODO Add compatibility with `docker compose` as well
-
-            if [[ ${{ inputs.mode }} = "build" ]]; then
-              # Rebuild docker image
-              echo "Rebuilding Docker image"
-              ./task.sh build
-            elif [[ ${{ inputs.mode }} = "pull" ]]; then
-              # Pull latest image
-              echo "Rebuilding Docker image"
-              # TODO Switch to task.sh
-              docker compose pull
             fi
             
             echo "Stopping Docker Services"
