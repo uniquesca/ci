@@ -182,7 +182,7 @@ jobs:
                 git branch -D "$branch"
               fi
             done
-  
+
             echo "Retrieving the latest updates"
             git fetch --prune
 
