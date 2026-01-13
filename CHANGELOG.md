@@ -758,3 +758,5 @@
 ## v6.2.0
 
 * Update: in docker-spin-up job variables are dumped into a file that is exposed to INIT_SCRIPT via VARIABLES_FILE env var (8591f0f by George Shestayev)
+* BREAKING: removed runner_pre_cmd from docker-deploy CI job (28f9504d by George Shestayev)
+* Update: using INIT script with properly exposed env variables for docker-deploy job (28f9504d by George Shestayev)
