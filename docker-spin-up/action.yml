@@ -94,9 +94,11 @@ runs:
           # Create a secure temporary file
           VARIABLES_FILE=$(mktemp)
     
-          # Dump env variables into the file
-          printf '%s\n' "${{ inputs.env_variables }}" > "$VARIABLES_FILE"
-        
+          # Write JSON exactly as provided
+          cat <<'EOF' > "$VARIABLES_FILE"
+            ${{ inputs.env_variables }}
+          EOF
+  
           # Export so INIT_SCRIPT can access it
           export VARIABLES_FILE
       

@@ -35,7 +35,6 @@ runs:
         # Validate variables input
         echo "$VARIABLES" | jq empty || { echo "❌ env_variables is not valid JSON"; exit 1; }
 
-
         # Handling fallbacks if defined
         if [ -f _ci_environment.json ]; then
           # Load environment JSON only if file exists
