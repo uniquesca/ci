@@ -42,11 +42,6 @@ on:
         required: false
         type: string
         default: '--force-recreate --remove-orphans --build'
-      runner_pre_cmd:
-        description: 'Command to execute on the RUNNER before preparing the environment. Used ONLY if prepare_environment is set to true.'
-        required: false
-        default: ''
-        type: string
       post_cmd:
         description: 'Command to execute on the REMOTE after deployment is complete'
         required: false
@@ -68,10 +63,30 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # DIRTY - we want to download configs instead of building them locally
       - name: Pre-process command
         if: ${{ inputs.prepare_environment }}
         run: |
-          ${{ inputs.runner_pre_cmd }}
+          # Always parse init_script from JSON
+          INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
+
+          # Run init script if it's provided and it's a freshly initialized repo 
+          if [ -n "$INIT_SCRIPT" ]; then
+            # Create a secure temporary file
+            VARIABLES_FILE=$(mktemp)
+        
+            # Dump env variables into the file
+            printf '%s\n' "${{ secrets.ENV_VARIABLES }}" > "$VARIABLES_FILE"
+        
+            # Export so INIT_SCRIPT can access it
+            export VARIABLES_FILE
+        
+            echo "Running init script: $INIT_SCRIPT"
+            bash "$INIT_SCRIPT"
+        
+            # Cleanup
+            rm -f "$VARIABLES_FILE"
+          fi
 
       # This has to be done before the configs are uploaded
       - name: Initialize deployment environment if necessary
@@ -153,8 +168,20 @@ jobs:
 
             # Run init script if it's provided and it's a freshly initialized repo 
             if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
-              echo "Repo is freshly initialized, running init script: $INIT_SCRIPT"
+              # Create a secure temporary file
+              VARIABLES_FILE=$(mktemp)
+              
+              # Dump env variables into the file
+              printf '%s\n' "${{ secrets.ENV_VARIABLES }}" > "$VARIABLES_FILE"
+              
+              # Export so INIT_SCRIPT can access it
+              export VARIABLES_FILE
+              
+              echo "Running init script: $INIT_SCRIPT"
               bash "$INIT_SCRIPT"
+              
+              # Cleanup
+              rm -f "$VARIABLES_FILE"
             fi
 
             echo "Cleaning git"
