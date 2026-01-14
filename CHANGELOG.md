@@ -772,3 +772,7 @@
 ## v6.2.3
 
 * Fix: using env variables from secrets instead of input in docker-deploy job (3d4f268 by George Shestayev)
+
+## v6.2.4
+
+* Fix: syntax fix in docker-deploy job (b60b79a by George Shestayev)
