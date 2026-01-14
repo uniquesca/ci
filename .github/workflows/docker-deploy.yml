@@ -108,7 +108,7 @@ jobs:
               echo "Git not initialized, cloning repository..."
               git clone "git@github.com:${{ github.repository }}.git" "${{ inputs.deployment_path }}"
               cd "${{ inputs.deployment_path }}"
-              git checkout "${{ inputs.ref }}""
+              git checkout "${{ inputs.ref }}"
               echo "<<<OUTPUT::0>>>"
             else
               echo "<<<OUTPUT::1>>>"
