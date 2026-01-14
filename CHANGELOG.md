@@ -768,3 +768,7 @@
 ## v6.2.2
 
 * Fix: fixed code responsible for writing env variables into a temporary exposed file (59f2e83 by George Shestayev)
+
+## v6.2.3
+
+* Fix: using env variables from secrets instead of input in docker-deploy job (3d4f268 by George Shestayev)
