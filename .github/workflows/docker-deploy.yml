@@ -75,7 +75,7 @@ jobs:
             # Create a secure temporary file
             VARIABLES_FILE=$(mktemp)
           
-            VARIABLES='${{ inputs.env_variables }}'
+            VARIABLES='${{ secrets.ENV_VARIABLES }}'
             echo "$VARIABLES" > "$VARIABLES_FILE"
         
             # Export so INIT_SCRIPT can access it
@@ -171,7 +171,7 @@ jobs:
               # Create a secure temporary file
               VARIABLES_FILE=$(mktemp)
             
-              VARIABLES='${{ inputs.env_variables }}'
+              VARIABLES='${{ secrets.ENV_VARIABLES }}'
               echo "$VARIABLES" > "$VARIABLES_FILE"
               
               # Export so INIT_SCRIPT can access it
