@@ -776,3 +776,7 @@
 ## v6.2.4
 
 * Fix: syntax fix in docker-deploy job (b60b79a by George Shestayev)
+
+## v6.2.5
+
+* Update: uploading _ci_environment.json file in docker-deploy job to cover cases when it's a freshly introduced one (3b93562 by George Shestayev)
