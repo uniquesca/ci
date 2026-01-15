@@ -123,8 +123,10 @@ jobs:
       - name: Prepare upload paths
         id: upload_paths
         run: |
+          # We upload configs + _ci_environment.json file to cover the case 
+          # when it  was just introduced
           PATHS=$(jq -r '[.configs[].path] | join(",")' _ci_environment.json)
-          echo "paths=$PATHS" >> $GITHUB_OUTPUT
+          echo "paths=$PATHS,_ci_environment.json" >> $GITHUB_OUTPUT
 
       - name: Upload configs
         if: ${{ inputs.prepare_environment }}
