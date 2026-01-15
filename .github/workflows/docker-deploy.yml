@@ -279,14 +279,14 @@ jobs:
             fi
             rm -f .npmrc
             
-            if ./task.sh supports migrate > /dev/null; then
-              echo "Running migrations"
-              ./task.sh migrate
-            fi
-
             if ./task.sh supports clear-cache > /dev/null; then
               echo "Clearing cache"
               ./task.sh clear-cache
+            fi
+            
+            if ./task.sh supports migrate > /dev/null; then
+              echo "Running migrations"
+              ./task.sh migrate
             fi
             
             echo "Executing post-deployment command"
