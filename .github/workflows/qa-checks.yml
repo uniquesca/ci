@@ -101,7 +101,7 @@ jobs:
           variables2: '{"db.name":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Set up default environment file
-        uses: uniquesca/ci/prepare-environment@main
+        uses: uniquesca/ci/prepare-environment@v4
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
@@ -156,7 +156,7 @@ jobs:
 
       - name: Set up PHPUnit environment file
         if: env.phpunit == 1
-        uses: uniquesca/ci/prepare-environment@main
+        uses: uniquesca/ci/prepare-environment@v4
         with:
           env_file: "phpunit.xml"
           env_file_stub: "phpunit.xml.dist"

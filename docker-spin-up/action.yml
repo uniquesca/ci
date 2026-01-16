@@ -104,7 +104,7 @@ runs:
 
     - name: Prepare Docker config
       if: ${{ steps.env_config_exists.outputs.exists == 1 }}
-      uses: uniquesca/ci/prepare-environment@main
+      uses: uniquesca/ci/prepare-environment@v4
       with:
         env_variables: ${{ steps.merge_docker_variables.outputs.variables }}
         env_file_stub: .env.dist
