@@ -85,6 +85,7 @@ runs:
 
     - name: Run init script if defined
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         # Parse init_script from JSON
         INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
@@ -106,6 +107,7 @@ runs:
           # Cleanup
           rm -f "$VARIABLES_FILE"
         fi
+
 
     - name: Prepare environment variables
       id: merge_env_variables
