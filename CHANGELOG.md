@@ -780,3 +780,8 @@
 ## v6.2.5
 
 * Update: uploading _ci_environment.json file in docker-deploy job to cover cases when it's a freshly introduced one (3b93562 by George Shestayev)
+
+## v6.2.6
+
+* Fix: added missing working_directory in docker-spin-up job (d9d0f6c by George Shestayev)
+* Update: cleaning cache before migrations in docker-deploy job to avoid old cached config (07bd117 by George Shestayev)
