@@ -785,3 +785,7 @@
 
 * Fix: added missing working_directory in docker-spin-up job (d9d0f6c by George Shestayev)
 * Update: cleaning cache before migrations in docker-deploy job to avoid old cached config (07bd117 by George Shestayev)
+
+## v6.2.7
+
+* Fix: added missing working_directory in prepare-environment job (657ba95 by George Shestayev)
