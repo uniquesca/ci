@@ -66,8 +66,8 @@ RUN \
     mkdir -p $NVM_DIR; \
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
       && . $NVM_DIR/nvm.sh \
-      && nvm install 20 \
-      && nvm alias default 20 \
+      && nvm install 18 \
+      && nvm alias default 18 \
       && nvm use default \
       && npm install -g yarn; \
     mkdir /.npm -p; \
