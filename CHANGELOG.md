@@ -789,3 +789,7 @@
 ## v6.2.7
 
 * Fix: added missing working_directory in prepare-environment job (657ba95 by George Shestayev)
+
+## v6.3.0
+
+* Update: node version downgraded to 18 for PHP5.6 based images (7561c7b by George Shestayev)
