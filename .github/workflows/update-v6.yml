@@ -1,0 +1,28 @@
+name: Update v6 branch
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "service@uniques.ca"
+          git config --local user.name "CI"
+
+      - name: Merge main into v6
+        run: |
+          git fetch origin v6:v6
+          git checkout v6
+          git merge origin/main -m "CI: merge main into v6 [skip-ci]"
+          git push origin v6

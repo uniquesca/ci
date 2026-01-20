@@ -793,3 +793,7 @@
 ## v6.3.0
 
 * Update: node version downgraded to 18 for PHP5.6 based images (7561c7b by George Shestayev)
+
+## v6.3.1
+
+* Update: node version downgraded to 16 for PHP5.6 based images (a7f797f by George Shestayev)
