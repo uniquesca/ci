@@ -232,6 +232,7 @@ runs:
       run: |
         # This is a hack because otherwise Yarn can't just download private packages =/
         if [ -f "yarn.lock" ]; then
+          echo "Removing yarn.lock to avoid Yarn authentication issues with private packages"
           rm yarn.lock
         fi
 
