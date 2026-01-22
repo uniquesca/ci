@@ -797,3 +797,7 @@
 ## v6.3.1
 
 * Update: node version downgraded to 16 for PHP5.6 based images (a7f797f by George Shestayev)
+
+## v6.3.2
+
+* Update: adding additional output on CI (d0e9a4e by George Shestayev)
