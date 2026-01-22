@@ -801,3 +801,7 @@
 ## v6.3.2
 
 * Update: adding additional output on CI (d0e9a4e by George Shestayev)
+
+## v6.3.3
+
+* Fix: adding missing working directory to yarn-related functionality in install-packages job (5af40ad by George Shestayev)

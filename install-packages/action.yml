@@ -210,6 +210,7 @@ runs:
       if: steps.npm_yarn.outputs.yarn == 1 && steps.yarn_cache_dir.outputs.path
       id: yarn_cache_key_file
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         if [[ -f "yarn.lock" ]]; then
           echo "file=yarn.lock" >> $GITHUB_OUTPUT
@@ -227,8 +228,9 @@ runs:
           ${{ runner.os }}-yarn-
 
     - name: Remove Yarn lock (hack)
-      if: inputs.remove_yarn_lock_hack == 'true'
+      if: inputs.remove_yarn_lock_hack == true
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         # This is a hack because otherwise Yarn can't just download private packages =/
         if [ -f "yarn.lock" ]; then
