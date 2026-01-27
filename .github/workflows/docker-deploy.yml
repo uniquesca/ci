@@ -278,7 +278,7 @@ jobs:
                   if [ -f "yarn.lock" ]; then
                     echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
                     rm yarn.lock
-                    ${{ inputs.yarn_install_cmd }}
+                    ./task.sh yarn install
                   else
                     exit $exit_code
                   fi
