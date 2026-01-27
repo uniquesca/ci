@@ -814,3 +814,7 @@
 ## v6.4.1
 
 * Update: updated yarn install command to retry if it fails with 401 Unauthorized during docker deployments (e9e9124 by George Shestayev)
+
+## v6.4.2
+
+* Fix: fixed yarn install retry in docker-deploy job (bef3654 by George Shestayev)
