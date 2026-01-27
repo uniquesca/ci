@@ -810,3 +810,7 @@
 
 * Update: removing remove_yarn_lock_hack input from install-packages job (6e9de80 by George Shestayev)
 * Update: updated yarn install command to retry if it fails with 401 Unauthorized (6e9de80 by George Shestayev)
+
+## v6.4.1
+
+* Update: updated yarn install command to retry if it fails with 401 Unauthorized during docker deployments (e9e9124 by George Shestayev)
