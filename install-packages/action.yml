@@ -44,10 +44,6 @@ inputs:
     description: 'Command to install Yarn'
     required: false
     default: "yarn install --production=false"
-  remove_yarn_lock_hack:
-    description: 'Hack to remove yarn lock file before yarn install'
-    required: false
-    default: true
   cache_key:
     description: 'Cache key fraction to add to make cache unique'
     required: false
@@ -114,9 +110,9 @@ runs:
           mv composer.lock composer.lock_
           cp ${{ inputs.composer_lock }} composer.lock
         fi
-        
+
         ${{ inputs.composer_cmd }}
-        
+
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
           rm composer.lock
           mv composer.lock_ composer.lock
@@ -133,7 +129,7 @@ runs:
           if [ -f ".yarnrc" ]; then
             echo "yarn=1" >> $GITHUB_OUTPUT
             echo "Yarn found"
-          else 
+          else
             echo "npm=1" >> $GITHUB_OUTPUT
             echo "NPM found"
           fi
@@ -227,17 +223,6 @@ runs:
         restore-keys: |
           ${{ runner.os }}-yarn-
 
-    - name: Remove Yarn lock (hack)
-      if: inputs.remove_yarn_lock_hack == true
-      shell: bash
-      working-directory: ${{ inputs.working_directory }}
-      run: |
-        # This is a hack because otherwise Yarn can't just download private packages =/
-        if [ -f "yarn.lock" ]; then
-          echo "Removing yarn.lock to avoid Yarn authentication issues with private packages"
-          rm yarn.lock
-        fi
-
     - name: Install Yarn dependencies
       shell: bash
       working-directory: ${{ inputs.working_directory }}
@@ -246,7 +231,20 @@ runs:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
       run: |
         echo "Installing dependencies via Yarn using command: ${{ inputs.yarn_install_cmd }}"
-        ${{ inputs.yarn_install_cmd }}
+        output=$(${{ inputs.yarn_install_cmd }} 2>&1) || exit_code=$?
+        echo "$output"
+
+        if [ ! -z "$exit_code" ] && echo "$output" | grep -q 'Request failed "401 Unauthorized"'; then
+          if [ -f "yarn.lock" ]; then
+            echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
+            rm yarn.lock
+            ${{ inputs.yarn_install_cmd }}
+          else
+            exit $exit_code
+          fi
+        elif [ ! -z "$exit_code" ]; then
+          exit $exit_code
+        fi
 
     - name: Remove .npmrc file
       shell: bash
