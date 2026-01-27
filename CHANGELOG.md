@@ -805,3 +805,8 @@
 ## v6.3.3
 
 * Fix: adding missing working directory to yarn-related functionality in install-packages job (5af40ad by George Shestayev)
+
+## v6.4.0
+
+* Update: removing remove_yarn_lock_hack input from install-packages job (6e9de80 by George Shestayev)
+* Update: updated yarn install command to retry if it fails with 401 Unauthorized (6e9de80 by George Shestayev)
