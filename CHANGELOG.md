@@ -818,3 +818,7 @@
 ## v6.4.2
 
 * Fix: fixed yarn install retry in docker-deploy job (bef3654 by George Shestayev)
+
+## v6.4.3
+
+* Fix: fixing code retrying yarn install in case of authorization issues with github (414a6a3 by George Shestayev)
