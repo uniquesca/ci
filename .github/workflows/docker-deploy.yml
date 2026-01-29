@@ -52,6 +52,16 @@ on:
         required: false
         default: true
         type: boolean
+      npm_working_directory:
+        description: 'Directory where npm commands should be executed'
+        required: false
+        type: string
+        default: '.'
+      composer_working_directory:
+        description: 'Directory where composer commands should be executed'
+        required: false
+        type: string
+        default: '.'
 jobs:
   deploy:
     name: Deploy
@@ -254,22 +264,22 @@ jobs:
             echo "Starting Docker Services"
             ./task.sh up -d ${{ inputs.docker_up_args }}
             
-            rm -f auth.json
-            if [ -f "composer.json" ]; then
+            rm -f ${{ inputs.composer_working_directory }}/auth.json
+            if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
               echo "Installing composer dependencies"
               ./task.sh composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
               ./task.sh composer install --no-dev
             fi
-            rm -f auth.json
+            rm -f ${{ inputs.composer_working_directory }}/auth.json
             
-            rm -f .npmrc
-            if [ -f "package.json" ]; then
+            rm -f ${{ inputs.npm_working_directory }}/.npmrc
+            if [ -f "${{ inputs.npm_working_directory }}/package.json" ]; then
               echo "Preparing .npmrc file"
-              echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-              echo "always-auth=true" >> .npmrc
+              echo "@uniquesca:registry=https://npm.pkg.github.com/" > ${{ inputs.npm_working_directory }}/.npmrc
+              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> ${{ inputs.npm_working_directory }}/.npmrc
+              echo "always-auth=true" >> ${{ inputs.npm_working_directory }}/.npmrc
             
-              if [ -f "yarn.lock" ]; then
+              if [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
                 echo "Installing Yarn"
 
                 # First attempt
@@ -280,7 +290,7 @@ jobs:
                 if [ $exit_code -ne 0 ]; then
                   if echo "$output" | grep -q 'Request failed "401 Unauthorized"' && [ -f "yarn.lock" ]; then
                     echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
-                    rm yarn.lock
+                    rm ${{ inputs.npm_working_directory }}/yarn.lock
                     
                     # Retry — if this fails, the script exits naturally
                     ./task.sh yarn install
@@ -295,7 +305,7 @@ jobs:
                 ./task.sh npm install
               fi
             fi
-            rm -f .npmrc
+            rm -f ${{ inputs.npm_working_directory }}/.npmrc
             
             if ./task.sh supports clear-cache > /dev/null; then
               echo "Clearing cache"
