@@ -231,19 +231,23 @@ runs:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
       run: |
         echo "Installing dependencies via Yarn using command: ${{ inputs.yarn_install_cmd }}"
-        output=$(${{ inputs.yarn_install_cmd }} 2>&1) || exit_code=$?
+        
+        # First attempt
+        output=$(${{ inputs.yarn_install_cmd }} 2>&1)
+        exit_code=$?
         echo "$output"
 
-        if [ ! -z "$exit_code" ] && echo "$output" | grep -q 'Request failed "401 Unauthorized"'; then
-          if [ -f "yarn.lock" ]; then
+        if [ $exit_code -ne 0 ]; then
+          if echo "$output" | grep -q 'Request failed "401 Unauthorized"' && [ -f "yarn.lock" ]; then
             echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
             rm yarn.lock
+
+            # Retry — if this fails, the script exits naturally
             ${{ inputs.yarn_install_cmd }}
           else
+            # Failed for a reason other than 401
             exit $exit_code
           fi
-        elif [ ! -z "$exit_code" ]; then
-          exit $exit_code
         fi
 
     - name: Remove .npmrc file
