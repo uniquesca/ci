@@ -271,20 +271,25 @@ jobs:
             
               if [ -f "yarn.lock" ]; then
                 echo "Installing Yarn"
-                output=$(./task.sh yarn install 2>&1) || exit_code=$?
+
+                # First attempt
+                output=$(./task.sh yarn install 2>&1)
+                exit_code=$?
                 echo "$output"
     
-                if [ ! -z "$exit_code" ] && echo "$output" | grep -q 'Request failed "401 Unauthorized"'; then
-                  if [ -f "yarn.lock" ]; then
+                if [ $exit_code -ne 0 ]; then
+                  if echo "$output" | grep -q 'Request failed "401 Unauthorized"' && [ -f "yarn.lock" ]; then
                     echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
                     rm yarn.lock
+                    
+                    # Retry — if this fails, the script exits naturally
                     ./task.sh yarn install
                   else
+                    # Failed for a reason other than 401
                     exit $exit_code
                   fi
-                elif [ ! -z "$exit_code" ]; then
-                  exit $exit_code
                 fi
+            
               else 
                 echo "Installing NPM"
                 ./task.sh npm install
