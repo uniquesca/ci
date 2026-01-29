@@ -822,3 +822,7 @@
 ## v6.4.3
 
 * Fix: fixing code retrying yarn install in case of authorization issues with github (414a6a3 by George Shestayev)
+
+## v6.5.0
+
+* Update: add configurable working directory for composer and npm commands (#19) (c9e1939 by Jeremy Tsang)
