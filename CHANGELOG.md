@@ -826,3 +826,7 @@
 ## v6.5.0
 
 * Update: add configurable working directory for composer and npm commands (#19) (c9e1939 by Jeremy Tsang)
+
+## v6.6.0
+
+* Fix: removing --no-dev for composer install command for deployments - it should be dictated by COMPOSER_NO_DEV env variable instead (983ac7a by George Shestayev)
