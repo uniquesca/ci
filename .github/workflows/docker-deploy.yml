@@ -268,7 +268,7 @@ jobs:
             if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
               echo "Installing composer dependencies"
               ./task.sh composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-              ./task.sh composer install --no-dev
+              ./task.sh composer install
             fi
             rm -f ${{ inputs.composer_working_directory }}/auth.json
             
