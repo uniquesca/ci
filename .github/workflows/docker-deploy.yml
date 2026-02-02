@@ -62,6 +62,11 @@ on:
         required: false
         type: string
         default: '.'
+      run_migrate:
+        description: 'Flag whether the migrate task should be run'
+        required: false
+        default: true
+        type: boolean
 jobs:
   deploy:
     name: Deploy
@@ -313,8 +318,10 @@ jobs:
             fi
             
             if ./task.sh supports migrate > /dev/null; then
-              echo "Running migrations"
-              ./task.sh migrate
+              if ${{ inputs.run_migrate }}; then
+                echo "Running migrations"
+                ./task.sh migrate
+              fi
             fi
             
             echo "Executing post-deployment command"
