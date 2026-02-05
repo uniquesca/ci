@@ -830,3 +830,8 @@
 ## v6.6.0
 
 * Fix: removing --no-dev for composer install command for deployments - it should be dictated by COMPOSER_NO_DEV env variable instead (983ac7a by George Shestayev)
+
+## v6.7.0
+
+* Update: adding unzip utility to php-* docker images (1154a9e by George Shestayev)
+* Update: prepare-release will prepare environment in case DB migration is requested, not just for PHPUnit (1154a9e by George Shestayev)
