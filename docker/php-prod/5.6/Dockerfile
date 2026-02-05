@@ -21,6 +21,7 @@ RUN \
       default-mysql-client  \
       jq  \
       zip  \
+      unzip \
       git  \
       nano; \
     \
