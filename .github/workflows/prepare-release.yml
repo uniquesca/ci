@@ -140,7 +140,7 @@ jobs:
           fi
 
       - name: Prepare environment variables
-        if: env.phpunit == 1
+        if: env.phpunit == 1 || inputs.use_db || inputs.update_db
         id: merge_environment_vars
         uses: uniquesca/ci/merge-environment-variables@main
         with:
@@ -148,7 +148,7 @@ jobs:
           variables2: '{"db.dbname":"prepare_release","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Prepare environment configs
-        if: env.phpunit == 1
+        if: env.phpunit == 1 || inputs.use_db || inputs.update_db
         uses: uniquesca/ci/prepare-environment@main
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
