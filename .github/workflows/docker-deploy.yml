@@ -280,7 +280,7 @@ jobs:
               echo "always-auth=true" >> ${{ inputs.npm_working_directory }}/.npmrc
             
               if [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
-                echo "Installing Yarn"
+                echo "Installing Yarn - first attempt"
 
                 # First attempt
                 output=$(./task.sh yarn install 2>&1)
@@ -288,7 +288,7 @@ jobs:
                 echo "$output"
     
                 if [ $exit_code -ne 0 ]; then
-                  if echo "$output" | grep -q 'Request failed "401 Unauthorized"' && [ -f "yarn.lock" ]; then
+                  if echo "$output" | grep -q '401 Unauthorized' && [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
                     echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
                     rm ${{ inputs.npm_working_directory }}/yarn.lock
                     
@@ -296,6 +296,7 @@ jobs:
                     ./task.sh yarn install
                   else
                     # Failed for a reason other than 401
+                    echo "Yarn failed for a reason other than 401 Unauthorized"
                     exit $exit_code
                   fi
                 fi
