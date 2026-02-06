@@ -840,3 +840,8 @@
 
 * Fix: fixed working directory for checking for yarn lock file in docker-deploy CI job (eac8a21 by George Shestayev)
 * Update: improving yarn install retries in docker-deploy and install-packages jobs (eac8a21 by George Shestayev)
+
+## v6.7.3
+
+* Fix: fixing exit code handling in docker-deploy job (d308ddb by George Shestayev)
+* Update: improving output when handling yarn install retries (d308ddb by George Shestayev)
