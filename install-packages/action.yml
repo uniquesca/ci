@@ -230,7 +230,7 @@ runs:
       env:
         NODE_AUTH_TOKEN: ${{ inputs.access_token }}
       run: |
-        echo "Installing dependencies via Yarn using command: ${{ inputs.yarn_install_cmd }}"
+        echo "Installing dependencies via Yarn (first attempt) using command: ${{ inputs.yarn_install_cmd }}"
         
         # First attempt
         output=$(${{ inputs.yarn_install_cmd }} 2>&1)
@@ -246,6 +246,7 @@ runs:
             ${{ inputs.yarn_install_cmd }}
           else
             # Failed for a reason other than 401
+            echo "Yarn failed for a reason other than 401 Unauthorized"
             exit $exit_code
           fi
         fi
