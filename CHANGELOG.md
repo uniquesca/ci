@@ -835,3 +835,8 @@
 
 * Update: adding unzip utility to php-* docker images (1154a9e by George Shestayev)
 * Update: prepare-release will prepare environment in case DB migration is requested, not just for PHPUnit (1154a9e by George Shestayev)
+
+## v6.7.1
+
+* Fix: fixed working directory for checking for yarn lock file in docker-deploy CI job (eac8a21 by George Shestayev)
+* Update: improving yarn install retries in docker-deploy and install-packages jobs (eac8a21 by George Shestayev)
