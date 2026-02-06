@@ -282,21 +282,22 @@ jobs:
               if [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
                 echo "Installing Yarn - first attempt"
 
-                # First attempt
+                # Temporarily disable exit on error to handle yarn failure
+                set +e
                 output=$(./task.sh yarn install 2>&1)
                 exit_code=$?
-                echo "$output"
-    
+                set -e
+
                 if [ $exit_code -ne 0 ]; then
                   if echo "$output" | grep -q '401 Unauthorized' && [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
                     echo "Detected 401 Unauthorized error. Removing yarn.lock and retrying..."
                     rm ${{ inputs.npm_working_directory }}/yarn.lock
-                    
-                    # Retry — if this fails, the script exits naturally
+
+                    # Retry — if this fails, the script exits naturally due to set -e
                     ./task.sh yarn install
                   else
-                    # Failed for a reason other than 401
-                    echo "Yarn failed for a reason other than 401 Unauthorized"
+                    # Failed for a reason other than 401, show error output
+                    echo "$output"
                     exit $exit_code
                   fi
                 fi
