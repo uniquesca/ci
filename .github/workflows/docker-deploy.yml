@@ -77,8 +77,13 @@ jobs:
       - name: Pre-process command
         if: ${{ inputs.prepare_environment }}
         run: |
-          # Always parse init_script from JSON
-          INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
+          # Always parse init_script from JSON (if the file exists)
+          if [ -f "_ci_environment.json" ]; then
+            INIT_SCRIPT="$(jq -r '.init_script // empty' _ci_environment.json)"
+          else
+            echo "⚠️ _ci_environment.json not found — skipping init_script pre-processing"
+            INIT_SCRIPT=""
+          fi
 
           # Run init script if it's provided and it's a freshly initialized repo 
           if [ -n "$INIT_SCRIPT" ]; then
