@@ -845,3 +845,7 @@
 
 * Fix: fixing exit code handling in docker-deploy job (d308ddb by George Shestayev)
 * Update: improving output when handling yarn install retries (d308ddb by George Shestayev)
+
+## v6.7.4
+
+* Fix: skipping init script in case _ci_environment.json doesn't exist in docker-deploy job (fcb86ac by George Shestayev)
