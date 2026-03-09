@@ -849,3 +849,7 @@
 ## v6.7.4
 
 * Fix: skipping init script in case _ci_environment.json doesn't exist in docker-deploy job (fcb86ac by George Shestayev)
+
+## v6.7.5
+
+* Fix: skipping init script in case _ci_environment.json doesn't exist in docker-spin-up job (5b4d949 by George Shestayev)
