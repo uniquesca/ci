@@ -853,3 +853,7 @@
 ## v6.7.5
 
 * Fix: skipping init script in case _ci_environment.json doesn't exist in docker-spin-up job (5b4d949 by George Shestayev)
+
+## v6.8.0
+
+* Update: let phpunit pick up it's configuration by default in qa-checks job (972a726 by George Shestayev)
