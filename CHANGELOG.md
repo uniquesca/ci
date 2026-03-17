@@ -857,3 +857,7 @@
 ## v6.8.0
 
 * Update: let phpunit pick up it's configuration by default in qa-checks job (972a726 by George Shestayev)
+
+## v6.9.0
+
+* Fix: fixed node and nvm paths in the base php/php-fpm images (24df75c by George Shestayev)
