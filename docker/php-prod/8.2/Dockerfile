@@ -65,17 +65,18 @@ RUN \
     \
     # Set up npm \
     mkdir -p $NVM_DIR; \
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash \
-      && . $NVM_DIR/nvm.sh \
-      && nvm install 20 \
-      && nvm alias default 20 \
-      && nvm use default \
-      && npm install -g yarn; \
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash; \
+    . $NVM_DIR/nvm.sh; \
+    nvm install 20; \
+    nvm alias default 20; \
+    nvm use default; \
+    npm install -g yarn; \
     mkdir /.npm -p; \
     chmod 777 /.npm -Rf;
 
-ENV NODE_PATH=$NVM_DIR/v20/lib/node_modules
-ENV PATH=$NVM_DIR/v20/bin:$PATH
+# Update PATH to use the actual nvm versioned node directory
+ENV NODE_PATH=$NVM_DIR/versions/node/v20.*/lib/node_modules
+ENV PATH=$NVM_DIR/versions/node/v20.*/bin:$PATH
 
 ENTRYPOINT ["entrypoint"]
 CMD ["apache2-foreground"]
