@@ -13,21 +13,25 @@ runs:
   using: "composite"
   steps:
     - name: Run setup cmd (if specified)
+      shell: bash
       run: ${{ inputs.setup_cmd }}
 
     - name: Run tests
+      shell: bash
       run: |
         if ./task.sh supports test > /dev/null; then
           ./task.sh test
         fi
 
     - name: Run code quality checks
+      shell: bash
       run: |
         if ./task.sh supports cs-check > /dev/null; then
           ./task.sh cs-check
         fi
 
     - name: Run Psalm
+      shell: bash
       run: |
         if ./task.sh supports psalm > /dev/null; then
           ./task.sh psalm
