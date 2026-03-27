@@ -1,0 +1,34 @@
+name: QA Checks
+
+inputs:
+  workflow_call:
+    inputs:
+      setup_cmd:
+        description: 'Command to run to set up environment before the QA checks execution'
+        required: false
+        default: ''
+        type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run setup cmd (if specified)
+      run: ${{ inputs.setup_cmd }}
+
+    - name: Run tests
+      run: |
+        if ./task.sh supports test > /dev/null; then
+          ./task.sh test
+        fi
+
+    - name: Run code quality checks
+      run: |
+        if ./task.sh supports cs-check > /dev/null; then
+          ./task.sh cs-check
+        fi
+
+    - name: Run Psalm
+      run: |
+        if ./task.sh supports psalm > /dev/null; then
+          ./task.sh psalm
+        fi
