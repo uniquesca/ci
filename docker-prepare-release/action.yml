@@ -15,11 +15,6 @@ inputs:
     required: false
     default: 'CHANGELOG.md'
     type: string
-  use_db:
-    description: 'Whether DB should be set up'
-    required: false
-    default: false
-    type: boolean
   update_db:
     description: 'Whether DB dump should be updated'
     required: false
@@ -44,7 +39,7 @@ runs:
   using: composite
   steps:
     - name: Export DB dump
-      if: inputs.update_db
+      if: inputs.update_db == true
       uses: uniquesca/ci/mysql-export@main
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
