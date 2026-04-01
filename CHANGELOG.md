@@ -861,3 +861,10 @@
 ## v6.9.0
 
 * Fix: fixed node and nvm paths in the base php/php-fpm images (24df75c by George Shestayev)
+
+## v6.10.0
+
+* Fix: fixed missing shell property for the new CI action (a51f276 by George Shestayev)
+* New: introducing docker-prepare-release CI job (32c1295 by George Shestayev)
+* New: added docker-qa-checks composite action (5345ca8 by George Shestayev)
+* Update: polishing docker-prepare-release action (947087d by George Shestayev)

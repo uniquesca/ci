@@ -1,13 +1,11 @@
 name: QA Checks
 
 inputs:
-  workflow_call:
-    inputs:
-      setup_cmd:
-        description: 'Command to run to set up environment before the QA checks execution'
-        required: false
-        default: ''
-        type: string
+  setup_cmd:
+    description: 'Command to run to set up environment before the QA checks execution'
+    required: false
+    default: ''
+    type: string
 
 runs:
   using: "composite"

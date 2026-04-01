@@ -1,0 +1,118 @@
+name: Prepare release
+
+inputs:
+  version:
+    description: 'Version being prepared, has to be in x.y.z format'
+    required: true
+    type: string
+  generate_changelog:
+    description: 'Whether changelog should be generated for the new version'
+    required: false
+    default: true
+    type: boolean
+  changelog_path:
+    description: 'Path to the changelog file. Ignored if `generate-changelog` input is not set to `true`'
+    required: false
+    default: 'CHANGELOG.md'
+    type: string
+  update_db:
+    description: 'Whether DB dump should be updated'
+    required: false
+    default: false
+    type: boolean
+  db_dump_path:
+    description: 'Path to the DB dump. Ignored if `update_db` input is not set to `true`'
+    required: false
+    type: string
+  generate_coverage_badge:
+    description: 'Whether a unit test coverage badge needs to be generated and committed'
+    required: false
+    default: false
+    type: boolean
+  coverage_badge_file:
+    description: 'Path to a coverage badge file - ignored if `generate_coverage_badge` is not set to `true`'
+    required: false
+    default: 'coverage.svg'
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: Export DB dump
+      if: inputs.update_db == true
+      uses: uniquesca/ci/mysql-export@main
+      with:
+        dump_file_path: ${{ inputs.db_dump_path }}
+        db_name: prepare_release
+
+    - name: Set Composer version in composer.json
+      shell: bash
+      run: |
+        if [ -f "composer.json" ]; then
+          composer_version="${{ inputs.version }}"
+          echo "Setting version in composer.json to $composer_version"
+  
+          if jq -e '.version' composer.json > /dev/null; then
+            echo "Version found in composer.json. Updating version."
+            jq --arg version "$composer_version" '.version = $version' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
+          else
+            echo '"version" not found in composer.json. Adding version field'
+            jq --arg version "$composer_version" '. + {version: $version}' composer.json > composer.tmp.json && mv composer.tmp.json composer.json
+          fi
+        fi
+
+    - name: Update changelog file
+      if: ${{ inputs.generate_changelog == true }}
+      uses: uniquesca/ci/update-changelog@main
+      with:
+        changelog_path: ${{ inputs.changelog_path }}
+        target_version: ${{ inputs.version }}
+
+    - name: Run tests
+      if: inputs.generate_coverage_badge == true
+      shell: bash
+      run: ./task.php test
+
+    - name: Generate coverage badge
+      if: inputs.generate_coverage_badge == true
+      uses: timkrase/phpunit-coverage-badge@v1.2.1
+      with:
+        coverage_badge_path: ${{ inputs.coverage_badge_file }}
+        push_badge: false
+
+    - name: Update package version
+      shell: bash
+      run: |
+        if [ -f "package.json" ]; then
+          npm pkg set version=${{ inputs.version }}
+        fi
+
+    - name: Commit changes
+      shell: bash
+      run: |
+        git config --local user.email "service@uniques.ca"
+        git config --local user.name "CI"
+
+        if [ -f "package.json" ]; then
+          git add package.json
+        fi
+
+        if [ -f "composer.json" ]; then
+          git add composer.json
+        fi
+
+        if ${{ inputs.update_db == true }}; then
+          git add ${{ inputs.db_dump_path }}
+        fi
+        
+        if ${{ inputs.generate_changelog == true }}; then
+          git add CHANGELOG.md
+        fi
+        
+        if ${{ inputs.generate_coverage_badge == true }}; then
+          git add ${{ inputs.coverage_badge_file }}
+        fi
+        
+        git clean -fd
+        
+        git diff --staged --quiet || (git commit -m "CI: automatic commit for the new release: #${GITHUB_SHA} [skip ci]" && git push)
