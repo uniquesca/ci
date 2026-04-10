@@ -1,4 +1,4 @@
-name: Update v6 branch
+name: Update v7 branch
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -20,9 +20,9 @@ jobs:
           git config --local user.email "service@uniques.ca"
           git config --local user.name "CI"
 
-      - name: Merge main into v6
+      - name: Merge main into v7
         run: |
-          git fetch origin v6:v6
-          git checkout v6
-          git merge origin/main -m "CI: merge main into v6 [skip-ci]"
-          git push origin v6
+          git fetch origin v7:v7
+          git checkout v7
+          git merge origin/main -m "CI: merge main into v7 [skip-ci]"
+          git push origin v7

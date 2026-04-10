@@ -53,7 +53,7 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get QA matrix
         id: matrix
@@ -80,7 +80,7 @@ jobs:
           ini-values: xdebug.mode="coverage"
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}

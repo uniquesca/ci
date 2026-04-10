@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout application repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         if: ${{ inputs.prepare_environment }}
         with:
           ref: ${{ inputs.ref }}
