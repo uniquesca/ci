@@ -6,5 +6,5 @@ outputs:
 
 # TODO This job is named badly and need to be reworked to stray away from PHP
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'index.js'

@@ -52,7 +52,7 @@ on:
       node_version:
         description: 'Node version to use when deploying'
         required: false
-        default: '20'
+        default: '24'
         type: string
 
 jobs:

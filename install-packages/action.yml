@@ -91,7 +91,7 @@ runs:
     - name: Cache Composer dependencies
       if: steps.composer.outputs.detected == 1 && steps.composer_cache_dir.outputs.path
       id: cache-composer
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.composer_cache_dir.outputs.path }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.composer_cache_key_file.outputs.file)) }}
@@ -172,7 +172,7 @@ runs:
 
     - name: NPM cache
       if: steps.npm_yarn.outputs.npm == 1 && steps.npm_cache_dir.outputs.path
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.npm_cache_dir.outputs.path }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.npm_cache_key_file.ouputs.file)) }}
@@ -216,7 +216,7 @@ runs:
 
     - name: Yarn cache
       if: steps.npm_yarn.outputs.yarn == 1 && steps.yarn_cache_dir.outputs.path
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ${{ steps.yarn_cache_dir.outputs.path }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.yarn_cache_key_file.outputs.file)) }}
