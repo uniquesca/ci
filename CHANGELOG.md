@@ -872,3 +872,8 @@
 ## v6.10.1
 
 * Fix: fixed bool comparisons in docker-prepare-release CI action (b771530 by George Shestayev)
+
+## v7.0.0
+
+* Update: switching v6 to v7 branch and adjusting the automations (ef206a9 by George Shestayev)
+* Update: updating all actions and Node usage to use Node 24 (ecc4c48 by George Shestayev)
