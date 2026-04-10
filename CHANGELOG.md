@@ -868,3 +868,7 @@
 * New: introducing docker-prepare-release CI job (32c1295 by George Shestayev)
 * New: added docker-qa-checks composite action (5345ca8 by George Shestayev)
 * Update: polishing docker-prepare-release action (947087d by George Shestayev)
+
+## v6.10.1
+
+* Fix: fixed bool comparisons in docker-prepare-release CI action (b771530 by George Shestayev)
