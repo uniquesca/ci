@@ -881,3 +881,7 @@
 ## v7.0.1
 
 * Fix: fixed syntax error in docker-prepare-release CI job (b7ec90d by George Shestayev)
+
+## v7.1.0
+
+* Update: adding Jinja2 and Postman CLI to PHP dev images (2d79bf2 by George Shestayev)
