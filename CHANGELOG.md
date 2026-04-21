@@ -877,3 +877,7 @@
 
 * Update: switching v6 to v7 branch and adjusting the automations (ef206a9 by George Shestayev)
 * Update: updating all actions and Node usage to use Node 24 (ecc4c48 by George Shestayev)
+
+## v7.0.1
+
+* Fix: fixed syntax error in docker-prepare-release CI job (b7ec90d by George Shestayev)
