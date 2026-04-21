@@ -71,7 +71,7 @@ runs:
     - name: Run tests
       if: inputs.generate_coverage_badge == 'true'
       shell: bash
-      run: ./task.php test
+      run: ./task.sh test
 
     - name: Generate coverage badge
       if: inputs.generate_coverage_badge == 'true'
