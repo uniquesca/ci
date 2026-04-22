@@ -25,42 +25,42 @@ jobs:
           password: ${{ secrets.GHA_PUBLIC_ACCESS_TOKEN }}
 
       - name: Build and push PROD Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           file: docker/php-prod/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-prod:${{ matrix.php-version }}
 
       - name: Build and push PROD FPM Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           file: docker/php-fpm-prod/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-fpm-prod:${{ matrix.php-version }}
 
       - name: Build and push DEMO Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           file: docker/php-demo/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-demo:${{ matrix.php-version }}
 
       - name: Build and push DEMO FPM Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           file: docker/php-fpm-demo/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-fpm-demo:${{ matrix.php-version }}
 
       - name: Build and push DEV Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           file: docker/php-dev/${{ matrix.php-version }}/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-dev:${{ matrix.php-version }}
 
       - name: Build and push DEV FPM Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           file: docker/php-fpm-dev/${{ matrix.php-version }}/Dockerfile
           push: true
