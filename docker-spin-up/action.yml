@@ -46,11 +46,6 @@ inputs:
     required: false
     type: number
     default: 0
-  mysql_service_name:
-    description: 'Name of the MySQL docker compose service to wait for'
-    required: false
-    type: string
-    default: ''
 
 runs:
   using: "composite"
@@ -158,22 +153,23 @@ runs:
       shell: bash
 
     - name: Wait till MySQL is up
-      if: ${{ inputs.mysql_service_name != '' }}
       shell: bash
       run: |
         TIMEOUT=120
         ELAPSED=0
         
-        until docker compose exec ${{ inputs.mysql_service_name }} mysqladmin ping -h "127.0.0.1" --silent 2>/dev/null; do
-          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-            echo "❌ Timed out waiting for MySQL!"
-            exit 1
-          fi
-        
-          echo "Waiting for MySQL... (${ELAPSED}s)"
-          sleep 5
-          ELAPSED=$((ELAPSED + 5))
-        done
-        echo "✅ MySQL is ready!"
+        if ./task.sh supports ping-mysql > /dev/null; then
+          until ./task.sh ping-mysql 2>/dev/null; do
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "❌ Timed out waiting for MySQL!"
+              exit 1
+            fi
+          
+            echo "Waiting for MySQL... (${ELAPSED}s)"
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          echo "✅ MySQL is ready!"
+        fi
       
         
