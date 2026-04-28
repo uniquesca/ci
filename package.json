@@ -5,5 +5,5 @@
     "@actions/github": "^5.1.1",
     "nunjucks": "^3.2.4"
   },
-  "version": "8.0.0"
+  "version": "8.0.1"
 }

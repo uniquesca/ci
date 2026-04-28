@@ -896,3 +896,7 @@
 * Update: switching config processing from jinja2 to nunjucks (646c5de by George Shestayev)
 * Update: updating actions to the latest version to move to node24 completely (cf9770b by George Shestayev)
 * Update: updating GH release action to the latest version (34da969 by George Shestayev)
+
+## v8.0.1
+
+* Fix: removed tmp-switched branch for prepare-environment CI job (50ab1ed by George Shestayev)
