@@ -23,6 +23,7 @@ RUN \
       zip  \
       unzip \
       git  \
+      logrotate \
       nano; \
     \
     # Apache config \
@@ -77,6 +78,12 @@ RUN \
 # Update PATH to use the actual nvm versioned node directory
 ENV NODE_PATH=$NVM_DIR/versions/node/v20.*/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/v20.*/bin:$PATH
+
+# Install nunjucks globally
+RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"
+
+# Copy CI helper scripts
+COPY src/environment.js /usr/local/lib/ci/environment.js
 
 ENTRYPOINT ["entrypoint"]
 CMD ["apache2-foreground"]
