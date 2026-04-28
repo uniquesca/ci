@@ -122,7 +122,7 @@ runs:
         variables2: ${{ inputs.env_variables }}
 
     - name: Prepare environment
-      uses: uniquesca/ci/prepare-environment@main
+      uses: uniquesca/ci/prepare-environment@feature/nunjucks
       with:
         env_variables: ${{ steps.merge_env_variables.outputs.variables }}
         working_directory: ${{ inputs.working_directory }}
@@ -151,3 +151,26 @@ runs:
       if: ${{ inputs.sleep > 0 }}
       run: sleep ${{ inputs.sleep }}
       shell: bash
+
+    - name: Wait till MySQL is up
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        TIMEOUT=120
+        ELAPSED=0
+        
+        if ./task.sh supports ping-mysql > /dev/null; then
+          until ./task.sh ping-mysql > /dev/null 2>&1; do
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "❌ Timed out waiting for MySQL!"
+              exit 1
+            fi
+          
+            echo "Waiting for MySQL... (${ELAPSED}s)"
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          echo "✅ MySQL is ready!"
+        fi
+      
+        
