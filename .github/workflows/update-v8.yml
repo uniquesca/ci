@@ -1,4 +1,4 @@
-name: Update v7 branch
+name: Update v8 branch
 
 on:
   push:
@@ -20,9 +20,9 @@ jobs:
           git config --local user.email "service@uniques.ca"
           git config --local user.name "CI"
 
-      - name: Merge main into v7
+      - name: Merge main into v8
         run: |
-          git fetch origin v7:v7
-          git checkout v7
-          git merge origin/main -m "CI: merge main into v7 [skip-ci]"
-          git push origin v7
+          git fetch origin v8:v8
+          git checkout v8
+          git merge origin/main -m "CI: merge main into v8 [skip-ci]"
+          git push origin v8
