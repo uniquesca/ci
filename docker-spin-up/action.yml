@@ -154,6 +154,7 @@ runs:
 
     - name: Wait till MySQL is up
       shell: bash
+      working-directory: ${{ inputs.working_directory }}
       run: |
         TIMEOUT=120
         ELAPSED=0
