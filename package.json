@@ -2,7 +2,8 @@
   "type": "module",
   "dependencies": {
     "@actions/core": "^1.10.0",
-    "@actions/github": "^5.1.1"
+    "@actions/github": "^5.1.1",
+    "nunjucks": "^3.2.4"
   },
-  "version": "7.1.0"
+  "version": "8.0.0"
 }

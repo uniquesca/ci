@@ -19,17 +19,16 @@ if (!offset) {
     offset = 0;
     startTag = getLastGitTag(gitPath);
     endTag = 'HEAD';
-}
-else {
+} else {
     startTag = getGitTag(gitPath, Number(offset) + 1);
     endTag = getGitTag(gitPath, offset)
 }
 
 if (mode == 'raw') {
-    core.info('Generating raw changelog...')
+    core.info('Generating raw changelog: ' + startTag + '..' + endTag)
     const changelog = generateChangelog(gitPath, startTag, endTag);
     fs.writeFileSync(changelogPath, changelog);
 } else {
-    core.info('Updating changelog in normal (non-raw) mode...')
+    core.info('Updating changelog in normal (non-raw) mode: ' + startTag + '..' + endTag)
     updateChangelog(gitPath, changelogPath, targetVersion, startTag, endTag);
 }

@@ -885,3 +885,14 @@
 ## v7.1.0
 
 * Update: adding Jinja2 and Postman CLI to PHP dev images (2d79bf2 by George Shestayev)
+
+## v8.0.0
+
+* New: added logrotate to PHP and PHP-FPM images (4b9b16f by George Shestayev)
+* New: added environment.js CI helper script to PHP and PHP-FPM images (4b9b16f by George Shestayev)
+* New: installed nunjucks in all PHP and PHP-FPM images for config processing (4b9b16f by George Shestayev)
+* Update: switched config processing from Jinja2 (Python infra) to Nunjucks (Nodejs infra) (4b9b16f by George Shestayev)
+* Update: add proper waiting for mysql via task.sh ping-mysql command (4b9b16f by George Shestayev)
+* Update: switching config processing from jinja2 to nunjucks (646c5de by George Shestayev)
+* Update: updating actions to the latest version to move to node24 completely (cf9770b by George Shestayev)
+* Update: updating GH release action to the latest version (34da969 by George Shestayev)

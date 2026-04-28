@@ -54,7 +54,7 @@ runs:
       run: cat _github_ci_changelog.txt
       shell: bash
 
-    - uses: softprops/action-gh-release@v2
+    - uses: softprops/action-gh-release@v3
       with:
         token: ${{ inputs.repo_token }}
         body_path: '_github_ci_changelog.txt'
