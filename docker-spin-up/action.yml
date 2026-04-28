@@ -159,7 +159,7 @@ runs:
         ELAPSED=0
         
         if ./task.sh supports ping-mysql > /dev/null; then
-          until ./task.sh ping-mysql 2>/dev/null; do
+          until ./task.sh ping-mysql > /dev/null 2>&1; do
             if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
               echo "❌ Timed out waiting for MySQL!"
               exit 1
