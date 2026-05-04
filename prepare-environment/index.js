@@ -42,8 +42,6 @@ async function main() {
             cursor[parts[parts.length - 1]] = value;
         }
 
-        core.info(nested);
-
         // Invoke prepareEnvironment
         core.info('⏩ Preparing environment and processing configs...');
         await prepareEnvironment(workingDir, ENV_FILE, nested);

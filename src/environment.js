@@ -104,6 +104,9 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
     // Get fallback variables from the environment file
     const fallbacks = getTokenFallbacks(envFilePath);
 
+    console.log(variables);
+    console.log(fallbacks);
+
     // Prepare variables by merging provided variables with fallbacks
     const preparedVariables = applyFallbacks(variables, fallbacks);
 
