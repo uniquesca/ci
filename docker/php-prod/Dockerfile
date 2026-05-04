@@ -1,4 +1,8 @@
-FROM php:8.3-fpm-bookworm AS php-apache
+ARG PHP_VERSION=8.2
+ARG PHP_BASE_IMAGE=php:${PHP_VERSION}-apache-bookworm
+ARG NODE_VERSION=20
+
+FROM ${PHP_BASE_IMAGE} AS php
 
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
@@ -21,9 +25,13 @@ RUN \
       default-mysql-client  \
       jq  \
       zip  \
+      unzip \
       git  \
       logrotate \
       nano; \
+    \
+    # Apache config \
+    a2enmod ssl rewrite headers; \
     \
     # PHP config \
 	chmod +x /usr/local/bin/install-php-extensions \
@@ -64,23 +72,28 @@ RUN \
     mkdir -p $NVM_DIR; \
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash; \
     . $NVM_DIR/nvm.sh; \
-    nvm install 20; \
-    nvm alias default 20; \
+    nvm install ${NODE_VERSION}; \
+    nvm alias default ${NODE_VERSION}; \
     nvm use default; \
     npm install -g yarn; \
     mkdir /.npm -p; \
     chmod 777 /.npm -Rf;
 
 # Update PATH to use the actual nvm versioned node directory
-ENV NODE_PATH=$NVM_DIR/versions/node/v20.*/lib/node_modules
-ENV PATH=$NVM_DIR/versions/node/v20.*/bin:$PATH
+ENV NODE_PATH=$NVM_DIR/versions/node/v${NODE_VERSION}.*/lib/node_modules
+ENV PATH=$NVM_DIR/versions/node/v${NODE_VERSION}.*/bin:$PATH
 
 # Install nunjucks globally
 RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"
 
+# Copy CI helper scripts
+COPY src/environment.js /usr/local/lib/ci/environment.js
+COPY src/config.js /usr/local/lib/ci/config.js
+
 ENTRYPOINT ["entrypoint"]
-CMD ["php-fpm"]
+CMD ["apache2-foreground"]
 
 # Final touch
+EXPOSE 80 443
 WORKDIR /var/www/app
 LABEL org.opencontainers.image.source=https://github.com/uniquesca/ci
