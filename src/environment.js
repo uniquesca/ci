@@ -137,7 +137,8 @@ async function isNunjucksInstalled() {
  */
 async function processConfig(workingDirectory, config, variables) {
     try {
-        const nunjucks = await import('nunjucks');
+        const nunjucksModule = await import('nunjucks');
+        const nunjucks = nunjucksModule.default;
 
         // Resolve the template file path relative to the working directory
         const templatePath = path.join(workingDirectory, config.template);
