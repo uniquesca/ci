@@ -107,6 +107,8 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
     // Prepare variables by merging provided variables with fallbacks
     const preparedVariables = applyFallbacks(variables, fallbacks);
 
+    console.log(preparedVariables);
+
     // Process all configs
     for (const config of configs) {
         await processConfig(workingDirectory, config, preparedVariables);
