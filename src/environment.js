@@ -132,8 +132,6 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
     // Convert dot-notation keys to nested objects for nunjucks
     const nested = dotToNested(preparedVariables);
 
-    console.log(preparedVariables);
-
     // Process all configs
     for (const config of configs) {
         await processConfig(workingDirectory, config, nested);
