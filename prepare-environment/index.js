@@ -1,7 +1,7 @@
 import core from '@actions/core';
 import fs from 'fs';
 import process from 'process';
-import { prepareEnvironment } from '../src/environment.js';
+import { prepareEnvironment, dotToNested } from '../src/environment.js';
 
 const ENV_FILE = '_ci_environment.json';
 
@@ -29,22 +29,9 @@ async function main() {
             process.exit(1);
         }
 
-        // Convert dot-notation keys to nested objects for nunjucks
-        core.info('⏩ Converting dot notation to nested objects...');
-        const nested = {};
-        for (const [key, value] of Object.entries(variables)) {
-            const parts = key.split('.');
-            let cursor = nested;
-            for (let i = 0; i < parts.length - 1; i++) {
-                cursor[parts[i]] ??= {};
-                cursor = cursor[parts[i]];
-            }
-            cursor[parts[parts.length - 1]] = value;
-        }
-
         // Invoke prepareEnvironment
         core.info('⏩ Preparing environment and processing configs...');
-        await prepareEnvironment(workingDir, ENV_FILE, nested);
+        await prepareEnvironment(workingDir, ENV_FILE, variables);
 
         core.info('✅ Environment preparation completed successfully');
     } catch (error) {

@@ -1,5 +1,27 @@
 import fs from 'fs';
 import path from 'path';
+import core from "@actions/core";
+
+/**
+ * Converts dot-notation keys to nested objects.
+ * Transforms flat object with dot-separated keys into nested structure.
+ *
+ * @param {Record<string, any>} variables - Flat object with dot-notation keys.
+ * @returns {Record<string, any>} - Nested object structure.
+ */
+export function dotToNested(variables) {
+    const nested = {};
+    for (const [key, value] of Object.entries(variables)) {
+        const parts = key.split('.');
+        let cursor = nested;
+        for (let i = 0; i < parts.length - 1; i++) {
+            cursor[parts[i]] ??= {};
+            cursor = cursor[parts[i]];
+        }
+        cursor[parts[parts.length - 1]] = value;
+    }
+    return nested;
+}
 
 export class EnvConfig {
     /** @type {string} */
@@ -61,7 +83,7 @@ export function getTokenFallbacks(envFilePath) {
  * @returns {Record<string, string>}
  */
 export function applyFallbacks(variables, fallbacks) {
-    const result = { ...variables };
+    const result = {...variables};
 
     for (const [key, fallback] of Object.entries(fallbacks)) {
         if (key in result) {
@@ -104,17 +126,17 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
     // Get fallback variables from the environment file
     const fallbacks = getTokenFallbacks(envFilePath);
 
-    console.log(variables);
-    console.log(fallbacks);
-
     // Prepare variables by merging provided variables with fallbacks
     const preparedVariables = applyFallbacks(variables, fallbacks);
+
+    // Convert dot-notation keys to nested objects for nunjucks
+    const nested = dotToNested(preparedVariables);
 
     console.log(preparedVariables);
 
     // Process all configs
     for (const config of configs) {
-        await processConfig(workingDirectory, config, preparedVariables);
+        await processConfig(workingDirectory, config, nested);
     }
 }
 
@@ -163,7 +185,7 @@ async function processConfig(workingDirectory, config, variables) {
         // Ensure output directory exists
         const outputDir = path.dirname(outputPath);
         if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
+            fs.mkdirSync(outputDir, {recursive: true});
         }
 
         // Write the rendered content to the output file
