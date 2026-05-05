@@ -928,3 +928,7 @@
 ## v8.1.5
 
 * Update: improved nunjucks handling (ac14e05 by George Shestayev)
+
+## v8.1.6
+
+* Fix: fixed NODE_PATH env var to include global packages in Docker images (5d1fd74 by George Shestayev)
