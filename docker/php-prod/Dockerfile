@@ -1,8 +1,10 @@
 ARG PHP_VERSION=8.2
 ARG PHP_BASE_IMAGE=php:${PHP_VERSION}-apache-bookworm
-ARG NODE_VERSION=20
 
 FROM ${PHP_BASE_IMAGE} AS php
+
+ARG NODE_VERSION=20
+ENV NODE_VERSION=${NODE_VERSION}
 
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
@@ -72,16 +74,16 @@ RUN \
     mkdir -p $NVM_DIR; \
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash; \
     . $NVM_DIR/nvm.sh; \
-    nvm install ${NODE_VERSION}; \
-    nvm alias default ${NODE_VERSION}; \
+    nvm install $NODE_VERSION; \
+    nvm alias default $NODE_VERSION; \
     nvm use default; \
     npm install -g yarn; \
     mkdir /.npm -p; \
     chmod 777 /.npm -Rf;
 
 # Update PATH to use the actual nvm versioned node directory
-ENV NODE_PATH=$NVM_DIR/versions/node/v*/lib/node_modules
-ENV PATH=$NVM_DIR/versions/node/v*/bin:$PATH
+ENV NODE_PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/lib/node_modules
+ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/bin:$PATH
 
 # Install nunjucks globally
 RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"
