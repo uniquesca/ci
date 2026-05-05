@@ -912,3 +912,7 @@
 
 * Fix: fixed docker image selection process (9832522 by George Shestayev)
 * Fix: fixed usage of ARG in ENV in docker build process (9832522 by George Shestayev)
+
+## v8.1.2
+
+* Fix: fixing building docker images (c45b5c8 by George Shestayev)
