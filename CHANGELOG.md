@@ -924,3 +924,7 @@
 ## v8.1.4
 
 * Update: eased up requirements on config.js (0201248 by George Shestayev)
+
+## v8.1.5
+
+* Update: improved nunjucks handling (ac14e05 by George Shestayev)

@@ -113,10 +113,12 @@ export function applyFallbacks(variables, fallbacks) {
  * @returns {Promise<void>}
  */
 export async function prepareEnvironment(workingDirectory, envFilePath, variables) {
-    // Check if nunjucks is installed
-    const nunjucksAvailable = await isNunjucksInstalled();
-    if (!nunjucksAvailable) {
-        throw new Error('nunjucks is not installed. Please install it using: npm install nunjucks');
+    let nunjucks;
+    try {
+        const nunjucksModule = await import('nunjucks');
+        nunjucks = nunjucksModule.default;
+    } catch (error) {
+        throw new Error(`nunjucks is not installed. Please install it using: npm install nunjucks\n${error.message}`);
     }
 
     // Get all configs to process
@@ -133,21 +135,7 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
 
     // Process all configs
     for (const config of configs) {
-        await processConfig(workingDirectory, config, nested);
-    }
-}
-
-/**
- * Checks if nunjucks is installed.
- *
- * @returns {Promise<boolean>}
- */
-async function isNunjucksInstalled() {
-    try {
-        await import('nunjucks');
-        return true;
-    } catch (error) {
-        return false;
+        await processConfig(workingDirectory, config, nested, nunjucks);
     }
 }
 
@@ -157,13 +145,11 @@ async function isNunjucksInstalled() {
  * @param {string} workingDirectory - The working directory path.
  * @param {EnvConfig} config - The config to process.
  * @param {Record<string, string|number>} variables - The prepared variables.
+ * @param {object} nunjucks - The nunjucks instance.
  * @returns {Promise<void>}
  */
-async function processConfig(workingDirectory, config, variables) {
+async function processConfig(workingDirectory, config, variables, nunjucks) {
     try {
-        const nunjucksModule = await import('nunjucks');
-        const nunjucks = nunjucksModule.default;
-
         // Configure nunjucks
         nunjucks.configure({ autoescape: false });
 
