@@ -920,3 +920,7 @@
 ## v8.1.3
 
 * Fix: fixing building docker images (41a745e by George Shestayev)
+
+## v8.1.4
+
+* Update: eased up requirements on config.js (0201248 by George Shestayev)
