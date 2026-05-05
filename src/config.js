@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { prepareEnvironment } from './environment.js';
 
 /**
@@ -99,7 +96,6 @@ async function main() {
         console.log(`Preparing environment with the following parameters:`);
         console.log(`  Working Directory: ${workingDirectory}`);
         console.log(`  Environment File: ${envFilePath}`);
-        console.log(`  Variables: ${JSON.stringify(variables)}`);
 
         // Invoke prepareEnvironment
         await prepareEnvironment(workingDirectory, envFilePath, variables);

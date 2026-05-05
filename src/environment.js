@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import core from "@actions/core";
 
 /**
  * Converts dot-notation keys to nested objects.
@@ -110,7 +109,7 @@ export function applyFallbacks(variables, fallbacks) {
  *
  * @param {string} workingDirectory - The working directory path.
  * @param {string} envFilePath - Path to the environment JSON file.
- * @param {Record<string, number>} variables - JSON object with variables to use.
+ * @param {Record<string, string | number>} variables - JSON object with variables to use.
  * @returns {Promise<void>}
  */
 export async function prepareEnvironment(workingDirectory, envFilePath, variables) {
@@ -164,6 +163,9 @@ async function processConfig(workingDirectory, config, variables) {
     try {
         const nunjucksModule = await import('nunjucks');
         const nunjucks = nunjucksModule.default;
+
+        // Configure nunjucks
+        nunjucks.configure({ autoescape: false });
 
         // Resolve the template file path relative to the working directory
         const templatePath = path.join(workingDirectory, config.template);
