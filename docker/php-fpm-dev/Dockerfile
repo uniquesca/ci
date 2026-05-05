@@ -1,4 +1,7 @@
-FROM ghcr.io/uniquesca/php-fpm-demo:8.2 AS php-apache
+ARG PHP_VERSION=8.2
+ARG PHP_BASE_IMAGE=ghcr.io/uniquesca/php-fpm-demo:${PHP_VERSION}
+
+FROM ${PHP_BASE_IMAGE} AS php
 
 # Add xdebug
 RUN apk update && apk upgrade && \

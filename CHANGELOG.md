@@ -900,3 +900,10 @@
 ## v8.0.1
 
 * Fix: removed tmp-switched branch for prepare-environment CI job (50ab1ed by George Shestayev)
+
+## v8.1.0
+
+* New: improved JS part to have full codebase to process all configs specified in the environment file while processing fallbacks (required nunjucks installed) (3cd3ecc by George Shestayev)
+* Update: significantly simplified set of docker images to reuse the code much better (3cd3ecc by George Shestayev)
+* Update: improved prepare-environment CI job to re-use the newly added JS code (3cd3ecc by George Shestayev)
+* Update: docker images now have config processing codebase baked in (3cd3ecc by George Shestayev)
