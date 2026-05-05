@@ -916,3 +916,7 @@
 ## v8.1.2
 
 * Fix: fixing building docker images (c45b5c8 by George Shestayev)
+
+## v8.1.3
+
+* Fix: fixing building docker images (41a745e by George Shestayev)
