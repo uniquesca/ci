@@ -80,8 +80,8 @@ RUN \
     chmod 777 /.npm -Rf;
 
 # Update PATH to use the actual nvm versioned node directory
-ENV NODE_PATH=$NVM_DIR/versions/node/v${NODE_VERSION}.*/lib/node_modules
-ENV PATH=$NVM_DIR/versions/node/v${NODE_VERSION}.*/bin:$PATH
+ENV NODE_PATH=$NVM_DIR/versions/node/v*/lib/node_modules
+ENV PATH=$NVM_DIR/versions/node/v*/bin:$PATH
 
 # Install nunjucks globally
 RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"

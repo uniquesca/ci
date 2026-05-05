@@ -24,6 +24,17 @@ jobs:
           username: ${{ vars.USERNAME_GITHUB }}
           password: ${{ secrets.GHA_PUBLIC_ACCESS_TOKEN }}
 
+      - name: Choose PHP base image
+        id: php-image
+        run: |
+          if [ "${{ matrix.php-version }}" = "5.6" ]; then
+            echo "modphp-base-image=php:5.6-apache-jessie" >> $GITHUB_OUTPUT
+            echo "fpm-base-image=php:5.6-fpm-jessie" >> $GITHUB_OUTPUT
+          else
+            echo "modphp-base-image=php:${{ matrix.php-version }}-apache-bookworm" >> $GITHUB_OUTPUT
+            echo "fpm-image=php:${{ matrix.php-version }}-fpm-bookworm" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push PROD Docker image
         uses: docker/build-push-action@v7
         with:
@@ -32,6 +43,7 @@ jobs:
           tags: ghcr.io/uniquesca/php-prod:${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
+            PHP_BASE_IMAGE=${{ steps.php-image.outputs.modphp-base-image }}
 
       - name: Build and push PROD FPM Docker image
         uses: docker/build-push-action@v7
@@ -41,6 +53,8 @@ jobs:
           tags: ghcr.io/uniquesca/php-fpm-prod:${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
+            PHP_BASE_IMAGE=${{ steps.php-image.outputs.fpm-base-image }}
+            
 
       - name: Build and push DEMO Docker image
         uses: docker/build-push-action@v7
