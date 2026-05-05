@@ -87,6 +87,10 @@ RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"
 # Copy CI helper scripts
 COPY src/environment.js /usr/local/lib/ci/environment.js
 COPY src/config.js /usr/local/lib/ci/config.js
+COPY src/package.json /usr/local/lib/ci/package.json
+
+# Install nunjucks
+RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && cd /usr/local/lib/ci/ && npm install"
 
 ENTRYPOINT ["entrypoint"]
 CMD ["php-fpm"]
