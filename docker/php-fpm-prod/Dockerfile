@@ -78,7 +78,7 @@ RUN \
     chmod 777 /.npm -Rf;
 
 # Update PATH to use the actual nvm versioned node directory
-ENV NODE_PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/lib/node_modules
+ENV NODE_PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/lib/node_modules:$NODE_PATH
 ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/bin:$PATH
 
 # Install nunjucks globally
