@@ -33,6 +33,7 @@ jobs:
             echo "node-version=16" >> $GITHUB_OUTPUT
           else
             echo "modphp-base-image=php:${{ matrix.php-version }}-apache-bookworm" >> $GITHUB_OUTPUT
+            echo "fpm-base-image=php:${{ matrix.php-version }}-fpm-bookworm" >> $GITHUB_OUTPUT
             echo "node-version=20" >> $GITHUB_OUTPUT
           fi
 
