@@ -907,3 +907,8 @@
 * Update: significantly simplified set of docker images to reuse the code much better (3cd3ecc by George Shestayev)
 * Update: improved prepare-environment CI job to re-use the newly added JS code (3cd3ecc by George Shestayev)
 * Update: docker images now have config processing codebase baked in (3cd3ecc by George Shestayev)
+
+## v8.1.1
+
+* Fix: fixed docker image selection process (9832522 by George Shestayev)
+* Fix: fixed usage of ARG in ENV in docker build process (9832522 by George Shestayev)
