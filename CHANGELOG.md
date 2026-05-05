@@ -932,3 +932,7 @@
 ## v8.1.6
 
 * Fix: fixed NODE_PATH env var to include global packages in Docker images (5d1fd74 by George Shestayev)
+
+## v8.1.7
+
+* Fix: fixed nunjucks installation to be local instead of global (069618d by George Shestayev)
