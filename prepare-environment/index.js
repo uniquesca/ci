@@ -1,6 +1,7 @@
 import core from '@actions/core';
 import fs from 'fs';
 import process from 'process';
+import path from 'path';
 import { prepareEnvironment } from '../src/environment.js';
 
 const ENV_FILE = '_ci_environment.json';
