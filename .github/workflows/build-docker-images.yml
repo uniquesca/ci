@@ -30,9 +30,10 @@ jobs:
           if [ "${{ matrix.php-version }}" = "5.6" ]; then
             echo "modphp-base-image=php:5.6-apache-jessie" >> $GITHUB_OUTPUT
             echo "fpm-base-image=php:5.6-fpm-jessie" >> $GITHUB_OUTPUT
+            echo "node-version=16" >> $GITHUB_OUTPUT
           else
             echo "modphp-base-image=php:${{ matrix.php-version }}-apache-bookworm" >> $GITHUB_OUTPUT
-            echo "fpm-image=php:${{ matrix.php-version }}-fpm-bookworm" >> $GITHUB_OUTPUT
+            echo "node-version=20" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push PROD Docker image
@@ -44,6 +45,7 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             PHP_BASE_IMAGE=${{ steps.php-image.outputs.modphp-base-image }}
+            NODE_VERSION=${{ steps.php-image.outputs.node-version }}
 
       - name: Build and push PROD FPM Docker image
         uses: docker/build-push-action@v7
@@ -54,8 +56,8 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             PHP_BASE_IMAGE=${{ steps.php-image.outputs.fpm-base-image }}
+            NODE_VERSION=${{ steps.php-image.outputs.node-version }}
             
-
       - name: Build and push DEMO Docker image
         uses: docker/build-push-action@v7
         with:
