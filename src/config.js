@@ -1,4 +1,5 @@
 import { prepareEnvironment } from './environment.js';
+import fs from 'fs';
 
 /**
  * Parses command line arguments into a key-value object.
@@ -35,7 +36,7 @@ function parseArguments() {
  * @throws {Error}
  */
 function validateArguments(args) {
-    const required = ['working-dir', 'env-file', 'variables'];
+    const required = ['var-file'];
 
     for (const requiredArg of required) {
         if (!(requiredArg in args)) {
@@ -45,23 +46,28 @@ function validateArguments(args) {
 }
 
 /**
- * Parses a JSON string into an object.
+ * Parses a JSON file and returns the variables object.
  *
- * @param {string} jsonString
+ * @param {string} varFilePath
  * @returns {Record<string, string>}
  * @throws {Error}
  */
-function parseVariables(jsonString) {
+function readVariablesFromFile(varFilePath) {
     try {
-        const parsed = JSON.parse(jsonString);
+        if (!fs.existsSync(varFilePath)) {
+            throw new Error(`Variables file does not exist: ${varFilePath}`);
+        }
+
+        const fileContent = fs.readFileSync(varFilePath, 'utf8');
+        const parsed = JSON.parse(fileContent);
 
         if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-            throw new Error('Variables must be a JSON object');
+            throw new Error('Variables file must contain a JSON object');
         }
 
         return parsed;
     } catch (error) {
-        throw new Error(`Failed to parse variables JSON: ${error.message}`);
+        throw new Error(`Failed to read variables file: ${error.message}`);
     }
 }
 
@@ -76,9 +82,9 @@ async function main() {
         // Validate required arguments
         validateArguments(args);
 
-        const workingDirectory = args['working-dir'];
-        const envFilePath = args['env-file'];
-        const variablesJson = args['variables'];
+        const workingDirectory = args['working-dir'] || '.';
+        const envFilePath = args['env-file'] || '_ci_environment.json';
+        const varFilePath = args['var-file'];
 
         // Validate that working directory exists
         if (!fs.existsSync(workingDirectory)) {
@@ -90,12 +96,15 @@ async function main() {
             throw new Error(`Environment file does not exist: ${envFilePath}`);
         }
 
-        // Parse variables from JSON string
-        const variables = parseVariables(variablesJson);
+        // Read variables from JSON file
+        const variables = readVariablesFromFile(
+            workingDirectory + '/' + varFilePath
+        );
 
         console.log(`Preparing environment with the following parameters:`);
         console.log(`  Working Directory: ${workingDirectory}`);
         console.log(`  Environment File: ${envFilePath}`);
+        console.log(`  Variables File: ${varFilePath}`);
 
         // Invoke prepareEnvironment
         await prepareEnvironment(workingDirectory, envFilePath, variables);
