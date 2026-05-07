@@ -1,7 +1,7 @@
 ARG PHP_VERSION=8.2
-ARG PHP_BASE_IMAGE=php:${PHP_VERSION}-fpm-bookworm
+ARG PHP_BASE_IMAGE=php:${PHP_VERSION}-apache-bookworm
 
-FROM ${PHP_BASE_IMAGE} AS php
+FROM ${PHP_BASE_IMAGE} AS php-apache
 
 ARG NODE_VERSION=20
 ENV NODE_VERSION=${NODE_VERSION}
@@ -9,7 +9,7 @@ ENV NODE_VERSION=${NODE_VERSION}
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
 
-COPY docker/php-fpm-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
+COPY docker/php-prod-apachemod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/
@@ -27,9 +27,13 @@ RUN \
       default-mysql-client  \
       jq  \
       zip  \
+      unzip \
       git  \
       logrotate \
       nano; \
+    \
+    # Apache config \
+    a2enmod ssl rewrite headers; \
     \
     # PHP config \
 	chmod +x /usr/local/bin/install-php-extensions \
@@ -81,9 +85,6 @@ RUN \
 ENV NODE_PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/lib/node_modules:$NODE_PATH
 ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/bin:$PATH
 
-# Install nunjucks globally
-RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"
-
 # Copy CI helper scripts
 COPY src/environment.js /usr/local/lib/ci/environment.js
 COPY src/config.js /usr/local/lib/ci/config.js
@@ -93,8 +94,9 @@ COPY src/package.json /usr/local/lib/ci/package.json
 RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && cd /usr/local/lib/ci/ && npm install"
 
 ENTRYPOINT ["uniques-php-entrypoint"]
-CMD ["php-fpm"]
+CMD ["apache2-foreground"]
 
 # Final touch
+EXPOSE 80 443
 WORKDIR /var/www/app
 LABEL org.opencontainers.image.source=https://github.com/uniquesca/ci

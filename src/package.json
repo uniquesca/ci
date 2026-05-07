@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "dependencies": {
     "nunjucks": "^3.2.4"
   }

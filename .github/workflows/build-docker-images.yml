@@ -37,18 +37,18 @@ jobs:
             echo "node-version=20" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push PROD Docker image
+      - name: Build and push PHP + Apache + mod_php PROD Docker image
         uses: docker/build-push-action@v7
         with:
-          file: docker/php-prod/Dockerfile
+          file: docker/php-apachemod-prod/Dockerfile
           push: true
-          tags: ghcr.io/uniquesca/php-prod:${{ matrix.php-version }}
+          tags: ghcr.io/uniquesca/php-apachemod-prod:${{ matrix.php-version }},ghcr.io/uniquesca/php-prod:${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             PHP_BASE_IMAGE=${{ steps.php-image.outputs.modphp-base-image }}
             NODE_VERSION=${{ steps.php-image.outputs.node-version }}
 
-      - name: Build and push PROD FPM Docker image
+      - name: Build and push PHP FPM PROD Docker image
         uses: docker/build-push-action@v7
         with:
           file: docker/php-fpm-prod/Dockerfile
@@ -58,35 +58,29 @@ jobs:
             PHP_VERSION=${{ matrix.php-version }}
             PHP_BASE_IMAGE=${{ steps.php-image.outputs.fpm-base-image }}
             NODE_VERSION=${{ steps.php-image.outputs.node-version }}
-            
-      - name: Build and push DEMO Docker image
+
+
+      - name: Build and push PHP FPM + Apache PROD Docker image
         uses: docker/build-push-action@v7
         with:
-          file: docker/php-demo/Dockerfile
+          file: docker/php-apachefpm-prod/Dockerfile
           push: true
-          tags: ghcr.io/uniquesca/php-demo:${{ matrix.php-version }}
+          tags: ghcr.io/uniquesca/php-apachefpm-prod:${{ matrix.php-version }}
+          build-args: |
+            PHP_VERSION=${{ matrix.php-version }}
+            PHP_BASE_IMAGE=${{ steps.php-image.outputs.fpm-base-image }}
+            NODE_VERSION=${{ steps.php-image.outputs.node-version }}
+
+      - name: Build and push PHP + Apache + mod_php DEV Docker image
+        uses: docker/build-push-action@v7
+        with:
+          file: docker/php-apachemod-dev/Dockerfile
+          push: true
+          tags: ghcr.io/uniquesca/php-apachemod-dev:${{ matrix.php-version }},ghcr.io/uniquesca/php-dev:${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
 
-      - name: Build and push DEMO FPM Docker image
-        uses: docker/build-push-action@v7
-        with:
-          file: docker/php-fpm-demo/Dockerfile
-          push: true
-          tags: ghcr.io/uniquesca/php-fpm-demo:${{ matrix.php-version }}
-          build-args: |
-            PHP_VERSION=${{ matrix.php-version }}
-
-      - name: Build and push DEV Docker image
-        uses: docker/build-push-action@v7
-        with:
-          file: docker/php-dev/Dockerfile
-          push: true
-          tags: ghcr.io/uniquesca/php-dev:${{ matrix.php-version }}
-          build-args: |
-            PHP_VERSION=${{ matrix.php-version }}
-
-      - name: Build and push DEV FPM Docker image
+      - name: Build and push PHP FPM DEV Docker image
         uses: docker/build-push-action@v7
         with:
           file: docker/php-fpm-dev/Dockerfile
@@ -95,3 +89,12 @@ jobs:
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
 
+      - name: Build and push PHP FPM + Apache DEV Docker image
+        uses: docker/build-push-action@v7
+        with:
+          file: docker/php-apachefpm-dev/Dockerfile
+          push: true
+          tags: ghcr.io/uniquesca/php-apachefpm-dev:${{ matrix.php-version }}
+          build-args: |
+            PHP_VERSION=${{ matrix.php-version }}
+            
