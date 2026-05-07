@@ -936,3 +936,9 @@
 ## v8.1.7
 
 * Fix: fixed nunjucks installation to be local instead of global (069618d by George Shestayev)
+
+## v8.2.0
+
+* Fix: fixed package.json for baking into Docker images (a712972 by George Shestayev)
+* New: introduced PHP FPM + Apache combined image (a712972 by George Shestayev)
+* Update: removed DEMO images as rendered useless (a712972 by George Shestayev)
