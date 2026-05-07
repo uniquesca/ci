@@ -6,6 +6,13 @@ FROM ${PHP_BASE_IMAGE} AS php
 ARG NODE_VERSION=20
 ENV NODE_VERSION=${NODE_VERSION}
 
+# Fix archived repositories for old Debian versions
+RUN if grep -q "stretch" /etc/os-release 2>/dev/null; then \
+      sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /etc/apt/sources.list && \
+      sed -i 's|http://security.debian.org|http://archive.debian.org/debian-security|g' /etc/apt/sources.list && \
+      sed -i '/stretch-updates/d' /etc/apt/sources.list; \
+    fi
+
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
 
