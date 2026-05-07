@@ -12,7 +12,7 @@ ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-
 # Setting up apache
 RUN apt-get update && apt-get install -y \
     apache2 \
-    libapache2-mod-proxy-fcgi \
+    libapache2-mod-fcgi \
     && rm -rf /var/lib/apt/lists/*
 RUN a2enmod proxy proxy_fcgi headers expires filter deflate
 
