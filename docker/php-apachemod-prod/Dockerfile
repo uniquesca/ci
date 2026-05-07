@@ -9,7 +9,7 @@ ENV NODE_VERSION=${NODE_VERSION}
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
 
-COPY docker/php-prod-apachemod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
+COPY docker/php-apachemod-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/

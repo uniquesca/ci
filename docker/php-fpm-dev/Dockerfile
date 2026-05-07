@@ -7,6 +7,3 @@ FROM ${PHP_BASE_IMAGE} AS php
 RUN apk update && apk upgrade && \
     set -eux; \
 	chmod +x /usr/local/bin/install-php-extensions && install-php-extensions xdebug;
-
-# Add Postman CLI
-RUN curl -o- "https://dl-cli.pstmn.io/install/linux64.sh" | sh
