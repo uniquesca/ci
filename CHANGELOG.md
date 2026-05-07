@@ -947,3 +947,7 @@
 
 * Fix: fixed entrypoint path for the php-apachemod image (bb35ac3 by George Shestayev)
 * Update: removed Postman CLI from Docker DEV images as it's only needed for Officio - to be added there (bb35ac3 by George Shestayev)
+
+## v8.2.2
+
+* Fix: minor fixes related to Docker images (dc43f56 by George Shestayev)

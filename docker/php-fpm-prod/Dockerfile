@@ -48,7 +48,7 @@ RUN \
       zip; \
     \
     # Add cron (supercronic) and an entrypoint \
-    chmod +x /usr/local/bin/entrypoint; \
+    chmod +x /usr/local/bin/uniques-php-entrypoint; \
     chmod +x /usr/local/bin/supercronic; \
     \
     # Add 'll' alias to bash profile for all users \
@@ -78,11 +78,8 @@ RUN \
     chmod 777 /.npm -Rf;
 
 # Update PATH to use the actual nvm versioned node directory
-ENV NODE_PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/lib/node_modules:$NODE_PATH
+ENV NODE_PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION.*/bin:$PATH
-
-# Install nunjucks globally
-RUN bash -c ". \$NVM_DIR/nvm.sh && nvm use default && npm install -g nunjucks"
 
 # Copy CI helper scripts
 COPY src/environment.js /usr/local/lib/ci/environment.js
