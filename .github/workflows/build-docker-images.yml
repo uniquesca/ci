@@ -6,7 +6,7 @@ on:
       - '*'
 
 jobs:
-  docker-build:
+  docker-build-old:
     name: Build
     runs-on: ubuntu-latest
     strategy:
@@ -91,10 +91,10 @@ jobs:
 
       - name: Build and push PHP FPM + Apache DEV Docker image
         uses: docker/build-push-action@v7
+        if: matrix.php-version != '5.6'
         with:
           file: docker/php-apachefpm-dev/Dockerfile
           push: true
           tags: ghcr.io/uniquesca/php-apachefpm-dev:${{ matrix.php-version }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
-            
