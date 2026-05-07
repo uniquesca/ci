@@ -981,3 +981,7 @@
 ## v8.2.9
 
 * Fix: skipping build for PHP5.6 for apache-fpm image (89d0ae0 by George Shestayev)
+
+## v8.2.10
+
+* Fix: skipping build for PHP5.6 for apache-fpm image (45b18d2 by George Shestayev)
