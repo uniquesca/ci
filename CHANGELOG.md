@@ -967,3 +967,9 @@
 ## v8.2.6
 
 * Fix: fixed proxy fcgi module in apache+fpm image (1028dd9 by George Shestayev)
+
+## v8.2.7
+
+* Update: using debian stretch for php5.6 images (ee9126b by George Shestayev)
+* Update: using debian trixie for php8* images (ee9126b by George Shestayev)
+* Update: using node24 for php8* images (ee9126b by George Shestayev)
