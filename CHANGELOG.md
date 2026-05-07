@@ -955,3 +955,7 @@
 ## v8.2.3
 
 * Fix: fixed entrypoint path for php fpm images (f076f83 by George Shestayev)
+
+## v8.2.4
+
+* Fix: removed vhost from apachefpm image - should be done down the line instead (bf66ca4 by George Shestayev)
