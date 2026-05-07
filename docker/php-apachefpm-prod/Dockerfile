@@ -18,7 +18,7 @@ RUN a2enmod proxy proxy_fcgi headers expires filter deflate
 COPY ./docker/apache/vhost.conf /etc/apache2/sites-available/app.conf
 RUN a2ensite app.conf && a2dissite 000-default.conf
 
-COPY docker/php-prod-apachefpm/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
+COPY docker/php-apachefpm-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/
