@@ -977,3 +977,7 @@
 ## v8.2.8
 
 * Fix: fixing repoes for old debian for php5.6 (7910a91 by George Shestayev)
+
+## v8.2.9
+
+* Fix: skipping build for PHP5.6 for apache-fpm image (89d0ae0 by George Shestayev)
