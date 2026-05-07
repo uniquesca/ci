@@ -959,3 +959,7 @@
 ## v8.2.4
 
 * Fix: removed vhost from apachefpm image - should be done down the line instead (bf66ca4 by George Shestayev)
+
+## v8.2.5
+
+* Fix: fixed proxy fcgi module in apache+fpm image (8eadd71 by George Shestayev)
