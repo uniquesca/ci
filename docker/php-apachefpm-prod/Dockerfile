@@ -15,8 +15,6 @@ RUN apt-get update && apt-get install -y \
     libapache2-mod-proxy-fcgi \
     && rm -rf /var/lib/apt/lists/*
 RUN a2enmod proxy proxy_fcgi headers expires filter deflate
-COPY ./docker/apache/vhost.conf /etc/apache2/sites-available/app.conf
-RUN a2ensite app.conf && a2dissite 000-default.conf
 
 COPY docker/php-apachefpm-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 
