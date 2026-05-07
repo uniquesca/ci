@@ -963,3 +963,7 @@
 ## v8.2.5
 
 * Fix: fixed proxy fcgi module in apache+fpm image (8eadd71 by George Shestayev)
+
+## v8.2.6
+
+* Fix: fixed proxy fcgi module in apache+fpm image (1028dd9 by George Shestayev)
