@@ -951,3 +951,7 @@
 ## v8.2.2
 
 * Fix: minor fixes related to Docker images (dc43f56 by George Shestayev)
+
+## v8.2.3
+
+* Fix: fixed entrypoint path for php fpm images (f076f83 by George Shestayev)
