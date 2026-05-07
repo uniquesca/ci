@@ -942,3 +942,8 @@
 * Fix: fixed package.json for baking into Docker images (a712972 by George Shestayev)
 * New: introduced PHP FPM + Apache combined image (a712972 by George Shestayev)
 * Update: removed DEMO images as rendered useless (a712972 by George Shestayev)
+
+## v8.2.1
+
+* Fix: fixed entrypoint path for the php-apachemod image (bb35ac3 by George Shestayev)
+* Update: removed Postman CLI from Docker DEV images as it's only needed for Officio - to be added there (bb35ac3 by George Shestayev)
