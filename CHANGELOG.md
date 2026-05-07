@@ -973,3 +973,7 @@
 * Update: using debian stretch for php5.6 images (ee9126b by George Shestayev)
 * Update: using debian trixie for php8* images (ee9126b by George Shestayev)
 * Update: using node24 for php8* images (ee9126b by George Shestayev)
+
+## v8.2.8
+
+* Fix: fixing repoes for old debian for php5.6 (7910a91 by George Shestayev)
