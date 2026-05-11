@@ -84,20 +84,25 @@ export function getTokenFallbacks(envFilePath) {
 export function applyFallbacks(variables, fallbacks) {
     const result = {...variables};
 
+    const references = {};
     for (const [key, fallback] of Object.entries(fallbacks)) {
         if (key in result) {
             continue;
         }
 
         if (typeof fallback === 'string' && fallback.startsWith('$')) {
-            const reference = fallback.slice(1);
-            if (!(reference in result)) {
-                throw new Error(`Referenced variable "${reference}" is not found.`);
-            }
-            result[key] = result[reference];
+            references[key] = fallback;
         } else {
             result[key] = fallback;
         }
+    }
+
+    for (const [refKey, reference] of Object.entries(references)) {
+        const referenceVal = reference.slice(1);
+        if (!(referenceVal in result)) {
+            throw new Error(`Referenced variable "${referenceVal}" is not found.`);
+        }
+        result[refKey] = result[referenceVal];
     }
 
     return result;
