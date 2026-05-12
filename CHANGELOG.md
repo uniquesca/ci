@@ -985,3 +985,7 @@
 ## v8.2.10
 
 * Fix: skipping build for PHP5.6 for apache-fpm image (45b18d2 by George Shestayev)
+
+## v8.2.11
+
+* Update: improved config fallback processing - references are delayed to avoid issues with variable order (1c90b30 by George Shestayev)
