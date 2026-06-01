@@ -50,9 +50,10 @@ jobs:
     name: Publish NPM package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
 
       - name: Checkout application repository
         uses: actions/checkout@v6
