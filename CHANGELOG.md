@@ -989,3 +989,7 @@
 ## v8.2.11
 
 * Update: improved config fallback processing - references are delayed to avoid issues with variable order (1c90b30 by George Shestayev)
+
+## v8.2.13
+
+* Fix: fixed setup-node action to turn off caching (daea2c2 by George Shestayev)
