@@ -13,7 +13,7 @@ ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-
 RUN apt-get update && apt-get install -y \
     apache2 \
     && rm -rf /var/lib/apt/lists/*
-RUN a2enmod proxy proxy_fcgi headers expires filter deflate
+RUN a2enmod proxy proxy_fcgi headers expires filter deflate rewrite
 
 COPY docker/php-apachefpm-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 

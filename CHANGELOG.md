@@ -993,3 +993,7 @@
 ## v8.2.13
 
 * Fix: fixed setup-node action to turn off caching (daea2c2 by George Shestayev)
+
+## v8.2.14
+
+* Fix: added missing mod rewrite for apache in apachefpm image (785337a by George Shestayev)
