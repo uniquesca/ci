@@ -997,3 +997,7 @@
 ## v8.2.14
 
 * Fix: added missing mod rewrite for apache in apachefpm image (785337a by George Shestayev)
+
+## v8.3.0
+
+* New: added ability to rescan satis repo after publishing a package (733bd79 by George Shestayev)
