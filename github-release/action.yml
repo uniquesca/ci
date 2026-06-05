@@ -1,5 +1,4 @@
-name: "[DEPRECATED] Publish GitHub release"
-description: "Deprecated: use uniquesca/ci/github-release instead."
+name: 'Publish Github Release'
 
 inputs:
   release_version:
@@ -16,6 +15,18 @@ inputs:
   repo_token:
     description: 'GitHub access token with the access to publish package in the repository'
     required: true
+  rescan_satis:
+    description: 'Whether to rescan Satis repo after publishing'
+    required: false
+    default: 'false'
+  satis_rebuild_url:
+    description: 'URL to the Satis rebuild endpoint'
+    required: false
+    default: 'https://satis.unqs.ca/-/rebuild'
+  satis_rebuild_token:
+    description: 'Token to use for Satis rebuild endpoint'
+    required: false
+    default: ''
 
 env:
   FILES: ''
@@ -23,11 +34,6 @@ env:
 runs:
   using: "composite"
   steps:
-    - name: Deprecation notice
-      shell: bash
-      run: |
-        echo "::warning title=Deprecated action::uniquesca/ci/publish-github-release is deprecated. Please migrate to uniquesca/ci/github-release."
-
     - name: Checkout
       uses: actions/checkout@v6
       with:
@@ -57,6 +63,7 @@ runs:
         fi
 
     - name: Debug changelog
+      if: ${{ runner.debug == '1' }}
       run: cat _github_ci_changelog.txt
       shell: bash
 
@@ -68,3 +75,16 @@ runs:
         prerelease: false
         name: Release ${{ inputs.release_version }}
         files: ${{ env.FILES }}
+
+    - name: Trigger Satis reindex for the package
+      if: inputs.rescan_satis == 'true'
+      env:
+        SATIS_REBUILD_URL: ${{ inputs.satis_rebuild_url }}
+        SATIS_REBUILD_TOKEN: ${{ inputs.satis_rebuild_token }}
+        PACKAGE: ${{ github.repository }}
+      run: |
+        curl --fail-with-body -X POST \
+        -H "Authorization: Bearer ${SATIS_REBUILD_TOKEN}" \
+        --get \
+        --data-urlencode "package=${PACKAGE}" \
+        "${SATIS_REBUILD_URL}"
