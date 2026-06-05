@@ -1001,3 +1001,8 @@
 ## v8.3.0
 
 * New: added ability to rescan satis repo after publishing a package (733bd79 by George Shestayev)
+* Deprecated: publish-github-release action is deprecated in favor of publish-release action (733bd79 by George Shestayev)
+
+## v8.3.1
+
+* Fix: added missing shell to the satis rescan step (5573ffa by George Shestayev)

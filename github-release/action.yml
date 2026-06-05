@@ -78,6 +78,7 @@ runs:
 
     - name: Trigger Satis reindex for the package
       if: inputs.rescan_satis == 'true'
+      shell: bash
       env:
         SATIS_REBUILD_URL: ${{ inputs.satis_rebuild_url }}
         SATIS_REBUILD_TOKEN: ${{ inputs.satis_rebuild_token }}
