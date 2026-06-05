@@ -1,4 +1,4 @@
-name: 'Publish Github Release'
+name: 'Github Release'
 
 inputs:
   release_version:
