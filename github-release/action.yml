@@ -19,10 +19,10 @@ inputs:
     description: 'Whether to rescan Satis repo after publishing'
     required: false
     default: 'false'
-  satis_rebuild_url:
-    description: 'URL to the Satis rebuild endpoint'
+  satis_base_url:
+    description: 'Satis base URL without leading slash'
     required: false
-    default: 'https://satis.unqs.ca/-/rebuild'
+    default: 'https://satis.unqs.ca'
   satis_rebuild_token:
     description: 'Token to use for Satis rebuild endpoint'
     required: false
@@ -80,7 +80,7 @@ runs:
       if: inputs.rescan_satis == 'true'
       shell: bash
       env:
-        SATIS_REBUILD_URL: ${{ inputs.satis_rebuild_url }}
+        SATIS_BASE_URL: ${{ inputs.satis_base_url }}
         SATIS_REBUILD_TOKEN: ${{ inputs.satis_rebuild_token }}
         PACKAGE: ${{ github.repository }}
       run: |
@@ -88,4 +88,4 @@ runs:
         -H "Authorization: Bearer ${SATIS_REBUILD_TOKEN}" \
         --get \
         --data-urlencode "package=${PACKAGE}" \
-        "${SATIS_REBUILD_URL}"
+        "${SATIS_BASE_URL}/-/rebuild"
