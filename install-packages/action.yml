@@ -2,7 +2,7 @@ name: Install packages (Composer/Yarn/NPM)
 
 inputs:
   access_token:
-    description: 'GitHub access token with the access to read from repositories'
+    description: '[DEPRECATED] Use composer_access_token and/or npm_access_token instead. Fallback token used when composer_access_token or npm_access_token are empty.'
     required: false
   working_directory:
     description: 'Working directory to install packages in'
@@ -24,6 +24,9 @@ inputs:
     description: 'Composer cache directory'
     required: false
     default: false
+  composer_access_token:
+    description: 'Composer access token'
+    required: false
   skip_npm_yarn:
     description: 'Skip NPM/Yarn installation'
     required: false
@@ -36,6 +39,9 @@ inputs:
     description: 'Command to install NPM'
     required: false
     default: "npm install"
+  npm_access_token:
+    description: 'NPM access token'
+    required: false
   yarn_cache_dir:
     description: 'Yarn cache directory'
     required: false
@@ -52,6 +58,36 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Deprecation notice for access_token
+      shell: bash
+      if: inputs.access_token != ''
+      run: |
+        echo "::warning title=Deprecated input::The access_token input is deprecated. Please use composer_access_token and/or npm_access_token instead."
+
+    - name: Resolve access tokens
+      shell: bash
+      id: access_tokens
+      run: |
+        composer_access_token="${{ inputs.composer_access_token }}"
+        npm_access_token="${{ inputs.npm_access_token }}"
+
+        if [ -z "$composer_access_token" ]; then
+          composer_access_token="${{ inputs.access_token }}"
+        fi
+
+        if [ -z "$npm_access_token" ]; then
+          npm_access_token="${{ inputs.access_token }}"
+        fi
+
+        {
+          echo "composer_access_token<<EOF"
+          echo "$composer_access_token"
+          echo "EOF"
+          echo "npm_access_token<<EOF"
+          echo "$npm_access_token"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
     - name: Check if we have Composer to install
       shell: bash
       id: composer
@@ -104,7 +140,7 @@ runs:
       if: steps.composer.outputs.detected == 1 && inputs.composer_cmd != ''
       run: |
         rm -f auth.json
-        composer config --auth github-oauth.github.com ${{ inputs.access_token }}
+        composer config --auth github-oauth.github.com ${{ steps.access_tokens.outputs.composer_access_token }}
         echo "Installing dependencies via Composer using command: ${{ inputs.composer_cmd }}"
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
           mv composer.lock composer.lock_
@@ -144,7 +180,7 @@ runs:
       run: |
         rm -f .npmrc
         echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-        echo "//npm.pkg.github.com/:_authToken=${{ inputs.access_token }}" >> .npmrc
+        echo "//npm.pkg.github.com/:_authToken=${{ steps.access_tokens.outputs.npm_access_token }}" >> .npmrc
 
     - name: Get NPM cache directory
       shell: bash
@@ -175,7 +211,7 @@ runs:
       uses: actions/cache@v5
       with:
         path: ${{ steps.npm_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.npm_cache_key_file.ouputs.file)) }}
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.npm_cache_key_file.outputs.file)) }}
         restore-keys: |
           ${{ runner.os }}-npm-
 
@@ -184,7 +220,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       if: steps.npm_yarn.outputs.npm == 1
       env:
-        NODE_AUTH_TOKEN: ${{ inputs.access_token }}
+        NODE_AUTH_TOKEN: ${{ steps.access_tokens.outputs.npm_access_token }}
       run: |
         echo "Installing dependencies via NPM using command: ${{ inputs.npm_install_cmd }}"
         ${{ inputs.npm_install_cmd }}
@@ -228,7 +264,7 @@ runs:
       working-directory: ${{ inputs.working_directory }}
       if: steps.npm_yarn.outputs.yarn == 1
       env:
-        NODE_AUTH_TOKEN: ${{ inputs.access_token }}
+        NODE_AUTH_TOKEN: ${{ steps.access_tokens.outputs.npm_access_token }}
       run: |
         echo "Installing dependencies via Yarn using command: ${{ inputs.yarn_install_cmd }}"
 
