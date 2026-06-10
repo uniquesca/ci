@@ -140,7 +140,7 @@ runs:
       if: steps.composer.outputs.detected == 1 && inputs.composer_cmd != ''
       run: |
         rm -f auth.json
-        composer config --auth github-oauth.github.com ${{ steps.access_tokens.outputs.composer_access_token }}
+        composer config --auth http-basic.satis.unqs.ca token ${{ steps.access_tokens.outputs.composer_access_token }}
         echo "Installing dependencies via Composer using command: ${{ inputs.composer_cmd }}"
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
           mv composer.lock composer.lock_
