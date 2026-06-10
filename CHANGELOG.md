@@ -1006,3 +1006,8 @@
 ## v8.3.1
 
 * Fix: added missing shell to the satis rescan step (5573ffa by George Shestayev)
+
+## v8.4.0
+
+* BREAKING: qa-checks job will run npm lint command now in npm/yarn based projects (492722c by George Shestayev)
+* Deprecated: `access_token` input is removed from install-packages CI job. Use composer_access_token and npm_access_token instead (492722c by George Shestayev)
