@@ -1011,3 +1011,7 @@
 
 * BREAKING: qa-checks job will run npm lint command now in npm/yarn based projects (492722c by George Shestayev)
 * Deprecated: `access_token` input is removed from install-packages CI job. Use composer_access_token and npm_access_token instead (492722c by George Shestayev)
+
+## v8.4.1
+
+* BREAKING: switching composer authentication to satis completely instead of github (b13d6c9 by George Shestayev)
