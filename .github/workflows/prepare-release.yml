@@ -3,10 +3,10 @@ name: Prepare release
 on:
   workflow_call:
     secrets:
-      UNIQUES_GITHUB_ACCESS_TOKEN:
-        description: 'Access token for cloning Uniques private repositories from GitHub'
-        required: true
-      NODE_AUTH_TOKEN:
+      COMPOSER_ACCESS_TOKEN:
+        description: 'Access token for cloning Uniques private repositories'
+        required: false
+      NPM_ACCESS_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: false
     inputs:
@@ -165,7 +165,8 @@ jobs:
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@main
         with:
-          access_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+          composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
 
       - name: Set up MySQL
         if: inputs.use_db || inputs.update_db

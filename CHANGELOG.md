@@ -1015,3 +1015,7 @@
 ## v8.4.1
 
 * BREAKING: switching composer authentication to satis completely instead of github (b13d6c9 by George Shestayev)
+
+## v8.4.2
+
+* BREAKING: splitting composer and npm access tokens in prepare-release and qa-checks workflows (bdab335 by George Shestayev)
