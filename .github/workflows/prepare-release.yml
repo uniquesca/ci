@@ -5,7 +5,7 @@ on:
     secrets:
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories'
-        required: true
+        required: false
       NPM_ACCESS_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: false
