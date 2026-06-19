@@ -1033,3 +1033,7 @@
 ## v8.5.2
 
 * Fix: fixing a newly introduce bug in changelog generation (99d1cf03 by George Shestayev)
+
+## v8.5.3
+
+* Fix: fixed recently introduced issues related to changelog generation (4ed2b3e by George Shestayev)
