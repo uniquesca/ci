@@ -1,10 +1,9 @@
 name: Update Changelog
 
 inputs:
-  changelog_path:
-    description: 'Path to the changelog file'
+  working_directory:
+    description: 'Path to the directory with changelogs'
     required: false
-    default: 'CHANGELOG.md'
   target_version:
     description: 'Version to add to the changelog'
     required: true
@@ -16,6 +15,10 @@ inputs:
     description: 'Offset for the start tag to get changelog since'
     required: false
     default: '0'
+  use_tags:
+    description: 'Whether to generate changelogs based on tags'
+    required: false
+    default: true
 runs:
   using: 'node24'
   main: 'index.js'

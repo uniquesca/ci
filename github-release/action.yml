@@ -50,27 +50,30 @@ runs:
       with:
         mode: 'raw'
         offset: 1
-        changelog_path: '_github_ci_changelog.txt'
+        workding_directory: '_github_ci_changelog'
         target_version: ${{ inputs.release_version }}
+        use_tags: false
 
     - name: Shrinking changelog if it's too big
       shell: bash
+      working-directory: _github_ci_changelog
       run: |
-        if [ $(wc -c < _github_ci_changelog.txt) -gt 125000 ]; then
+        if [ $(wc -c < CHANGELOG.md) -gt 125000 ]; then
           echo "Github body message has more than 125000 characters, cutting..."
-          head -c 124000 _github_ci_changelog.txt > temp.txt && mv temp.txt _github_ci_changelog.txt
-          echo "..." >> '_github_ci_changelog.txt'
+          head -c 124000 CHANGELOG.md > temp.txt && mv temp.txt CHANGELOG.md
+          echo "..." >> 'CHANGELOG.md'
         fi
 
     - name: Debug changelog
       if: ${{ runner.debug == '1' }}
-      run: cat _github_ci_changelog.txt
+      run: cat CHANGELOG.md
+      working-directory: _github_ci_changelog
       shell: bash
 
     - uses: softprops/action-gh-release@v3
       with:
         token: ${{ inputs.repo_token }}
-        body_path: '_github_ci_changelog.txt'
+        body_path: '_github_ci_changelog/CHANGELOG.md'
         tag_name: ${{ inputs.release_version }}
         prerelease: false
         name: Release ${{ inputs.release_version }}

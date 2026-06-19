@@ -19,10 +19,10 @@ on:
         required: false
         default: true
         type: boolean
-      changelog_path:
-        description: 'Path to the changelog file. Ignored if `generate-changelog` input is not set to `true`'
+      changelog_dir:
+        description: 'Path to the directory with changelog file(s). Ignored if `generate-changelog` input is not set to `true`'
         required: false
-        default: 'CHANGELOG.md'
+        default: '.'
         type: string
       use_db:
         description: 'Whether DB should be set up'
@@ -225,7 +225,7 @@ jobs:
         if: ${{ inputs.generate_changelog == true }}
         uses: uniquesca/ci/update-changelog@main
         with:
-          changelog_path: ${{ inputs.changelog_path }}
+          working_directory: ${{ inputs.changelog_dir }}
           target_version: ${{ inputs.version }}
 
       - name: Run PHPUnit
