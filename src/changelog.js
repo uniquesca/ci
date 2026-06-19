@@ -254,6 +254,31 @@ function validateVersion(version) {
     return /^\d+\.\d+\.\d+$/.test(version);
 }
 
+// Retrieves changes from git log since the last tag and formats the list
+export function generateChangelog(gitPath, fromTag, toTag) {
+    let gitLog = getGitLog(gitPath, fromTag, toTag);
+    core.debug('=====================================');
+    core.debug('Git log:');
+    core.debug(gitLog);
+    core.debug('=====================================');
+
+    if (gitLog.length) {
+        gitLog = normalizeGitLog(gitLog);
+        core.debug('=====================================');
+        core.debug('Git log after normalization and filtering:')
+        core.debug(gitLog);
+        core.debug('=====================================');
+
+        if (!gitLog.length) {
+            gitLog = '*All the changes in this version are ' +
+                'insignificant and are\nprobably limited to ' +
+                'code quality or infrastructure.*'
+        }
+    }
+
+    return gitLog;
+}
+
 // Updates changelog file with the changes retrieved from git log
 export function updateChangelog(gitPath, changelogPath, targetVersion, fromTag, toTag, useTags = false) {
     const gitLog = getGitLog(gitPath, fromTag, toTag);
