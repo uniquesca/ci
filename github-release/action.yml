@@ -39,18 +39,23 @@ runs:
       with:
         fetch-depth: 0
 
-    - run: |
-        zip -qq -r dist.zip ${{ inputs.dist_folder }}
-        echo "FILES=dist.zip" >> "$GITHUB_ENV"
+    - name: Create dist
       if: ${{ inputs.attach_dist == 'true' }}
       shell: bash
+      run: |
+        zip -qq -r dist.zip ${{ inputs.dist_folder }}
+        echo "FILES=dist.zip" >> "$GITHUB_ENV"
+
+    - name: Prep dir for the changelog
+      shell: bash
+      run: mkdir -p _github_ci_changelog
 
     - name: Generate changelog for the release
       uses: uniquesca/ci/update-changelog@main
       with:
         mode: 'raw'
         offset: 1
-        workding_directory: '_github_ci_changelog'
+        working_directory: '_github_ci_changelog'
         target_version: ${{ inputs.release_version }}
         use_tags: false
 
