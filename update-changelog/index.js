@@ -1,16 +1,20 @@
 import core from "@actions/core";
 import fs from "fs";
+import path from "path";
 import { updateChangelog, generateChangelog } from "../src/changelog.js";
 import { getLastGitTag, getGitTag } from "../src/git.js";
 import process from "process";
 
 let gitPath = '.';
-const changelogPath = core.getInput('changelog_path') || process.argv[2];
+const workingDirectory = core.getInput('working_directory') || process.argv[2] || '.';
+const changelogPath = path.join(workingDirectory, 'CHANGELOG.md');
 const targetVersion = core.getInput('target_version') || process.argv[3];
 let mode = core.getInput('mode') || process.argv[4] || 'normal';
 let offset = core.getInput('offset') || process.argv[5];
-if (!changelogPath || !targetVersion) {
-    console.error('Usage: node changelog.js CHANGELOG_PATH TARGET_VERSION ["normal"|"raw"] [OFFSET]');
+const useTags = (core.getInput('use_tags') || 'true') === 'true';
+
+if (!targetVersion) {
+    console.error('Usage: node changelog.js [WORKING_DIRECTORY] TARGET_VERSION ["normal"|"raw"] [OFFSET]');
     process.exit(1);
 }
 
@@ -30,5 +34,5 @@ if (mode == 'raw') {
     fs.writeFileSync(changelogPath, changelog);
 } else {
     core.info('Updating changelog in normal (non-raw) mode: ' + startTag + '..' + endTag)
-    updateChangelog(gitPath, changelogPath, targetVersion, startTag, endTag);
+    updateChangelog(gitPath, changelogPath, targetVersion, startTag, endTag, useTags);
 }
