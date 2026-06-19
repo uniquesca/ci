@@ -1019,3 +1019,9 @@
 ## v8.4.2
 
 * BREAKING: splitting composer and npm access tokens in prepare-release and qa-checks workflows (bdab335 by George Shestayev)
+
+## v8.5.0
+
+* BREAKING: changes related to release preparation job inputs - handling changelogs (4129258 by George Shestayev)
+* Update: changelog now accepts tags to generate various changelogs (4129258 by George Shestayev)
+* Update: tags are now removed from the changelog records (4129258 by George Shestayev)
