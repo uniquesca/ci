@@ -1025,3 +1025,11 @@
 * BREAKING: changes related to release preparation job inputs - handling changelogs (4129258 by George Shestayev)
 * Update: changelog now accepts tags to generate various changelogs (4129258 by George Shestayev)
 * Update: tags are now removed from the changelog records (4129258 by George Shestayev)
+
+## v8.5.1
+
+* Update: author and commit has information is removed from tag changelogs (e3c27bdf by George Shestayev)
+
+## v8.5.2
+
+* Fix: fixing a newly introduce bug in changelog generation (99d1cf03 by George Shestayev)
