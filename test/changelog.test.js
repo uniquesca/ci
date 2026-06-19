@@ -49,14 +49,18 @@ test('updateChangelogFromGitLog creates main and tag-specific changelogs', () =>
     assert.doesNotMatch(mainChangelog, /\[skip-ci]/);
     assert.doesNotMatch(mainChangelog, /documentation only/);
 
-    assert.match(apiChangelog, /\* Fix: fixed API issue \(1111111 by Test User\)/);
-    assert.match(apiChangelog, /\* Update: shared update \(3333333 by Test User\)/);
+    assert.match(apiChangelog, /\* Fix: fixed API issue/);
+    assert.match(apiChangelog, /\* Update: shared update/);
+    assert.doesNotMatch(apiChangelog, /\* Fix: fixed API issue \(1111111 by Test User\)/);
+    assert.doesNotMatch(apiChangelog, /\* Update: shared update \(3333333 by Test User\)/);
     assert.doesNotMatch(apiChangelog, /added UI feature/);
     assert.doesNotMatch(apiChangelog, /documentation only/);
     assert.doesNotMatch(apiChangelog, /\[api]/);
 
-    assert.match(frontendChangelog, /\* New: added UI feature \(2222222 by Test User\)/);
-    assert.match(frontendChangelog, /\* Update: shared update \(3333333 by Test User\)/);
+    assert.match(frontendChangelog, /\* New: added UI feature/);
+    assert.match(frontendChangelog, /\* Update: shared update/);
+    assert.doesNotMatch(frontendChangelog, /\* New: added UI feature \(2222222 by Test User\)/);
+    assert.doesNotMatch(frontendChangelog, /\* Update: shared update \(3333333 by Test User\)/);
     assert.doesNotMatch(frontendChangelog, /fixed API issue/);
     assert.doesNotMatch(frontendChangelog, /\[frontend]/);
 

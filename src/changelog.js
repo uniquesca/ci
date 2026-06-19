@@ -153,25 +153,27 @@ function normalizeGitLogRecord(gitLogRecord) {
         .filter(part => part.length > 0);
 
     if (messageParts.length == 0) {
-        return {text: '', tags: []};
+        return {text: '', tagText: '', tags: []};
     }
 
     return messageParts.map(
         function (messagePart) {
             if (messagePart.match(/(Co)?-?authored-by/i)) {
-                return {text: '', tags: []};
+                return {text: '', tagText: '', tags: []};
             }
 
             const tags = getRecordTags(messagePart);
             const messageWithoutTags = removeRecordTags(messagePart);
+            const normalizedMessage = messageWithoutTags
+                .trim()
+                .replace(/^\*|[\.;]$/g, '')
+                .trim();
 
             return {
                 text: '* '
-                    + messageWithoutTags
-                        .trim()
-                        .replace(/^\*|[\.;]$/g, '')
-                        .trim()
+                    + normalizedMessage
                     + ' (' + hash + ' by ' + author + ')',
+                tagText: '* ' + normalizedMessage,
                 tags: tags
             };
         }
@@ -216,10 +218,16 @@ function appendChangeLog(gitPath, changelogContents, targetVersion, fromTag, toT
     return changelogContents;
 }
 
-function appendRecordsToChangelog(changelogContents, targetVersion, records) {
+function appendRecordsToChangelog(changelogContents, targetVersion, records, useTagText = false) {
     changelogContents = changelogContents + "\n\n## v" + targetVersion + "\n\n";
     if (records.length) {
-        changelogContents = changelogContents + records.map(record => record.text).join("\n") + "\n";
+        changelogContents = changelogContents + records.map(function (record) {
+            if (useTagText) {
+                return record.tagText;
+            }
+
+            return record.text;
+        }).join("\n") + "\n";
     }
     return changelogContents;
 }
@@ -301,7 +309,7 @@ export function updateChangelogFromGitLog(gitPath, changelogPath, targetVersion,
         );
 
         let tagChangelogContents = prepareChangelogContents(gitPath, tagChangelogPath, targetVersion);
-        tagChangelogContents = appendRecordsToChangelog(tagChangelogContents, targetVersion, tagRecords);
+        tagChangelogContents = appendRecordsToChangelog(tagChangelogContents, targetVersion, tagRecords, true);
 
         fs.writeFileSync(gitPath + '/' + tagChangelogPath, tagChangelogContents);
     }
