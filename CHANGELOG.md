@@ -1037,3 +1037,7 @@
 ## v8.5.3
 
 * Fix: fixed recently introduced issues related to changelog generation (4ed2b3e by George Shestayev)
+
+## v8.6.0
+
+* New: introduced pre_cmd input for both deploy and docker-deploy CI jobs (1bf2f14 by George Shestayev)
