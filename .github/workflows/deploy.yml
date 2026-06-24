@@ -44,6 +44,11 @@ on:
         required: false
         default: ''
         type: string
+      pre_cmd:
+        description: 'Command to execute on the REMOTE after pulling latest code and before everything else'
+        required: false
+        default: ''
+        type: string
       post_cmd:
         description: 'Command to execute after deployment is complete'
         required: false
@@ -116,6 +121,9 @@ jobs:
                 git reset --hard ${{ inputs.ref }}
               fi
             fi
+            
+            echo "Executing pre-deployment command"
+            ${{ inputs.pre_cmd }}
             
             rm -f auth.json
             if [ -f "composer.json" ]; then

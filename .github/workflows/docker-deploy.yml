@@ -42,6 +42,11 @@ on:
         required: false
         type: string
         default: '--force-recreate --remove-orphans --build'
+      pre_cmd:
+        description: 'Command to execute on the REMOTE after pulling latest code and before everything else'
+        required: false
+        default: ''
+        type: string
       post_cmd:
         description: 'Command to execute on the REMOTE after deployment is complete'
         required: false
@@ -117,6 +122,8 @@ jobs:
           script: |
             # Making it more strict for the script to fail in case of an error
             set -eux;
+            
+            # TODO might wanna log into ghcr.io
             
             # Check if it's already a git repo
             if [ ! -d "${{ inputs.deployment_path }}/.git" ]; then
@@ -268,6 +275,9 @@ jobs:
             
             echo "Starting Docker Services"
             ./task.sh up -d ${{ inputs.docker_up_args }}
+            
+            echo "Executing pre-deployment command"
+            ${{ inputs.pre_cmd }}
             
             rm -f ${{ inputs.composer_working_directory }}/auth.json
             if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
