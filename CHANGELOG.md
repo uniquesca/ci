@@ -1041,3 +1041,7 @@
 ## v8.6.0
 
 * New: introduced pre_cmd input for both deploy and docker-deploy CI jobs (1bf2f14 by George Shestayev)
+
+## v8.7.0
+
+* New: introduced timeout input for deployment jobs (aa6875a by George Shestayev)
