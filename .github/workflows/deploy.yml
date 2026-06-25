@@ -59,6 +59,11 @@ on:
         required: false
         default: '24'
         type: string
+      timeout:
+        description: 'Timeout for the deployment'
+        required: false
+        type: string
+        default: '5m'
 
 jobs:
   deploy:
@@ -73,6 +78,8 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
           script_stop: false
+          timeout: ${{ inputs.timeout }}
+          command_timeout: ${{ inputs.timeout }}
           script: |
             # Making it more strict for the script to fail in case of an error
             set -eux;
