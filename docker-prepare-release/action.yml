@@ -20,6 +20,11 @@ inputs:
     required: false
     default: false
     type: boolean
+  db_name:
+    description: 'Name of the DB to be dumped, ignored if `update_db` input is not set to `true`'
+    required: false
+    default: ''
+    type: string
   db_dump_path:
     description: 'Path to the DB dump. Ignored if `update_db` input is not set to `true`'
     required: false
@@ -43,7 +48,7 @@ runs:
       uses: uniquesca/ci/mysql-export@main
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
-        db_name: prepare_release
+        db_name: ${{ inputs.db_name }}
 
     - name: Set Composer version in composer.json
       shell: bash
