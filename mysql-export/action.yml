@@ -43,4 +43,5 @@ runs:
         # Remove dump end time to avoid unnecessary commits every time
         sed -i '/^-- Dump completed on/d' ${{ inputs.dump_file_path }}
         sed -i '/^-- Host:/d' ${{ inputs.dump_file_path }}
+        sed -i -E "s/^-- Dumping routines for database '.+'$/-- Dumping routines/" ${{ inputs.dump_file_path }}
       shell: bash
