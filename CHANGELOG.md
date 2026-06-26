@@ -1045,3 +1045,7 @@
 ## v8.7.0
 
 * New: introduced timeout input for deployment jobs (aa6875a by George Shestayev)
+
+## v8.8.0
+
+* New: introduced db_name input in docker-prepare-release CI job (b733760 by George Shestayev)
