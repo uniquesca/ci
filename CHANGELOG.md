@@ -1049,3 +1049,8 @@
 ## v8.8.0
 
 * New: introduced db_name input in docker-prepare-release CI job (b733760 by George Shestayev)
+
+## v8.9.0
+
+* Update: optimized stale branch cleaning on docker-deploy job (3983070 by George Shestayev)
+* Update: improved DB dump cleanup work (d23f7a4 by George Shestayev)
