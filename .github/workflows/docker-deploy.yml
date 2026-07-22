@@ -237,8 +237,23 @@ jobs:
               fi
             done
 
-            echo "Retrieving the latest updates"
-            git fetch --prune
+            echo "Retrieving the latest updates and pruning stale remote-tracking refs"
+            git fetch --prune origin
+
+            echo "Deleting local branches with no upstream or missing remote counterpart"
+            git for-each-ref --format='%(refname:short) %(upstream:short) %(upstream:track)' refs/heads/ |
+            while read branch upstream track; do
+              if [ -z "$upstream" ]; then
+                echo "Deleting local branch without upstream: $branch"
+                git branch -D "$branch"
+                continue
+              fi
+
+              if [ "$track" = "[gone]" ]; then
+                echo "Deleting local branch with missing upstream: $branch -> $upstream"
+                git branch -D "$branch"
+              fi
+            done
 
             # This part is commented because it doesn't work well - if there are any changes done, 
             # or some commits are ahead autodeployment will fail
