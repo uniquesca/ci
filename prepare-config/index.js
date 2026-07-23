@@ -1,60 +1,34 @@
-import core from "@actions/core";
-import fs from "fs";
-import process from "process";
-import {CiEnvironment} from "../src/classes/CiEnvironment.js";
-import {CiEnvVariableMapper} from "../src/classes/CiEnvVariableMapper.js";
+import core from '@actions/core';
+import process from 'process';
+import path from 'path';
+import {dotToNested, processConfig} from '../src/environment.js';
 
-// IMPORTANT: THIS IS RETIRED AND JINJA2 IS USED INSTEAD
+async function main() {
+    try {
+        const workingDir = path.resolve(core.getInput('working_directory') || '.');
+        const source = core.getInput('source', { required: true });
+        const destination = core.getInput('destination', { required: true });
+        const variablesInput = core.getInput('variables', { required: true });
 
-let workingDir = core.getInput('working_directory');
-if (workingDir) {
-    process.chdir(workingDir);
+        let variables;
+        try {
+            variables = JSON.parse(variablesInput);
+        } catch (error) {
+            core.setFailed(`❌ variables is not valid JSON: ${error.message}`);
+            process.exit(1);
+        }
+
+        // Convert dot-notation keys to nested objects for nunjucks
+        const nested = dotToNested(variables);
+
+        core.info(`⏩ Rendering config: ${source} -> ${destination}`);
+        await processConfig(workingDir, source, destination, nested);
+
+        core.info('✅ Config rendered successfully');
+    } catch (error) {
+        core.setFailed(`❌ Error: ${error.message}`);
+        process.exit(1);
+    }
 }
 
-// Retrieving environment from the file
-const env = CiEnvironment.fromEnvironmentFile();
-
-// Checking config file path - firstly from intput, then - from environment file
-let config = core.getInput('env_file');
-if (!config || config == '') {
-    config = env.env_file;
-}
-if (!config || config == '') {
-    core.info("Environment file not found, exiting.");
-    process.exit();
-}
-
-// Copying stub file if exists - firstly from intput, then - from environment file
-let configStub = core.getInput('env_file_stub');
-if (!configStub || configStub == '') {
-    configStub = env.env_file_stub;
-}
-if (configStub !== '' && fs.existsSync(configStub)) {
-    fs.copyFileSync(configStub, config);
-    core.info("Copied config stub " + configStub + " into " + config);
-}
-
-// Preparing replacements
-const variables = core.getInput('env_variables');
-let variablesParsed = JSON.parse(variables);
-if (!variablesParsed) {
-    variablesParsed = {};
-}
-const envMapper = new CiEnvVariableMapper(variablesParsed, env);
-variablesParsed = envMapper.map();
-
-let configContent = fs.readFileSync(config, 'utf8');
-
-for (const key of Object.keys(variablesParsed)) {
-    let value = variablesParsed[key];
-    // Process was simplified, no need for the below part
-    const patternRegex = '\\$?\\{{1,2}' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\}{1,2}';
-    const regex = new RegExp(patternRegex, 'g');
-    configContent = configContent.replaceAll(regex, value);
-}
-
-core.debug('Processed environment file content:');
-core.debug(configContent);
-
-fs.writeFileSync(config, configContent);
-
+main();

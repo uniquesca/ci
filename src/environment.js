@@ -118,14 +118,6 @@ export function applyFallbacks(variables, fallbacks) {
  * @returns {Promise<void>}
  */
 export async function prepareEnvironment(workingDirectory, envFilePath, variables) {
-    let nunjucks;
-    try {
-        const nunjucksModule = await import('nunjucks');
-        nunjucks = nunjucksModule.default;
-    } catch (error) {
-        throw new Error(`nunjucks is not installed. Please install it using: npm install nunjucks\n${error.message}`);
-    }
-
     // Get all configs to process
     const configs = getConfigList(envFilePath);
 
@@ -140,7 +132,7 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
 
     // Process all configs
     for (const config of configs) {
-        await processConfig(workingDirectory, config, nested, nunjucks);
+        await processConfig(workingDirectory, config.template, config.path, nested);
     }
 }
 
@@ -148,42 +140,45 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
  * Processes a single config entry using nunjucks templating.
  *
  * @param {string} workingDirectory - The working directory path.
- * @param {EnvConfig} config - The config to process.
+ * @param {string} templatePath - Path to the config template file
+ * @param {string} configPath - Path to the output config file
  * @param {Record<string, string|number>} variables - The prepared variables.
- * @param {object} nunjucks - The nunjucks instance.
  * @returns {Promise<void>}
  */
-async function processConfig(workingDirectory, config, variables, nunjucks) {
+export async function processConfig(workingDirectory, templatePath, configPath, variables) {
     try {
+        const nunjucksModule = await import('nunjucks');
+        const nunjucks = nunjucksModule.default;
+
         // Configure nunjucks
         nunjucks.configure({ autoescape: false });
 
         // Resolve the template file path relative to the working directory
-        const templatePath = path.join(workingDirectory, config.template);
-        const outputPath = path.join(workingDirectory, config.path);
+        const resolvedTemplatePath = path.resolve(workingDirectory, templatePath);
+        const resolvedConfigPath = path.resolve(workingDirectory, configPath);
 
         // Check if template file exists
-        if (!fs.existsSync(templatePath)) {
-            throw new Error(`Template file not found: ${templatePath}`);
+        if (!fs.existsSync(resolvedTemplatePath)) {
+            throw new Error(`Template file not found: ${resolvedTemplatePath}`);
         }
 
         // Read the template file
-        const templateContent = fs.readFileSync(templatePath, 'utf8');
+        const templateContent = fs.readFileSync(resolvedTemplatePath, 'utf8');
 
         // Render the template with variables
         const rendered = nunjucks.renderString(templateContent, variables);
 
         // Ensure output directory exists
-        const outputDir = path.dirname(outputPath);
+        const outputDir = path.dirname(resolvedConfigPath);
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, {recursive: true});
         }
 
         // Write the rendered content to the output file
-        fs.writeFileSync(outputPath, rendered, 'utf8');
+        fs.writeFileSync(resolvedConfigPath, rendered, 'utf8');
 
-        console.log(`Processed config: ${config.template} -> ${config.path}`);
+        console.log(`Processed config: ${templatePath} -> ${configPath}`);
     } catch (error) {
-        throw new Error(`Failed to process config ${config.template}: ${error.message}`);
+        throw new Error(`Failed to process config ${templatePath}: ${error.message}`);
     }
 }
