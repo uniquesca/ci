@@ -1054,3 +1054,8 @@
 
 * Update: optimized stale branch cleaning on docker-deploy job (3983070 by George Shestayev)
 * Update: improved DB dump cleanup work (d23f7a4 by George Shestayev)
+
+## v9.0.0
+
+* BREAKING: process-config action is completely reworked to process a single config file (3ec63d8 by George Shestayev)
+* BREAKING: process-environment should be used for processing multiple config files and use _ci_environment.json file for guidelines (3ec63d8 by George Shestayev)
