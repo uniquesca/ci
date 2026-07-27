@@ -1,0 +1,133 @@
+name: AI Plan
+
+on:
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        description: 'Anthropic API key used to call the AI planning agent'
+        required: true
+    inputs:
+      command:
+        description: 'Comment command that triggers the planning, has to be at the very beginning of the comment'
+        required: false
+        default: '/ai-plan'
+        type: string
+      allowed_permissions:
+        description: 'Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and the triage role as `read`, so `admin write` covers owners, maintainers and developers'
+        required: false
+        default: 'admin write'
+        type: string
+      timeout_minutes:
+        description: 'How long to wait for the planning agent before giving up'
+        required: false
+        default: 30
+        type: number
+
+jobs:
+  plan:
+    name: Plan the issue
+    # Only react to a fresh comment on a real issue that starts with the command
+    if: >-
+      ${{ github.event_name == 'issue_comment'
+      && github.event.action == 'created'
+      && !github.event.issue.pull_request
+      && startsWith(github.event.comment.body, inputs.command) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      issues: write
+    env:
+      # Set for every `gh` call below - no checkout is needed to resolve the repository this way
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE: ${{ github.event.issue.number }}
+      COMMENTER: ${{ github.event.comment.user.login }}
+    steps:
+      - name: Check the commenter permissions
+        id: permissions
+        env:
+          ALLOWED: ${{ inputs.allowed_permissions }}
+        run: |
+          if permission=$(gh api "repos/$GH_REPO/collaborators/$COMMENTER/permission" --jq '.permission' 2> error.log); then
+            echo "@$COMMENTER has the '$permission' permission in $GH_REPO"
+          elif grep -q 'Not Found' error.log; then
+            # Not a collaborator at all - expected, no permission to run the command
+            permission='none'
+          else
+            # Anything other than a 404 is a real failure, do not silently treat it as a refusal
+            cat error.log
+            echo "::error title=Permission check failed::Could not read the permissions of @$COMMENTER"
+            exit 1
+          fi
+
+          allowed='false'
+          for level in $ALLOWED; do
+            if [[ "$permission" == "$level" ]]; then
+              allowed='true'
+              break
+            fi
+          done
+
+          echo "permission=$permission" >> "$GITHUB_OUTPUT"
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+      # Refusals stop the job, so the steps below only ever run for an allowed commenter
+      - name: Refuse the request
+        if: ${{ steps.permissions.outputs.allowed != 'true' }}
+        env:
+          COMMAND: ${{ inputs.command }}
+          PERMISSION: ${{ steps.permissions.outputs.permission }}
+        run: |
+          gh issue comment "$ISSUE" --body "@$COMMENTER you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you."
+          echo "::error title=Permission denied::@$COMMENTER ($PERMISSION) is not allowed to run $COMMAND"
+          exit 1
+
+      - name: Make sure there is something to plan
+        id: task
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          if [[ -n "${BODY//[[:space:]]/}" ]]; then
+            echo "has_task=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Nothing to plan is not a failure - say so on the issue and stop quietly
+          echo "has_task=false" >> "$GITHUB_OUTPUT"
+          gh issue comment "$ISSUE" --body "Cannot trigger AI planner - issue body is empty"
+          echo "Issue #$ISSUE has an empty body, nothing to plan"
+
+      - name: Generate the plan
+        id: plan
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        uses: uniquesca/ci/ai-plan@main
+        with:
+          task: ${{ github.event.issue.body }}
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post the plan
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        env:
+          PLAN: ${{ steps.plan.outputs.plan }}
+          PLAN_JSON: ${{ steps.plan.outputs.plan_json }}
+        run: |
+          # The machine-friendly plan rides along in a hidden marker, base64 encoded so that
+          # neither the plan contents nor a later edit of the comment can break it
+          {
+            printf '%s\n\n' "$PLAN"
+            printf -- '---\n\n'
+            printf 'Requested by @%s.\n' "$COMMENTER"
+            printf '<!-- ai-plan:v1 %s -->\n' "$(printf '%s' "$PLAN_JSON" | base64 -w0)"
+          } > plan-comment.md
+
+          # Keep a copy in the run itself, so a failing comment post does not lose the plan
+          cat plan-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+          size=$(wc -c < plan-comment.md)
+          if [[ "$size" -gt 65536 ]]; then
+            echo "::error title=Plan too large::The plan is $size bytes, Github caps a comment at 65536 - see the run summary for the full plan"
+            exit 1
+          fi
+
+          gh issue comment "$ISSUE" --body-file plan-comment.md
