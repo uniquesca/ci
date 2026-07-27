@@ -1063,3 +1063,7 @@
 ## v9.1.0
 
 * New: added ai-plan action (4a982b6 by George Shestayev)
+
+## v9.1.1
+
+* New: added ai-plan reusable workflow (e397b8c by George Shestayev)
