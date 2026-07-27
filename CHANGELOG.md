@@ -1062,4 +1062,4 @@
 
 ## v9.1.0
 
-* New: created `ai-plan` action that turns a task into a human-readable and machine-friendly implementation plan via an AI agent
+* New: added ai-plan action (4a982b6 by George Shestayev)
