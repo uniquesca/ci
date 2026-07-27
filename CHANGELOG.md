@@ -1059,3 +1059,7 @@
 
 * BREAKING: process-config action is completely reworked to process a single config file (3ec63d8 by George Shestayev)
 * BREAKING: process-environment should be used for processing multiple config files and use _ci_environment.json file for guidelines (3ec63d8 by George Shestayev)
+
+## v9.1.0
+
+* New: added ai-plan action (4a982b6 by George Shestayev)

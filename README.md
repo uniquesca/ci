@@ -1,7 +1,8 @@
 # Uniques CI/CD tools
 
 This repository is Uniques CI framework. It is heavily based on Github Actions platform and contains:
-* Reusable workflows
+* Reusable workflows and actions:
+  * [AI](docs/ai.md)
 * Actions
 * Base docker images for Uniques projects
 

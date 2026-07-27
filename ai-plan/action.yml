@@ -1,0 +1,21 @@
+name: AI plan
+
+description: Ask an AI agent to turn a task into a human-readable and machine-friendly implementation plan
+
+inputs:
+  task:
+    description: 'The task to plan for'
+    required: true
+  api_key:
+    description: 'Anthropic API key used to call the AI agent, pass it from a secret'
+    required: true
+
+outputs:
+  plan:
+    description: 'Human-readable implementation plan (markdown)'
+  plan_json:
+    description: 'Machine-friendly implementation plan (JSON) for the AI implementor agent'
+
+runs:
+  using: 'node24'
+  main: 'index.js'
