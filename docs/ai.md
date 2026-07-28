@@ -23,8 +23,8 @@ What happens on each command:
    comment is ignored. An issue with an empty body gets a comment saying so and the run
    stops there without failing - there is nothing to plan, which is not a CI error.
 4. The repository is checked out, so the agent can plan against the real code.
-5. The agent reads the issue, investigates the repository, and posts the plan as a comment
-   itself.
+5. The agent reads the issue, investigates the repository, and returns the plan.
+6. The workflow posts it as a comment on the issue, and writes a copy to the run summary.
 
 The checkout is always of the **default branch**. An `issue_comment` event carries no ref
 to infer one from, and planning an issue is a question about the mainline rather than
@@ -79,6 +79,8 @@ All optional:
 * `max_turns` - how many turns the agent may spend before it has to answer with what it
   found, default `30`.
 * `model` - model used to produce the plan, default `claude-opus-4-8`.
+* `debug` - log every step the agent takes to the run log, default `true` while the
+  planner is being piloted. See [watching a run](#watching-a-run).
 
 Required secret:
 
@@ -138,6 +140,21 @@ gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
 
 Filtering on the bot author matters. Without it, any commenter can paste a marker of
 their own and hand an implementor agent instructions you never approved.
+
+### Watching a run
+
+Nothing appears on the issue until the plan is finished - the comment is posted in one
+go at the end. While a run is going, there are two places to look:
+
+* **The run summary.** The finished plan is written there as well as to the issue, so a
+  run that produces a plan but fails to comment has not lost it.
+* **The run log** - every tool call and every tool result, which is what you want when
+  the question is "what is it actually doing". This is **on by default** while the
+  planner is being piloted, along with the action's own `--debug` output.
+
+  Turn it off with `debug: false` on the calling job once you no longer need it. Do turn
+  it off in a **public repository**: a tool result is whatever the agent just read out of
+  the code, so leaving it on publishes file contents to a log anyone can read.
 
 ### Adjusting a plan
 
@@ -201,5 +218,11 @@ Two cases where the secret will not reach the agent:
   and use `max_turns` to bound the worst case.
 * Github caps a comment at 65536 characters. The agent is told to stay under that; a plan
   that would exceed it is a sign the issue should be split.
+* The workflow posts the comment itself rather than letting the agent do it. Given only a
+  prompt the action runs headless and posts nothing, and its own commenting modes are
+  tied to its `@claude` trigger rather than ours. So the agent returns the plan as a
+  one-field structured output and a plain `gh issue comment` step publishes it. That also
+  makes the `<!-- ai-plan -->` marker, the `Requested by` footer and the comment size
+  check guarantees of the workflow rather than things the model has to remember.
 * Every run costs Anthropic API tokens against the key you supply. Keep the command gated
   to the people who should be spending it.

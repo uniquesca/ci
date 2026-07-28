@@ -32,6 +32,11 @@ on:
         required: false
         default: 'claude-opus-4-8'
         type: string
+      debug:
+        description: 'Log every step the agent takes to the run log. On by default while the planner is being piloted. Tool results contain whatever the agent read, so turn this off in a public repository'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   plan:
@@ -120,7 +125,8 @@ jobs:
       # this file - issue text is written by whoever opened it, and it has no business
       # being expanded into the workflow. Only the issue number and the commenter's
       # username go in, both of which Github restricts to safe characters.
-      - name: Plan the issue and post the plan
+      - name: Generate the plan
+        id: plan
         if: ${{ steps.task.outputs.has_task == 'true' }}
         uses: anthropics/claude-code-action@v1
         with:
@@ -128,10 +134,17 @@ jobs:
           # Passed explicitly so the workflow works without the Claude Github App
           # installed, and so the agent is bound by this job's `contents: read`
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Off by default - this prints every tool call and every tool result, and a tool
+          # result is whatever the agent just read out of the repository
+          show_full_output: ${{ inputs.debug }}
           prompt: |
             You are a senior software architect. Plan the work described in issue
-            #${{ github.event.issue.number }} of this repository, then post the plan as a
-            comment on that issue.
+            #${{ github.event.issue.number }} of this repository.
+
+            Return the finished plan as the `plan` field of your structured output. It is
+            posted verbatim as a comment on the issue, so it is the plan and nothing else
+            - no preamble about what you are about to do, no sign-off, no commentary on
+            how the investigation went.
 
             Start by reading the issue and every comment on it. If a plan has been posted
             before - a comment whose first line is the `<!-- ai-plan -->` marker - take
@@ -151,13 +164,7 @@ jobs:
             This repository may commit its dependencies. Ignore `node_modules`, `vendor`,
             `dist` and `build` unless the task is specifically about one of them.
 
-            Post a single comment. Its very first line must be exactly:
-
-            <!-- ai-plan -->
-
-            Github renders that line as nothing. It is how this plan is found later, so
-            it has to be there, character for character, on every plan you post. After
-            it, in this order:
+            The plan is markdown, in this order:
 
             - A short summary of the approach, in prose. If you are revising an earlier
               plan, open with one sentence on what changed and why.
@@ -168,16 +175,53 @@ jobs:
               determine something from the code, say so plainly rather than filling the
               gap with a guess.
             - Concrete checks that would prove the task is complete.
-            - A final line reading exactly:
-              `Requested by @${{ github.event.comment.user.login }}.`
 
-            Name real files throughout - the plan is executed later by another agent that
-            has only this comment to work from. Keep the comment under 65000 characters;
-            Github rejects anything longer.
+            Do not write the `<!-- ai-plan -->` marker or a `Requested by` line yourself -
+            the workflow adds both. Name real files throughout: the plan is executed later
+            by another agent that has only this comment to work from. Stay under 60000
+            characters; Github rejects a comment longer than 65536.
 
             Do not implement the task. Do not modify, create, commit or push any file.
             Your only output is the comment.
+          # The schema is a transport, not a second copy of the plan - one string field,
+          # so the markdown comes back through a documented output instead of having to
+          # be scraped out of the run's execution file
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
             --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash"
+            --json-schema '{"type":"object","properties":{"plan":{"type":"string"}},"required":["plan"],"additionalProperties":false}'
+            ${{ inputs.debug && '--debug' || '' }}
+
+      - name: Post the plan
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        env:
+          PLAN_JSON: ${{ steps.plan.outputs.structured_output }}
+        run: |
+          # Parsed with jq rather than fromJSON() so that an empty or malformed output
+          # fails here, with a message, instead of blowing up during expression evaluation
+          plan=$(printf '%s' "$PLAN_JSON" | jq -r '.plan // empty')
+          if [[ -z "$plan" ]]; then
+            echo "::error title=No plan produced::The agent returned no plan - see the run log"
+            exit 1
+          fi
+
+          # The marker and the footer are added here rather than asked of the model, so
+          # they are always present and always exactly right
+          {
+            printf '<!-- ai-plan -->\n\n'
+            printf '%s\n\n' "$plan"
+            printf -- '---\n\n'
+            printf 'Requested by @%s.\n' "$COMMENTER"
+          } > plan-comment.md
+
+          # Keep a copy in the run itself, so a failing comment post does not lose the plan
+          cat plan-comment.md >> "$GITHUB_STEP_SUMMARY"
+
+          size=$(wc -c < plan-comment.md)
+          if [[ "$size" -gt 65536 ]]; then
+            echo "::error title=Plan too large::The plan is $size bytes, Github caps a comment at 65536 - see the run summary for the full plan"
+            exit 1
+          fi
+
+          gh issue comment "$ISSUE" --body-file plan-comment.md
