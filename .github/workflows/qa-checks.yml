@@ -85,6 +85,18 @@ jobs:
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
 
+      - name: Check if we have NPM or Yarn
+        run: |
+          if [[ -f "yarn.lock" ]]; then
+            echo "yarn=1" >> $GITHUB_ENV
+            echo "Yarn lock file found, will run Yarn checks."
+          elif [[ -f "package.json" ]]; then
+            echo "npm=1" >> $GITHUB_ENV
+            echo "package.json found, will run NPM checks."
+          else
+            echo "No package.json or yarn.lock found, skipping Node checks."
+          fi
+
       - name: Check if we have PHPUnit
         run: |
           if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
