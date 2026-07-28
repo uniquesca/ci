@@ -22,6 +22,16 @@ on:
         required: false
         default: 30
         type: number
+      max_turns:
+        description: 'How many turns the agent may spend reading the repository before it has to plan with what it found'
+        required: false
+        default: 30
+        type: number
+      model:
+        description: 'Model used to produce the plan'
+        required: false
+        default: 'claude-opus-4-8'
+        type: string
 
 jobs:
   plan:
@@ -98,36 +108,76 @@ jobs:
           gh issue comment "$ISSUE" --body "Cannot trigger AI planner - issue body is empty"
           echo "Issue #$ISSUE has an empty body, nothing to plan"
 
-      - name: Generate the plan
-        id: plan
+      # The agent plans against the real code, so the repository has to be on disk.
+      # An issue comment always resolves to the default branch - there is no ref to
+      # infer from the event, and planning an issue is a question about the
+      # mainline, not about whatever branch happens to be open.
+      - name: Check out the repository
         if: ${{ steps.task.outputs.has_task == 'true' }}
-        uses: uniquesca/ci/ai-plan@main
+        uses: actions/checkout@v6
+
+      # The agent reads the issue itself rather than having its body interpolated into
+      # this file - issue text is written by whoever opened it, and it has no business
+      # being expanded into the workflow. Only the issue number and the commenter's
+      # username go in, both of which Github restricts to safe characters.
+      - name: Plan the issue and post the plan
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        uses: anthropics/claude-code-action@v1
         with:
-          task: ${{ github.event.issue.body }}
-          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Passed explicitly so the workflow works without the Claude Github App
+          # installed, and so the agent is bound by this job's `contents: read`
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are a senior software architect. Plan the work described in issue
+            #${{ github.event.issue.number }} of this repository, then post the plan as a
+            comment on that issue.
 
-      - name: Post the plan
-        if: ${{ steps.task.outputs.has_task == 'true' }}
-        env:
-          PLAN: ${{ steps.plan.outputs.plan }}
-          PLAN_JSON: ${{ steps.plan.outputs.plan_json }}
-        run: |
-          # The machine-friendly plan rides along in a hidden marker, base64 encoded so that
-          # neither the plan contents nor a later edit of the comment can break it
-          {
-            printf '%s\n\n' "$PLAN"
-            printf -- '---\n\n'
-            printf 'Requested by @%s.\n' "$COMMENTER"
-            printf '<!-- ai-plan:v1 %s -->\n' "$(printf '%s' "$PLAN_JSON" | base64 -w0)"
-          } > plan-comment.md
+            Start by reading the issue and every comment on it. If a plan has been posted
+            before - a comment whose first line is the `<!-- ai-plan -->` marker - take
+            the most recent one as your starting point and revise it, rather than
+            planning again from nothing. Anything said after that plan was posted is
+            feedback on it: apply it. Keep the parts nobody objected to. A re-run that
+            quietly discards the discussion is worse than no re-run at all.
 
-          # Keep a copy in the run itself, so a failing comment post does not lose the plan
-          cat plan-comment.md >> "$GITHUB_STEP_SUMMARY"
+            Then investigate the repository before you plan
+            anything: find the code the task touches, read it, and learn the conventions
+            actually in use - how modules are structured, how errors are handled, how
+            things are tested, and what already exists that the task should reuse rather
+            than duplicate. Check the callers, tests and documentation that would go
+            stale. A plan built on what the code actually does is worth far more than one
+            built on assumptions about what it probably does.
 
-          size=$(wc -c < plan-comment.md)
-          if [[ "$size" -gt 65536 ]]; then
-            echo "::error title=Plan too large::The plan is $size bytes, Github caps a comment at 65536 - see the run summary for the full plan"
-            exit 1
-          fi
+            This repository may commit its dependencies. Ignore `node_modules`, `vendor`,
+            `dist` and `build` unless the task is specifically about one of them.
 
-          gh issue comment "$ISSUE" --body-file plan-comment.md
+            Post a single comment. Its very first line must be exactly:
+
+            <!-- ai-plan -->
+
+            Github renders that line as nothing. It is how this plan is found later, so
+            it has to be there, character for character, on every plan you post. After
+            it, in this order:
+
+            - A short summary of the approach, in prose. If you are revising an earlier
+              plan, open with one sentence on what changed and why.
+            - The steps, as a markdown task list - `- [ ] 1. Short imperative title`,
+              each followed by an indented paragraph on what to do and why, and the real
+              files it touches. Note explicitly where a step depends on an earlier one.
+            - Risks, unknowns and assumptions worth flagging. Where you could not
+              determine something from the code, say so plainly rather than filling the
+              gap with a guess.
+            - Concrete checks that would prove the task is complete.
+            - A final line reading exactly:
+              `Requested by @${{ github.event.comment.user.login }}.`
+
+            Name real files throughout - the plan is executed later by another agent that
+            has only this comment to work from. Keep the comment under 65000 characters;
+            Github rejects anything longer.
+
+            Do not implement the task. Do not modify, create, commit or push any file.
+            Your only output is the comment.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --max-turns ${{ inputs.max_turns }}
+            --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash"
