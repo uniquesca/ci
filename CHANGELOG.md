@@ -1096,3 +1096,8 @@
 ## v9.2.0
 
 * New: introduced AI Implement workflow (ba15a3e by George Shestayev)
+
+## v9.2.1
+
+* New: introduced running NPM tests if present (fba94d1 by George Shestayev)
+* Update: checking for NPM linter command and running it only if present (fba94d1 by George Shestayev)
