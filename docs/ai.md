@@ -153,11 +153,14 @@ the other comments on an issue:
 
 ```bash
 gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
-  --jq 'flatten
-        | map(select(.user.type == "Bot"))
-        | map(select(.body | test("<!-- ai-plan -->")))
-        | last | .body'
+  | jq -r 'flatten
+           | map(select(.user.type == "Bot"))
+           | map(select(.body | startswith("<!-- ai-plan -->")))
+           | last | .body'
 ```
+
+`--slurp` cannot be combined with `--jq`, so the shaping has to be a separate `jq`. With
+`--paginate` the result is one array per page, which is what `flatten` collapses.
 
 Filtering on the bot author matters. Without it, any commenter can paste a marker of
 their own and hand an implementor agent instructions you never approved.
