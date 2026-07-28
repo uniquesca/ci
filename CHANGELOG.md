@@ -1101,3 +1101,7 @@
 
 * New: introduced running NPM tests if present (fba94d1 by George Shestayev)
 * Update: checking for NPM linter command and running it only if present (fba94d1 by George Shestayev)
+
+## v9.2.2
+
+* Fix: fixed check for NPM and Yarn in QA checks (7e201d4 by George Shestayev)
