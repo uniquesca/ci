@@ -7,6 +7,12 @@ every one of them needs an Anthropic API key passed in from a secret.
 Currently available:
 1. [AI Plan workflow](#ai-plan-workflow) - reusable workflow that plans a Github issue
    when a comment asks it to
+2. [AI Implement workflow](#ai-implement-workflow) - reusable workflow that turns that plan
+   into a pull request
+
+The two are meant to be used in that order. `/ai-plan` writes the plan onto the issue, you
+read it and correct it, then `/ai-do` builds it. The issue is the specification the
+whole way through - there is no second copy anywhere.
 
 ## AI Plan workflow
 
@@ -246,6 +252,145 @@ The plan step is read-only in two independent ways:
 Both matter, because the agent reads an issue body that any collaborator can write. If you
 extend this workflow, keep the `contents: read` permission - it is doing more work than
 the tool list.
+
+## AI Implement workflow
+
+Reusable workflow that implements the plan `/ai-plan` posted. Someone comments
+`/ai-do` on the issue, and a pull request appears with the work in it.
+
+What happens on each command:
+1. The comment and the commenter's permission are checked, exactly as
+   [the planner does it](#who-is-allowed-to-run-it).
+2. The repository is checked out at full depth.
+3. The issue, its comments and **the most recent plan** are written into the checkout, at
+   `.ai-plan/issue.json`, `.ai-plan/comments.json` and `.ai-plan/plan.md`.
+4. An issue with no plan on it gets a comment saying to run `/ai-plan` first, and the run
+   stops there without failing. Running the command too early is not a CI error.
+5. The branch `ai-implement/issue-<number>` is checked out - created if this is the first
+   run, fetched if it is not.
+6. The agent reads the plan, implements it, and runs whatever tests it can find.
+7. Its work is committed and pushed to that branch.
+8. A pull request is opened, or the existing one is left to pick up the push.
+9. The pull request link is commented on the issue, with the same run summary the planner
+   posts.
+
+### Setting it up
+
+Alongside the planner, in the same file:
+
+```yaml
+name: AI
+
+on:
+  issue_comment:
+    types: [ created ]
+
+jobs:
+  ai-plan:
+    permissions:
+      contents: read
+      issues: write
+    uses: uniquesca/ci/.github/workflows/ai-plan.yml@main
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  ai-implement:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Both jobs can live in one file. Each only runs when a comment starts with its own command,
+so the other is skipped.
+
+The wider `permissions` are why this is a separate job rather than more steps in the
+planner: `contents: write` and `pull-requests: write` are needed to push a branch and open
+a pull request, and there is no reason for the planner to hold them.
+
+If the repository has **"Allow GitHub Actions to create and approve pull requests"**
+switched off - Settings -> Actions -> General -> Workflow permissions - `gh pr create`
+fails with a permissions error no matter what the job grants. Turn it on, or the push
+lands and the pull request has to be opened by hand.
+
+### Inputs
+
+The same as the planner's, plus one, and with larger time defaults because implementing
+takes longer than planning:
+
+* `command` - default `/ai-do`.
+* `allowed_permissions` - default `admin write`.
+* `timeout_minutes` - default `65`. `agent_timeout_minutes` - default `60`. The same rule
+  applies: keep the second below the first, or a run the agent overruns takes the failure
+  comment down with it.
+* `max_turns` - default `60`.
+* `model` - default `claude-opus-4-8`.
+* `branch_prefix` - default `ai-implement/`. The branch is this plus `issue-<number>`.
+* `debug` - default `false`.
+
+Required secret: `ANTHROPIC_API_KEY`.
+
+### One branch and one pull request per issue
+
+The branch name is derived from the issue number, not generated, and that is the whole
+mechanism behind re-running:
+
+* **First run** - the branch is created from the default branch, the work is committed and
+  pushed, a pull request is opened.
+* **Every run after** - the same branch is fetched and checked out, so the agent starts
+  from the previous attempt rather than from scratch. The push updates the branch, and the
+  open pull request updates with it. No second pull request appears.
+
+So the loop is: read the pull request, comment what you want changed **on the issue**, run
+`/ai-do` again. The agent reads the comments after the plan and treats them as
+taking precedence over it.
+
+Comment on the issue rather than on the pull request. Only issue comments are staged for
+the agent - a review comment on the pull request is not something it can see.
+
+The pull request body says `Implements #<number>`, deliberately not `Closes`. Adjusting and
+re-running is the normal path here, and auto-closing the issue on the first merge cuts that
+short. Close the issue yourself when the work is actually done.
+
+### When there is nothing to do
+
+Two cases that end without a pull request and without a red run:
+
+* **No plan on the issue** - a comment saying to run `/ai-plan` first.
+* **The agent changed no files** - a comment saying so, with a link to the run. Usually it
+  means the plan was already implemented, or the agent decided it could not proceed. What
+  it decided is in the `Show what the agent did` step.
+
+Anything else that goes wrong comments on the issue the same way
+[a failed plan does](#when-planning-fails), with the reason the agent stopped.
+
+### What the implementing agent may and may not do
+
+This is the first workflow here that writes anything, so the boundaries are worth stating
+plainly.
+
+It **may**: read and change any file in the checkout, and run any command on the runner -
+it has a shell, on purpose. Without one it could not run the tests, and the plan's
+verification section would be a list rather than something it executes.
+
+It **may not**, and cannot:
+
+* **Write to the default branch.** Everything lands on `ai-implement/issue-<number>`,
+  behind a pull request that somebody reviews and merges. Nothing here merges anything.
+* **Push, commit or open a pull request itself.** The checkout runs with
+  `persist-credentials: false`, so there is no git credential on disk while the agent is
+  working. The workflow supplies one per command, before the agent starts and after it
+  finishes. An agent talked into `git push` finds it fails.
+* **Change the plan it was given.** `.ai-plan/` is added to `.git/info/exclude`, so nothing
+  under it can reach a commit however the agent leaves the working tree.
+
+What actually limits this is the permission gate, not the tool list. An agent with a shell
+runs whatever an issue body talks it into, and `ANTHROPIC_API_KEY` is in that environment.
+Keep `allowed_permissions` at `admin write` or narrower, and do not widen the trigger to
+anything a stranger can fire.
 
 ## Providing the API key
 

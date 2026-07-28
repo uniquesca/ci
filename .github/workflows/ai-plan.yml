@@ -142,22 +142,11 @@ jobs:
       # written by whoever opened the issue is ever expanded into the workflow.
       - name: Stage the issue for the agent
         if: ${{ steps.task.outputs.has_task == 'true' }}
-        run: |
-          mkdir -p .ai-plan
-
-          gh api "repos/$GH_REPO/issues/$ISSUE" \
-            --jq '{number, title, body}' > .ai-plan/issue.json
-
-          # `--slurp` cannot be combined with `--jq`, so the shaping is a separate jq.
-          # With `--paginate` it returns one array per page, hence the flatten.
-          #
-          # `is_bot` is what tells a plan the workflow posted apart from one a commenter
-          # pasted by hand - the agent is told to trust only the former
-          gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
-            | jq 'flatten | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, body})' \
-            > .ai-plan/comments.json
-
-          echo "Staged issue #$ISSUE and $(jq length .ai-plan/comments.json) comment(s)"
+        uses: uniquesca/ci/ai-stage-issue@main
+        with:
+          issue: ${{ github.event.issue.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # The agent reads the issue itself rather than having its body interpolated into
       # this file - issue text is written by whoever opened it, and it has no business
@@ -249,108 +238,38 @@ jobs:
             --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
-      # The agent narrates as it works, but that narration is buried in a JSON transcript
-      # that is unreadable at a glance. Pull out what it said and what it touched, and
-      # leave the raw transcript to `debug`. Runs on failure too - a run that died
-      # partway is exactly when you want to see how far it got.
-      - name: Show what the agent did
+      # Reads the agent's execution log: prints what it said and what it touched, and hands
+      # back the plan itself, what the run cost and why it stopped. Runs on failure too - a
+      # run that died partway is exactly when you want to see how far it got.
+      - name: Report on the run
+        id: report
         if: ${{ always() && steps.plan.outcome != 'skipped' }}
-        env:
-          EXECUTION_FILE: ${{ steps.plan.outputs.execution_file }}
-        run: |
-          if [[ -z "$EXECUTION_FILE" || ! -f "$EXECUTION_FILE" ]]; then
-            echo "No execution log was produced - re-run with debug: true for the raw output"
-            exit 0
-          fi
-
-          jq -rs '
-            flatten
-            | map(select(.type == "assistant"))
-            | .[].message.content[]?
-            | if .type == "text" then
-                (.text | select(length > 0) | "💬 " + .)
-              elif .type == "tool_use" then
-                "🔧 " + .name + "("
-                  + ((.input // {})
-                     | to_entries
-                     | map("\(.key)=\(.value | tostring | .[0:60])")
-                     | join(", "))
-                  + ")"
-              else empty end
-          ' "$EXECUTION_FILE" 2>/dev/null || echo "Could not read the execution log"
+        uses: uniquesca/ci/ai-run-report@main
+        with:
+          execution_file: ${{ steps.plan.outputs.execution_file }}
+          verb: 'Planned'
 
       - name: Post the plan
         id: post
         if: ${{ steps.task.outputs.has_task == 'true' }}
         env:
-          EXECUTION_FILE: ${{ steps.plan.outputs.execution_file }}
+          PLAN_FILE: ${{ steps.report.outputs.result_file }}
+          USAGE: ${{ steps.report.outputs.summary }}
         run: |
-          # The agent's final message, taken from its own execution log. It used to come
-          # back through a one-field --json-schema, which meant generating the whole plan
-          # as a single escaped JSON string - slower, and prone to failing outright on a
-          # long plan. `result` on the closing record is the same text without that cost.
-          if [[ -z "$EXECUTION_FILE" || ! -f "$EXECUTION_FILE" ]]; then
-            echo "::error title=No execution log::The agent produced no execution log - see the run"
-            exit 1
-          fi
-
-          plan=$(
-            jq -rs 'flatten
-                    | (map(select(.type == "result")) | last) as $r
-                    | if ($r.terminal_reason // "") == "api_error" then ""
-                      else ($r.result // "") end' "$EXECUTION_FILE" 2>/dev/null || true
-          )
-
-          if [[ -z "$plan" ]]; then
+          if [[ -z "$PLAN_FILE" || ! -f "$PLAN_FILE" ]]; then
             echo "::error title=No plan produced::The agent returned no plan - see the run log"
             exit 1
-          fi
-
-          # What the run cost. These numbers exist only in the agent's own execution log,
-          # and every one of them is optional - a field that is missing drops out of the
-          # line rather than failing the post.
-          cost=''; duration=''; turns=''; tokens=''
-          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
-            mapfile -t stats < <(
-              jq -rs 'flatten | (map(select(.type == "result")) | last) as $r
-                      | [ ($r.total_cost_usd // ""),
-                          ($r.duration_ms // ""),
-                          ($r.num_turns // ""),
-                          (if $r.usage
-                           then ($r.usage.input_tokens // 0)
-                              + ($r.usage.output_tokens // 0)
-                              + ($r.usage.cache_read_input_tokens // 0)
-                              + ($r.usage.cache_creation_input_tokens // 0)
-                           else "" end) ]
-                      | .[] | tostring' "$EXECUTION_FILE" 2>/dev/null || true
-            )
-            cost=${stats[0]:-}; duration=${stats[1]:-}; turns=${stats[2]:-}; tokens=${stats[3]:-}
-          fi
-
-          usage=''
-          if [[ -n "$duration" && "$duration" != null ]]; then
-            secs=$(( duration / 1000 ))
-            if (( secs >= 60 )); then
-              usage="Planned in $(( secs / 60 ))m $(( secs % 60 ))s"
-            else
-              usage="Planned in ${secs}s"
-            fi
-          fi
-          [[ -n "$turns" && "$turns" != null ]] && usage="${usage:+$usage, }${turns} turns"
-          [[ -n "$tokens" && "$tokens" != null ]] && usage="${usage:+$usage, }${tokens} tokens"
-          if [[ -n "$cost" && "$cost" != null ]]; then
-            # The agent's own estimate from token counts, not a billed figure
-            usage="${usage:+$usage, }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
           fi
 
           # The marker and the footer are added here rather than asked of the model, so
           # they are always present and always exactly right
           {
             printf '<!-- ai-plan -->\n\n'
-            printf '%s\n\n' "$plan"
+            cat "$PLAN_FILE"
+            printf '\n\n'
             printf -- '---\n\n'
             printf 'Requested by @%s.' "$COMMENTER"
-            [[ -n "$usage" ]] && printf ' %s.' "$usage"
+            [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
             printf '\n'
           } > plan-comment.md
 
@@ -370,28 +289,22 @@ jobs:
       # outcome rather than `failure()`, which would also fire for the permission
       # refusal above, and that already comments for itself.
       - name: Report a failed plan
-        if: ${{ always() && (steps.plan.outcome == 'failure' || steps.post.outcome == 'failure') }}
+        if: >-
+          ${{ always()
+          && (steps.plan.outcome == 'failure'
+          || steps.report.outcome == 'failure'
+          || steps.post.outcome == 'failure') }}
         env:
-          EXECUTION_FILE: ${{ steps.plan.outputs.execution_file }}
+          # Why the agent stopped, where it recorded one. It turns "the run went red" into
+          # something actionable - an exhausted credit balance and a genuine bug look
+          # identical from the issue otherwise.
+          REASON: ${{ steps.report.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # The agent records why it stopped in its execution log. Surfacing it here turns
-          # "the run went red" into something actionable - an exhausted credit balance and
-          # a genuine bug look identical from the issue otherwise.
-          reason=''
-          if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
-            reason=$(
-              jq -rs 'flatten | (map(select(.type == "result")) | last) as $r
-                      | [ ($r.result // ""), ($r.terminal_reason // "") ]
-                      | map(select(. != "")) | first // ""
-                      | .[0:200]' "$EXECUTION_FILE" 2>/dev/null || true
-            )
-          fi
-
           {
             printf '@%s the planning agent did not finish, so there is no plan for this issue.\n\n' "$COMMENTER"
-            if [[ -n "$reason" && "$reason" != null ]]; then
-              printf 'It stopped with: `%s`\n\n' "$reason"
+            if [[ -n "$REASON" ]]; then
+              printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
             printf 'The run log has the detail: %s\n' "$RUN_URL"
           } > failure-comment.md

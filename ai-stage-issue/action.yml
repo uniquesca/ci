@@ -1,0 +1,97 @@
+name: AI stage issue
+
+description: Write a Github issue, its comments and its most recent plan into the checkout, for an agent that has no shell and no network of its own
+
+inputs:
+  issue:
+    description: 'Number of the issue to stage'
+    required: true
+  repository:
+    description: 'Repository the issue belongs to, in owner/name form'
+    required: true
+  token:
+    description: 'Github token used to read the issue'
+    required: true
+  directory:
+    description: 'Directory inside the checkout to write into'
+    required: false
+    default: '.ai-plan'
+
+outputs:
+  title:
+    description: 'Title of the issue, suitable for use as a pull request title'
+    value: ${{ steps.stage.outputs.title }}
+  has_plan:
+    description: 'Whether a plan comment was found on the issue - "true" or "false"'
+    value: ${{ steps.stage.outputs.has_plan }}
+  plan_file:
+    description: 'Path to the staged plan, empty when the issue has no plan yet'
+    value: ${{ steps.stage.outputs.plan_file }}
+  plan_url:
+    description: 'Link to the comment the staged plan came from, empty when the issue has no plan yet'
+    value: ${{ steps.stage.outputs.plan_url }}
+
+runs:
+  using: composite
+  steps:
+    # A planning or implementing agent runs without a shell and without network access, so
+    # it cannot fetch any of this for itself. Writing it into the checkout is also what
+    # keeps issue text out of the calling workflow: `gh` writes straight to disk, so
+    # nothing written by whoever opened the issue is ever expanded into YAML.
+    - name: Stage the issue
+      id: stage
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        ISSUE: ${{ inputs.issue }}
+        DIR: ${{ inputs.directory }}
+      run: |
+        mkdir -p "$DIR"
+
+        gh api "repos/$GH_REPO/issues/$ISSUE" \
+          --jq '{number, title, body}' > "$DIR/issue.json"
+
+        # `--slurp` cannot be combined with `--jq`, so the shaping is a separate jq.
+        # With `--paginate` it returns one array per page, hence the flatten.
+        #
+        # `is_bot` is what tells a comment the workflow posted apart from one someone
+        # pasted by hand - agents are told to trust only the former
+        gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
+          | jq 'flatten | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, url: .html_url, body})' \
+          > "$DIR/comments.json"
+
+        # Github does not allow newlines in an issue title, but strip them anyway rather
+        # than risk a malformed step output
+        title=$(jq -r '.title // ""' "$DIR/issue.json" | tr -d '\r\n')
+
+        # The plan is the newest bot-authored comment carrying the marker. Filtering on
+        # the bot matters: anyone able to comment can paste a marker of their own.
+        jq -r 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->"))))
+               | last | .body // empty' "$DIR/comments.json" > "$DIR/plan.md"
+
+        if [[ -s "$DIR/plan.md" ]]; then
+          has_plan='true'
+          plan_file="$DIR/plan.md"
+          plan_url=$(
+            jq -r 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->"))))
+                   | last | .url // ""' "$DIR/comments.json"
+          )
+          plan_state='a plan'
+        else
+          rm -f "$DIR/plan.md"
+          has_plan='false'
+          plan_file=''
+          plan_url=''
+          plan_state='no plan'
+        fi
+
+        # Written once each - a key repeated in $GITHUB_OUTPUT has no defined winner
+        {
+          printf 'title=%s\n' "$title"
+          printf 'has_plan=%s\n' "$has_plan"
+          printf 'plan_file=%s\n' "$plan_file"
+          printf 'plan_url=%s\n' "$plan_url"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "Staged issue #$ISSUE with $(jq length "$DIR/comments.json") comment(s) and $plan_state"
