@@ -1,0 +1,12 @@
+name: AI Implement
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  plan:
+    name: Run AI Implement agent
+    uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
