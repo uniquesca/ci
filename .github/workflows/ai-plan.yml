@@ -138,10 +138,13 @@ jobs:
           gh api "repos/$GH_REPO/issues/$ISSUE" \
             --jq '{number, title, body}' > .ai-plan/issue.json
 
+          # `--slurp` cannot be combined with `--jq`, so the shaping is a separate jq.
+          # With `--paginate` it returns one array per page, hence the flatten.
+          #
           # `is_bot` is what tells a plan the workflow posted apart from one a commenter
           # pasted by hand - the agent is told to trust only the former
           gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
-            --jq 'flatten | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, body})' \
+            | jq 'flatten | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, body})' \
             > .ai-plan/comments.json
 
           echo "Staged issue #$ISSUE and $(jq length .ai-plan/comments.json) comment(s)"
