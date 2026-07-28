@@ -1076,3 +1076,7 @@
 
 * Fix: added missing code to post a github comment with the generated plan (e861f29 by George Shestayev)
 * Update: turned on full output for the anthropic by default (e861f29 by George Shestayev)
+
+## v9.1.4
+
+* Update: better error handling for the AI planner, added cost and usage cost output (cc69ec2 by George Shestayev)
