@@ -1080,3 +1080,7 @@
 ## v9.1.4
 
 * Update: better error handling for the AI planner, added cost and usage cost output (cc69ec2 by George Shestayev)
+
+## v9.1.5
+
+* Fix: fixed AI planner to get github issue information properly (21494bf by George Shestayev)

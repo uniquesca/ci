@@ -23,8 +23,10 @@ What happens on each command:
    comment is ignored. An issue with an empty body gets a comment saying so and the run
    stops there without failing - there is nothing to plan, which is not a CI error.
 4. The repository is checked out, so the agent can plan against the real code.
-5. The agent reads the issue, investigates the repository, and returns the plan.
-6. The workflow posts it as a comment on the issue, and writes a copy to the run summary.
+5. The issue and all its comments are written into the checkout, at `.ai-plan/issue.json`
+   and `.ai-plan/comments.json`.
+6. The agent reads those, investigates the repository, and returns the plan.
+7. The workflow posts it as a comment on the issue, and writes a copy to the run summary.
 
 The checkout is always of the **default branch**. An `issue_comment` event carries no ref
 to infer one from, and planning an issue is a question about the mainline rather than
@@ -204,6 +206,15 @@ Worth putting in it: how to build and test, how the code is laid out, the conven
 change is expected to follow, and anything surprising a newcomer would get wrong.
 
 ### What the agent may and may not do
+
+The agent has no shell and no network. It cannot fetch the issue, which is why the
+workflow stages it into the checkout first - the agent only ever reads files. That is
+also what keeps the issue text out of this workflow file: `gh` writes it straight to
+disk, so nothing written by whoever opened the issue is expanded into YAML.
+
+`comments.json` carries an `is_bot` flag per comment, and the agent is told to treat only
+bot-authored `<!-- ai-plan -->` comments as previous plans. Without that, anyone able to
+comment could paste a marker and have the next run "revise" a plan they wrote themselves.
 
 The plan step is read-only in two independent ways:
 
