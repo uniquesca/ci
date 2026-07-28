@@ -1067,3 +1067,7 @@
 ## v9.1.1
 
 * New: added ai-plan reusable workflow (e397b8c by George Shestayev)
+
+## v9.1.2
+
+* Update: reworked AI planner harness - no need for json plan, reusing anthropic SDK instead, added ability to adjust the plan (4c7b0b1 by George Shestayev)
