@@ -77,12 +77,18 @@ All optional:
   very beginning of the comment.
 * `allowed_permissions` - space-separated repository permission levels allowed to run the
   command, default `admin write`.
-* `timeout_minutes` - how long to wait for the planning agent, default `30`.
+* `timeout_minutes` - how long the whole job may run, default `35`.
+* `agent_timeout_minutes` - how long the planning agent itself may run, default `30`.
+
+  Keep the second a few minutes below the first. A job timeout cancels every remaining
+  step, so an agent allowed to run right up to the job's limit takes the failure comment
+  down with it, and the issue hears nothing at all. Github expressions cannot do
+  arithmetic, so the gap is two defaults rather than something the workflow derives.
 * `max_turns` - how many turns the agent may spend before it has to answer with what it
   found, default `30`.
 * `model` - model used to produce the plan, default `claude-opus-4-8`.
-* `debug` - log every step the agent takes to the run log, default `true` while the
-  planner is being piloted. See [watching a run](#watching-a-run).
+* `debug` - add the raw agent transcript to the run log, default `false`. See
+  [watching a run](#watching-a-run).
 
 Required secret:
 
@@ -167,18 +173,29 @@ their own and hand an implementor agent instructions you never approved.
 
 ### Watching a run
 
-Nothing appears on the issue until the plan is finished - the comment is posted in one
-go at the end. While a run is going, there are two places to look:
+Nothing appears on the issue until the plan is finished - the comment is posted in one go
+at the end. Afterwards, three places to look:
 
+* **The `Show what the agent did` step**, always printed. The agent narrates as it works,
+  and this pulls that narration and its tool calls out of the transcript:
+
+  ```
+  💬 Let me read the issue first.
+  🔧 Read(file_path=.ai-plan/issue.json)
+  💬 Now I'll search for the router.
+  🔧 Grep(pattern=registerRoute, glob=src/**/*.js)
+  💬 I have enough understanding of the codebase to write a grounded plan.
+  ```
+
+  It runs on failed runs too, which is when it is most useful - it shows how far the
+  agent got before it stopped.
 * **The run summary.** The finished plan is written there as well as to the issue, so a
   run that produces a plan but fails to comment has not lost it.
-* **The run log** - every tool call and every tool result, which is what you want when
-  the question is "what is it actually doing". This is **on by default** while the
-  planner is being piloted, along with the action's own `--debug` output.
-
-  Turn it off with `debug: false` on the calling job once you no longer need it. Do turn
-  it off in a **public repository**: a tool result is whatever the agent just read out of
-  the code, so leaving it on publishes file contents to a log anyone can read.
+* **The raw transcript** - set `debug: true` on the calling job. Every message as JSON,
+  including full tool results. Reach for it when the readable summary is not enough to
+  explain what happened. Do not turn it on in a **public repository**: a tool result is
+  whatever the agent just read out of the code, so it publishes file contents to a log
+  anyone can read.
 
 ### Adjusting a plan
 
@@ -253,9 +270,14 @@ Two cases where the secret will not reach the agent:
   that would exceed it is a sign the issue should be split.
 * The workflow posts the comment itself rather than letting the agent do it. Given only a
   prompt the action runs headless and posts nothing, and its own commenting modes are
-  tied to its `@claude` trigger rather than ours. So the agent returns the plan as a
-  one-field structured output and a plain `gh issue comment` step publishes it. That also
+  tied to its `@claude` trigger rather than ours. So the agent's final message is read
+  out of its execution log and a plain `gh issue comment` step publishes it. That also
   makes the `<!-- ai-plan -->` marker, the `Requested by` footer and the comment size
   check guarantees of the workflow rather than things the model has to remember.
+* The plan used to come back through a one-field `--json-schema` instead. That forced the
+  agent to generate the whole plan as a single escaped JSON string, which is slower than
+  writing markdown and can fail outright on a long plan. The execution log carries the
+  same text with none of that cost, and the workflow already reads that file for the
+  run's cost and for the readable summary.
 * Every run costs Anthropic API tokens against the key you supply. Keep the command gated
   to the people who should be spending it.

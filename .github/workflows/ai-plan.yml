@@ -18,7 +18,12 @@ on:
         default: 'admin write'
         type: string
       timeout_minutes:
-        description: 'How long to wait for the planning agent before giving up'
+        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so on the issue'
+        required: false
+        default: 35
+        type: number
+      agent_timeout_minutes:
+        description: 'How long the planning agent itself may run before it is given up on'
         required: false
         default: 30
         type: number
@@ -33,9 +38,9 @@ on:
         default: 'claude-opus-4-8'
         type: string
       debug:
-        description: 'Log every step the agent takes to the run log. On by default while the planner is being piloted. Tool results contain whatever the agent read, so turn this off in a public repository'
+        description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
-        default: true
+        default: false
         type: boolean
 
 jobs:
@@ -48,6 +53,11 @@ jobs:
       && !github.event.issue.pull_request
       && startsWith(github.event.comment.body, inputs.command) }}
     runs-on: ubuntu-latest
+    # Github expressions have no arithmetic, so this cannot be derived from the agent's
+    # budget - the two are separate inputs, and the defaults leave five minutes between
+    # them. That gap matters: a job timeout cancels every remaining step, so if the agent
+    # were allowed to run right up to it, it would take the failure comment down with it
+    # and the issue would hear nothing at all.
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read
@@ -156,6 +166,9 @@ jobs:
       - name: Generate the plan
         id: plan
         if: ${{ steps.task.outputs.has_task == 'true' }}
+        # The agent's own budget, below the job's, so running over fails this step and
+        # leaves the steps after it to explain that on the issue
+        timeout-minutes: ${{ inputs.agent_timeout_minutes }}
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -169,10 +182,10 @@ jobs:
             You are a senior software architect. Plan the work described in issue
             #${{ github.event.issue.number }} of this repository.
 
-            Return the finished plan as the `plan` field of your structured output. It is
-            posted verbatim as a comment on the issue, so it is the plan and nothing else
-            - no preamble about what you are about to do, no sign-off, no commentary on
-            how the investigation went.
+            Your final message is the plan. It is posted verbatim as a comment on the
+            issue, so it is the plan and nothing else - no preamble about what you are
+            about to do, no sign-off, no commentary on how the investigation went. Say
+            what you like in the messages before it; only the last one is published.
 
             The issue has already been fetched for you. Read these two files first:
 
@@ -220,30 +233,74 @@ jobs:
 
             Do not write the `<!-- ai-plan -->` marker or a `Requested by` line yourself -
             the workflow adds both. Name real files throughout: the plan is executed later
-            by another agent that has only this comment to work from. Stay under 60000
-            characters; Github rejects a comment longer than 65536.
+            by another agent that has only this comment to work from.
+
+            Keep it to the length the task actually warrants - most plans should come in
+            well under 10000 characters. Length is not thoroughness: the investigation is
+            what makes a plan good, and restating what you read does not help the agent
+            that executes it. The hard ceiling is 60000 characters, because Github rejects
+            a comment longer than 65536.
 
             Do not implement the task. Do not modify, create, commit or push any file.
-            The `plan` field is your only output.
-          # The schema is a transport, not a second copy of the plan - one string field,
-          # so the markdown comes back through a documented output instead of having to
-          # be scraped out of the run's execution file
+            Writing the plan as your final message is the whole job.
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
             --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash"
-            --json-schema '{"type":"object","properties":{"plan":{"type":"string"}},"required":["plan"],"additionalProperties":false}'
             ${{ inputs.debug && '--debug' || '' }}
 
-      - name: Post the plan
-        if: ${{ steps.task.outputs.has_task == 'true' }}
+      # The agent narrates as it works, but that narration is buried in a JSON transcript
+      # that is unreadable at a glance. Pull out what it said and what it touched, and
+      # leave the raw transcript to `debug`. Runs on failure too - a run that died
+      # partway is exactly when you want to see how far it got.
+      - name: Show what the agent did
+        if: ${{ always() && steps.plan.outcome != 'skipped' }}
         env:
-          PLAN_JSON: ${{ steps.plan.outputs.structured_output }}
           EXECUTION_FILE: ${{ steps.plan.outputs.execution_file }}
         run: |
-          # Parsed with jq rather than fromJSON() so that an empty or malformed output
-          # fails here, with a message, instead of blowing up during expression evaluation
-          plan=$(printf '%s' "$PLAN_JSON" | jq -r '.plan // empty')
+          if [[ -z "$EXECUTION_FILE" || ! -f "$EXECUTION_FILE" ]]; then
+            echo "No execution log was produced - re-run with debug: true for the raw output"
+            exit 0
+          fi
+
+          jq -rs '
+            flatten
+            | map(select(.type == "assistant"))
+            | .[].message.content[]?
+            | if .type == "text" then
+                (.text | select(length > 0) | "💬 " + .)
+              elif .type == "tool_use" then
+                "🔧 " + .name + "("
+                  + ((.input // {})
+                     | to_entries
+                     | map("\(.key)=\(.value | tostring | .[0:60])")
+                     | join(", "))
+                  + ")"
+              else empty end
+          ' "$EXECUTION_FILE" 2>/dev/null || echo "Could not read the execution log"
+
+      - name: Post the plan
+        id: post
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        env:
+          EXECUTION_FILE: ${{ steps.plan.outputs.execution_file }}
+        run: |
+          # The agent's final message, taken from its own execution log. It used to come
+          # back through a one-field --json-schema, which meant generating the whole plan
+          # as a single escaped JSON string - slower, and prone to failing outright on a
+          # long plan. `result` on the closing record is the same text without that cost.
+          if [[ -z "$EXECUTION_FILE" || ! -f "$EXECUTION_FILE" ]]; then
+            echo "::error title=No execution log::The agent produced no execution log - see the run"
+            exit 1
+          fi
+
+          plan=$(
+            jq -rs 'flatten
+                    | (map(select(.type == "result")) | last) as $r
+                    | if ($r.terminal_reason // "") == "api_error" then ""
+                      else ($r.result // "") end' "$EXECUTION_FILE" 2>/dev/null || true
+          )
+
           if [[ -z "$plan" ]]; then
             echo "::error title=No plan produced::The agent returned no plan - see the run log"
             exit 1
@@ -313,7 +370,7 @@ jobs:
       # outcome rather than `failure()`, which would also fire for the permission
       # refusal above, and that already comments for itself.
       - name: Report a failed plan
-        if: ${{ always() && steps.plan.outcome == 'failure' }}
+        if: ${{ always() && (steps.plan.outcome == 'failure' || steps.post.outcome == 'failure') }}
         env:
           EXECUTION_FILE: ${{ steps.plan.outputs.execution_file }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
