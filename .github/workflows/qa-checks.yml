@@ -185,7 +185,20 @@ jobs:
             echo "No Psalm configuration file found, skipping code check."
           fi
 
-      - name: Run Linters
+      - name: Run NPM Linter
         if: env.npm == 1 || env.yarn == 1
         run: |
-          npm run lint
+          if jq -e '.scripts.lint' package.json > /dev/null; then
+            npm lint
+          else
+            echo "No NPM linter found, skipping."
+          fi
+
+      - name: Run NPM tests
+        if: env.npm == 1 || env.yarn == 1
+        run: |
+          if jq -e '.scripts.test' package.json > /dev/null; then
+            npm test
+          else
+            echo "No NPM test script found, skipping tests."
+          fi
