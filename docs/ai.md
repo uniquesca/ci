@@ -120,7 +120,26 @@ A single comment on the issue, in markdown:
   `- [ ] 1. Register the route`, followed by what to do, why, and the files it touches
 * risks, unknowns and assumptions
 * concrete checks that prove the task is complete
-* a closing `Requested by @someone.` line
+* a closing line naming who asked for it and what the run cost, for example
+  `Requested by @someone. Planned in 6m 44s, 18 turns, 1250000 tokens, ~$3.41.`
+
+The cost is the agent's own estimate from its token counts, not a billed figure - treat
+it as an order of magnitude. Any part of it the agent did not report is left out rather
+than guessed at, so a shorter line means less was recorded, not that less was spent.
+
+### When planning fails
+
+A failed run comments on the issue too, rather than going red where nobody looking at the
+issue can see it:
+
+> @someone the planning agent did not finish, so there is no plan for this issue.
+>
+> It stopped with: `Credit balance is too low`
+>
+> The run log has the detail: ...
+
+The reason comes out of the agent's execution log where there is one. An exhausted credit
+balance, a hit turn limit and a genuine bug all look identical from the issue otherwise.
 
 There is no separate machine-readable copy. The plan is the comment: a human can edit it,
 tick steps off, or reject it, and a later implementor agent reads the same text. Keeping
