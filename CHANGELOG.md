@@ -1071,3 +1071,8 @@
 ## v9.1.2
 
 * Update: reworked AI planner harness - no need for json plan, reusing anthropic SDK instead, added ability to adjust the plan (4c7b0b1 by George Shestayev)
+
+## v9.1.3
+
+* Fix: added missing code to post a github comment with the generated plan (e861f29 by George Shestayev)
+* Update: turned on full output for the anthropic by default (e861f29 by George Shestayev)
