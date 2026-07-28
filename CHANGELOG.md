@@ -1088,3 +1088,7 @@
 ## v9.1.6
 
 * Fix: fixed syntax of gh command to retrieve all the issue comments for the AI planner (8ad4f4a by George Shestayev)
+
+## v9.1.7
+
+* Update: improved timeouts, agent's format and overall quality improvement of AI planner (aa7ae66 by George Shestayev)
