@@ -1092,3 +1092,7 @@
 ## v9.1.7
 
 * Update: improved timeouts, agent's format and overall quality improvement of AI planner (aa7ae66 by George Shestayev)
+
+## v9.2.0
+
+* New: introduced AI Implement workflow (ba15a3e by George Shestayev)
