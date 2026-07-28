@@ -1,0 +1,154 @@
+name: AI run report
+
+description: Read a Claude Code execution log - print what the agent did, and hand back its final message, what the run cost and why it stopped
+
+inputs:
+  execution_file:
+    description: 'Path to the agent execution log, the `execution_file` output of claude-code-action'
+    required: false
+    default: ''
+  verb:
+    description: 'Past-tense verb the summary opens with, for example `Planned` or `Implemented`'
+    required: false
+    default: 'Ran'
+
+outputs:
+  has_result:
+    description: 'Whether the agent produced a final message - "true" or "false"'
+    value: ${{ steps.report.outputs.has_result }}
+  result_file:
+    description: 'Path to a file holding the agent final message, empty when there is none. A file rather than a string, because a plan can run to tens of kilobytes'
+    value: ${{ steps.report.outputs.result_file }}
+  summary:
+    description: 'What the run cost, for example `Planned in 6m 44s, 18 turns, 1250000 tokens, ~$3.41`. Empty when the log recorded none of it'
+    value: ${{ steps.report.outputs.summary }}
+  reason:
+    description: 'Why the run stopped, truncated to 200 characters, for a failure comment'
+    value: ${{ steps.report.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    # The agent narrates as it works, but that narration is buried in a JSON transcript
+    # that is unreadable at a glance. Pull out what it said and what it touched, and leave
+    # the raw transcript to the caller's `debug`. This runs on failed runs too - a run that
+    # died partway is exactly when you want to see how far it got.
+    - name: Show what the agent did
+      shell: bash
+      env:
+        EXECUTION_FILE: ${{ inputs.execution_file }}
+      run: |
+        if [[ -z "$EXECUTION_FILE" || ! -f "$EXECUTION_FILE" ]]; then
+          echo "No execution log was produced - re-run with debug: true for the raw output"
+          exit 0
+        fi
+
+        jq -rs '
+          flatten
+          | map(select(.type == "assistant"))
+          | .[].message.content[]?
+          | if .type == "text" then
+              (.text | select(length > 0) | "💬 " + .)
+            elif .type == "tool_use" then
+              "🔧 " + .name + "("
+                + ((.input // {})
+                   | to_entries
+                   | map("\(.key)=\(.value | tostring | .[0:60])")
+                   | join(", "))
+                + ")"
+            else empty end
+        ' "$EXECUTION_FILE" 2>/dev/null || echo "Could not read the execution log"
+
+    - name: Read the result
+      id: report
+      shell: bash
+      env:
+        EXECUTION_FILE: ${{ inputs.execution_file }}
+        VERB: ${{ inputs.verb }}
+      run: |
+        # Outside the checkout on purpose: a workflow that commits its working tree must
+        # not be able to sweep the agent's own output into the commit
+        out="$RUNNER_TEMP/ai-run-report"
+        mkdir -p "$out"
+
+        has_result='false'; result_file=''; summary=''; reason=''
+
+        if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+          # Why the run stopped. Surfacing this turns "the run went red" into something
+          # actionable - an exhausted credit balance and a genuine bug look identical
+          # otherwise.
+          reason=$(
+            jq -rs 'flatten | (map(select(.type == "result")) | last) as $r
+                    | [ ($r.result // ""), ($r.terminal_reason // "") ]
+                    | map(select(. != "")) | first // ""
+                    | .[0:200]
+                    | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ")' "$EXECUTION_FILE" 2>/dev/null || true
+          )
+          # A step output holds a single line, and this is one line of diagnostics either
+          # way. Collapsed to nothing when there was nothing but whitespace to report, so
+          # the caller's `if [[ -n ... ]]` does the right thing.
+          [[ "$reason" == null ]] && reason=''
+
+          # The agent's final message. It used to come back through a one-field
+          # --json-schema, which meant generating the whole thing as a single escaped JSON
+          # string - slower, and prone to failing outright on a long answer. `result` on
+          # the closing record is the same text without that cost. On an `api_error` that
+          # field holds the error rather than an answer, so it is not one.
+          jq -rs 'flatten
+                  | (map(select(.type == "result")) | last) as $r
+                  | if ($r.terminal_reason // "") == "api_error" then ""
+                    else ($r.result // "") end' "$EXECUTION_FILE" > "$out/result.md" 2>/dev/null || true
+
+          if [[ -s "$out/result.md" && -n "$(tr -d '[:space:]' < "$out/result.md")" ]]; then
+            has_result='true'
+            result_file="$out/result.md"
+          else
+            rm -f "$out/result.md"
+            echo "The agent returned no final message"
+          fi
+
+          # What the run cost. These numbers exist only in the agent's own execution log,
+          # and every one of them is optional - a field that is missing drops out of the
+          # line rather than failing the report.
+          mapfile -t stats < <(
+            jq -rs 'flatten | (map(select(.type == "result")) | last) as $r
+                    | [ ($r.total_cost_usd // ""),
+                        ($r.duration_ms // ""),
+                        ($r.num_turns // ""),
+                        (if $r.usage
+                         then ($r.usage.input_tokens // 0)
+                            + ($r.usage.output_tokens // 0)
+                            + ($r.usage.cache_read_input_tokens // 0)
+                            + ($r.usage.cache_creation_input_tokens // 0)
+                         else "" end) ]
+                    | .[] | tostring' "$EXECUTION_FILE" 2>/dev/null || true
+          )
+          cost=${stats[0]:-}; duration=${stats[1]:-}; turns=${stats[2]:-}; tokens=${stats[3]:-}
+
+          if [[ -n "$duration" && "$duration" != null ]]; then
+            secs=$(( duration / 1000 ))
+            if (( secs >= 60 )); then
+              summary="$VERB in $(( secs / 60 ))m $(( secs % 60 ))s"
+            else
+              summary="$VERB in ${secs}s"
+            fi
+          fi
+          [[ -n "$turns" && "$turns" != null ]] && summary="${summary:+$summary, }${turns} turns"
+          [[ -n "$tokens" && "$tokens" != null ]] && summary="${summary:+$summary, }${tokens} tokens"
+          if [[ -n "$cost" && "$cost" != null ]]; then
+            # The agent's own estimate from its token counts, not a billed figure
+            summary="${summary:+$summary, }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
+          fi
+        else
+          echo "No execution log to read"
+        fi
+
+        # Written once each - a key repeated in $GITHUB_OUTPUT has no defined winner
+        {
+          printf 'has_result=%s\n' "$has_result"
+          printf 'result_file=%s\n' "$result_file"
+          printf 'summary=%s\n' "$summary"
+          printf 'reason=%s\n' "$reason"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "$summary"

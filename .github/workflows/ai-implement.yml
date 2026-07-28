@@ -1,0 +1,418 @@
+name: AI Implement
+
+on:
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        description: 'Anthropic API key used to call the AI implementing agent'
+        required: true
+    inputs:
+      command:
+        description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment'
+        required: false
+        default: '/ai-do'
+        type: string
+      allowed_permissions:
+        description: 'Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and the triage role as `read`, so `admin write` covers owners, maintainers and developers'
+        required: false
+        default: 'admin write'
+        type: string
+      timeout_minutes:
+        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so on the issue'
+        required: false
+        default: 65
+        type: number
+      agent_timeout_minutes:
+        description: 'How long the implementing agent itself may run before it is given up on'
+        required: false
+        default: 60
+        type: number
+      max_turns:
+        description: 'How many turns the agent may spend before it has to stop with what it has'
+        required: false
+        default: 60
+        type: number
+      model:
+        description: 'Model used to implement the plan'
+        required: false
+        default: 'claude-opus-4-8'
+        type: string
+      branch_prefix:
+        description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what makes a re-run update the same pull request instead of opening another'
+        required: false
+        default: 'ai-implement/'
+        type: string
+      debug:
+        description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  implement:
+    name: Implement the plan
+    # Only react to a fresh comment on a real issue that starts with the command
+    if: >-
+      ${{ github.event_name == 'issue_comment'
+      && github.event.action == 'created'
+      && !github.event.issue.pull_request
+      && startsWith(github.event.comment.body, inputs.command) }}
+    runs-on: ubuntu-latest
+    # Github expressions have no arithmetic, so this cannot be derived from the agent's
+    # budget - the two are separate inputs, and the defaults leave five minutes between
+    # them. That gap matters: a job timeout cancels every remaining step, so if the agent
+    # were allowed to run right up to it, it would take the failure comment down with it
+    # and the issue would hear nothing at all.
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      # Wider than the planner needs, because this one pushes a branch and opens a pull
+      # request. It never writes to the default branch: everything lands on a branch of
+      # its own, behind a pull request somebody has to review.
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      # Set for every `gh` call below - no checkout is needed to resolve the repository this way
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      ISSUE: ${{ github.event.issue.number }}
+      COMMENTER: ${{ github.event.comment.user.login }}
+      # One branch per issue, which is the whole reason a re-run updates the existing pull
+      # request rather than opening a second one
+      BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
+    steps:
+      - name: Check the commenter permissions
+        id: permissions
+        env:
+          ALLOWED: ${{ inputs.allowed_permissions }}
+        run: |
+          if permission=$(gh api "repos/$GH_REPO/collaborators/$COMMENTER/permission" --jq '.permission' 2> error.log); then
+            echo "@$COMMENTER has the '$permission' permission in $GH_REPO"
+          elif grep -q 'Not Found' error.log; then
+            # Not a collaborator at all - expected, no permission to run the command
+            permission='none'
+          else
+            # Anything other than a 404 is a real failure, do not silently treat it as a refusal
+            cat error.log
+            echo "::error title=Permission check failed::Could not read the permissions of @$COMMENTER"
+            exit 1
+          fi
+
+          allowed='false'
+          for level in $ALLOWED; do
+            if [[ "$permission" == "$level" ]]; then
+              allowed='true'
+              break
+            fi
+          done
+
+          echo "permission=$permission" >> "$GITHUB_OUTPUT"
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+      # Refusals stop the job, so the steps below only ever run for an allowed commenter.
+      # This gate is what keeps an agent with a shell and write access out of the hands of
+      # anyone who can merely comment on an issue.
+      - name: Refuse the request
+        if: ${{ steps.permissions.outputs.allowed != 'true' }}
+        env:
+          COMMAND: ${{ inputs.command }}
+          PERMISSION: ${{ steps.permissions.outputs.permission }}
+        run: |
+          gh issue comment "$ISSUE" --body "@$COMMENTER you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you."
+          echo "::error title=Permission denied::@$COMMENTER ($PERMISSION) is not allowed to run $COMMAND"
+          exit 1
+
+      # Full history rather than a shallow clone: this pushes to a branch that may already
+      # exist from an earlier run, and a shallow clone makes that awkward.
+      - name: Check out the repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # The agent runs with a shell and can read the whole working tree - without this,
+          # checkout leaves a live `x-access-token:ghs_...` in .git/config for it to find.
+          # Fetching and pushing below supply the credential per command instead, so it is
+          # never on disk while the agent is running. That is also what stops the agent
+          # pushing anything itself, however it is asked to.
+          persist-credentials: false
+
+      # The agent has no network of its own, so the issue is fetched for it. This is also
+      # why the issue body never reaches this file: `gh` writes it straight to disk, so
+      # nothing written by whoever opened the issue is ever expanded into the workflow.
+      - name: Stage the issue and its plan
+        id: stage
+        uses: uniquesca/ci/ai-stage-issue@main
+        with:
+          issue: ${{ github.event.issue.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # No plan is not a failure - the command was simply run too early. Say so and stop.
+      #
+      # Every `if` from here down carries `success()`. An explicit condition replaces the
+      # implicit one Github applies, so without it a step would keep running after an
+      # earlier one failed - which for the commit and push below would mean pushing
+      # half-finished work.
+      - name: Make sure there is a plan to implement
+        if: ${{ success() && steps.stage.outputs.has_plan != 'true' }}
+        env:
+          COMMAND: ${{ inputs.command }}
+        run: |
+          gh issue comment "$ISSUE" --body "@$COMMENTER there is no plan on this issue yet, so there is nothing to implement. Run \`/ai-plan\` first, review the plan it posts, then run \`$COMMAND\` again."
+          echo "Issue #$ISSUE has no plan comment, nothing to implement"
+
+      # Re-running has to build on the previous attempt rather than start over, so an
+      # existing branch is checked out and the agent works on top of it.
+      - name: Prepare the branch
+        id: branch
+        if: ${{ success() && steps.stage.outputs.has_plan == 'true' }}
+        run: |
+          # The credential goes on the command line of the one command that needs it, the
+          # same header `actions/checkout` would otherwise leave in .git/config
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+
+          if git -c http.extraheader="AUTHORIZATION: basic $auth" \
+               ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
+            echo "Continuing the work already on $BRANCH"
+            git -c http.extraheader="AUTHORIZATION: basic $auth" \
+              fetch --no-tags origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            git checkout -B "$BRANCH" "refs/remotes/origin/$BRANCH"
+            # What the agent's work is measured against, so a run that changes nothing can
+            # say so instead of opening an empty pull request
+            compare_ref="refs/remotes/origin/$BRANCH"
+          else
+            echo "Starting $BRANCH from $(git rev-parse --short HEAD)"
+            compare_ref=$(git rev-parse HEAD)
+            git checkout -b "$BRANCH"
+          fi
+
+          # Local-only and never committed, so the staged issue cannot end up in the branch
+          # however the agent leaves the working tree
+          echo '/.ai-plan/' >> .git/info/exclude
+
+          git config --local user.name 'github-actions[bot]'
+          git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          printf 'compare_ref=%s\n' "$compare_ref" >> "$GITHUB_OUTPUT"
+
+      # The plan and the issue are read off disk rather than interpolated into this file -
+      # both are written by people, and neither has any business being expanded into the
+      # workflow. Only the issue number goes in, which Github restricts to digits.
+      - name: Implement the plan
+        id: implement
+        if: ${{ success() && steps.stage.outputs.has_plan == 'true' }}
+        # The agent's own budget, below the job's, so running over fails this step and
+        # leaves the steps after it to explain that on the issue
+        timeout-minutes: ${{ inputs.agent_timeout_minutes }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Passed explicitly so the workflow works without the Claude Github App
+          # installed, and so the agent is bound by this job's permissions
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Off by default - this prints every tool call and every tool result, and a tool
+          # result is whatever the agent just read out of the repository
+          show_full_output: ${{ inputs.debug }}
+          prompt: |
+            You are a senior software engineer. Implement the approved plan for issue
+            #${{ github.event.issue.number }} of this repository, in the working tree you
+            are already in.
+
+            Everything you need has been fetched for you. Read these first:
+
+            - `.ai-plan/plan.md` - the approved plan. This is the specification. Implement
+              it.
+            - `.ai-plan/issue.json` - the issue number, title and body, for context on why
+              the work is wanted.
+            - `.ai-plan/comments.json` - every comment on the issue, oldest first, each
+              with its author and an `is_bot` flag. Anything said after the plan was
+              posted is feedback on it, and it takes precedence over the plan where the two
+              disagree.
+
+            If `.ai-plan/plan.md` is missing or unreadable, stop straight away and say
+            exactly that as your final message. Do not go looking for another route to the
+            issue - there isn't one, and hunting for it burns the whole run.
+
+            This may not be the first attempt. The branch you are on may already carry work
+            from an earlier run, so read what is there before changing it, and build on it
+            rather than redoing it. Treat the newest feedback as the thing to act on.
+
+            Before you write anything, read the code the plan touches and learn the
+            conventions actually in use - how modules are structured, how errors are
+            handled, how things are tested. Match them. A change that works but reads
+            like it came from somewhere else is a change that gets rewritten.
+
+            This repository may commit its dependencies. Ignore `node_modules`, `vendor`,
+            `dist` and `build` unless the plan is specifically about one of them.
+
+            You have a shell. Use it to verify your own work: find how this project runs
+            its tests and linters, run them, and fix what you broke. The plan's checks are
+            yours to execute, not to list. If you cannot get something passing, say so in
+            your final message rather than leaving it quietly broken.
+
+            Two things you must not do:
+
+            - Do not commit, push, create a branch, open a pull request, or comment
+              anywhere. The workflow does all of that after you finish, and doing it
+              yourself makes a mess of what it pushes.
+            - Do not modify anything under `.ai-plan/`. It is the input, and it is not
+              part of the change.
+
+            Leave your work in the working tree as uncommitted changes. That is what gets
+            committed for you.
+
+            Your final message becomes the body of the pull request, so write it for a
+            reviewer: what changed and why, anything in the plan you deliberately did not
+            do and why, what you ran to verify it and what the result was, and anything
+            that needs a human decision. Markdown, no preamble, no sign-off, well under
+            10000 characters. Do not add a title, a link to the issue, or a footer - the
+            workflow adds those.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Task,Bash"
+            ${{ inputs.debug && '--debug' || '' }}
+
+      # Reads the agent's execution log: prints what it said and what it touched, and hands
+      # back its summary, what the run cost and why it stopped. Runs on failure too - a run
+      # that died partway is exactly when you want to see how far it got.
+      - name: Report on the run
+        id: report
+        if: ${{ always() && steps.implement.outcome != 'skipped' }}
+        uses: uniquesca/ci/ai-run-report@main
+        with:
+          execution_file: ${{ steps.implement.outputs.execution_file }}
+          verb: 'Implemented'
+
+      - name: Commit and push the work
+        id: push
+        if: ${{ success() && steps.stage.outputs.has_plan == 'true' }}
+        env:
+          COMPARE_REF: ${{ steps.branch.outputs.compare_ref }}
+          TITLE: ${{ steps.stage.outputs.title }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git add -A
+
+          if git diff --cached --quiet; then
+            # Nothing new in the working tree. The agent was told not to commit, but check
+            # anyway - if it did, there is still something to push.
+            if [[ "$(git rev-list --count "$COMPARE_REF..HEAD")" -eq 0 ]]; then
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              gh issue comment "$ISSUE" --body "@$COMMENTER the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: $RUN_URL"
+              echo "The agent left the working tree unchanged"
+              exit 0
+            fi
+            echo "The agent committed its own work - pushing that"
+          else
+            {
+              printf '%s\n\n' "$TITLE"
+              printf 'Implements #%s\n\n' "$ISSUE"
+              printf 'Written by the AI implement workflow, requested by @%s.\n' "$COMMENTER"
+            } > "$RUNNER_TEMP/commit-message.txt"
+            git commit --quiet -F "$RUNNER_TEMP/commit-message.txt"
+          fi
+
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH"
+
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # One pull request per issue. A second run has just pushed onto the same branch, so
+      # the existing pull request is already up to date and only needs finding.
+      - name: Open or reuse the pull request
+        id: pr
+        if: ${{ success() && steps.push.outputs.pushed == 'true' }}
+        env:
+          TITLE: ${{ steps.stage.outputs.title }}
+          BASE: ${{ github.event.repository.default_branch }}
+          PLAN_URL: ${{ steps.stage.outputs.plan_url }}
+          SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+        run: |
+          url=$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url // ""')
+
+          if [[ -n "$url" ]]; then
+            echo "Updated the existing pull request $url"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            # Written to RUNNER_TEMP rather than the checkout - this workflow commits its
+            # working tree, so nothing scratch belongs in it.
+            #
+            # `Implements` rather than `Closes` on purpose. Adjusting and re-running is the
+            # point of this workflow, and auto-closing the issue on the first merge cuts
+            # that short - as does merging a partial implementation.
+            {
+              printf 'Implements #%s.\n\n' "$ISSUE"
+              [[ -n "$PLAN_URL" ]] && printf 'Built from the [approved plan](%s).\n\n' "$PLAN_URL"
+              if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
+                cat "$SUMMARY_FILE"
+                printf '\n'
+              fi
+            } > "$RUNNER_TEMP/pr-body.md"
+
+            url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
+            echo "Opened $url"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # The issue is where the work is directed from, so the pull request has to be
+      # findable there. The marker exists only so that "the current pull request for this
+      # issue" can be found among the other comments.
+      - name: Post the pull request link
+        id: post
+        if: ${{ success() && steps.pr.outputs.url != '' }}
+        env:
+          PR_URL: ${{ steps.pr.outputs.url }}
+          CREATED: ${{ steps.pr.outputs.created }}
+          USAGE: ${{ steps.report.outputs.summary }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          {
+            printf '<!-- ai-implement -->\n\n'
+            if [[ "$CREATED" == 'true' ]]; then
+              printf 'Opened %s with an implementation of the plan.\n\n' "$PR_URL"
+            else
+              printf 'Pushed another round of changes to %s.\n\n' "$PR_URL"
+            fi
+            printf 'Review it there. If something needs changing, comment what you want on this issue and run `%s` again - it will update the same pull request rather than opening another.\n\n' "$COMMAND"
+            printf -- '---\n\n'
+            printf 'Requested by @%s.' "$COMMENTER"
+            [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+            printf '\n'
+          } > "$RUNNER_TEMP/implement-comment.md"
+
+          cat "$RUNNER_TEMP/implement-comment.md" >> "$GITHUB_STEP_SUMMARY"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/implement-comment.md"
+
+      # A failed run is otherwise invisible from the issue - whoever ran the command is
+      # left waiting for a pull request that never appears. Scoped to these steps' own
+      # outcomes rather than `failure()`, which would also fire for the permission refusal
+      # above, and that already comments for itself.
+      - name: Report a failed implementation
+        if: >-
+          ${{ always()
+          && (steps.branch.outcome == 'failure'
+          || steps.implement.outcome == 'failure'
+          || steps.report.outcome == 'failure'
+          || steps.push.outcome == 'failure'
+          || steps.pr.outcome == 'failure'
+          || steps.post.outcome == 'failure') }}
+        env:
+          # Why the agent stopped, where it recorded one. It turns "the run went red" into
+          # something actionable - an exhausted credit balance and a genuine bug look
+          # identical from the issue otherwise.
+          REASON: ${{ steps.report.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$COMMENTER"
+            if [[ -n "$REASON" ]]; then
+              printf 'It stopped with: `%s`\n\n' "$REASON"
+            fi
+            printf 'The run log has the detail: %s\n' "$RUN_URL"
+          } > "$RUNNER_TEMP/failure-comment.md"
+
+          cat "$RUNNER_TEMP/failure-comment.md" >> "$GITHUB_STEP_SUMMARY"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/failure-comment.md"
