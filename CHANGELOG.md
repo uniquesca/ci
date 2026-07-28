@@ -1084,3 +1084,7 @@
 ## v9.1.5
 
 * Fix: fixed AI planner to get github issue information properly (21494bf by George Shestayev)
+
+## v9.1.6
+
+* Fix: fixed syntax of gh command to retrieve all the issue comments for the AI planner (8ad4f4a by George Shestayev)
