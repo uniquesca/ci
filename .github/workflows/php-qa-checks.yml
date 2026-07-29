@@ -1,4 +1,4 @@
-name: "[DEPRECATED] QA Checks"
+name: PHP QA Checks
 
 on:
   workflow_call:
@@ -6,9 +6,6 @@ on:
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories'
         required: true
-      NPM_ACCESS_TOKEN:
-        description: 'Access token for authentication with the NPM registry'
-        required: false
     inputs:
       setup_cmd:
         description: 'Command to run to set up environment before the QA checks execution'
@@ -52,10 +49,6 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Deprecation notice
-        run: |
-          echo "::warning title=Deprecated workflow::uniquesca/ci/.github/workflows/qa-checks.yml is deprecated. Please migrate to php-qa-checks.yml and/or npm-qa-checks.yml."
-
       - name: Checkout code
         uses: actions/checkout@v6
 
@@ -63,14 +56,12 @@ jobs:
         id: matrix
         uses: uniquesca/ci/qa-ci-matrix@main
 
-  qa:
-    name: Run QA checks
+  php-qa:
+    name: Run PHP QA checks
     needs: [ matrix ]
     runs-on: ${{ matrix.setup.os }}
     env:
       phpunit: 0
-      composer: 0
-      npm: 0
     strategy:
       fail-fast: false
       matrix:
@@ -88,18 +79,6 @@ jobs:
 
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
-
-      - name: Check if we have NPM or Yarn
-        run: |
-          if [[ -f "yarn.lock" ]]; then
-            echo "yarn=1" >> $GITHUB_ENV
-            echo "Yarn lock file found, will run Yarn checks."
-          elif [[ -f "package.json" ]]; then
-            echo "npm=1" >> $GITHUB_ENV
-            echo "package.json found, will run NPM checks."
-          else
-            echo "No package.json or yarn.lock found, skipping Node checks."
-          fi
 
       - name: Check if we have PHPUnit
         run: |
@@ -126,11 +105,12 @@ jobs:
         run: |
           composer_cmd="composer install --no-scripts"
           lock_file="composer.lock"
+          alt_lock_file="composer.${{ matrix.setup.php.version }}.lock"
           if [[ "${{ matrix.setup.locked }}" == "false"  ]]; then
-            if [[ -f "composer.${{ matrix.setup.php.version }}.lock" ]]; then
+            if [[ -f "$alt_lock_file" ]]; then
               # We have an alternative lock file, so we are just going to use it
               echo "Alternative Composer lock file $alt_lock_file found"
-              lock_file="composer.${{ matrix.setup.php.version }}.lock"
+              lock_file="$alt_lock_file"
             else
               echo "Alternative Composer lock file $alt_lock_file not found, will run composer update"
               composer_cmd="composer update --no-scripts"
@@ -143,9 +123,9 @@ jobs:
         uses: uniquesca/ci/install-packages@main
         with:
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
           composer_cmd: ${{ steps.prep-composer-cmd.outputs.cmd }}
           composer_lock: ${{ steps.prep-composer-cmd.outputs.lock_file }}
+          skip_npm_yarn: true
 
       - name: Set up MySQL
         if: inputs.use_db == true && env.phpunit == 1
@@ -175,14 +155,6 @@ jobs:
         if: env.phpunit == 1
         run: php ./vendor/bin/phpunit
 
-      - name: Generate coverage badge
-        if: ${{ env.phpunit == 1 && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
-        uses: timkrase/phpunit-coverage-badge@v1.2.1
-        with:
-          coverage_badge_path: ${{ inputs.coverage_badge_file }}
-          push_badge: true
-          repo_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
-
       - name: Run PHP Codesniffer
         run: |
           if [[ -f "phpcs.xml" ]] || [[ -f "phpcs.xml.dist" ]]; then
@@ -199,22 +171,4 @@ jobs:
             ./vendor/bin/psalm --config=psalm.xml.dist
           else
             echo "No Psalm configuration file found, skipping code check."
-          fi
-
-      - name: Run NPM Linter
-        if: env.npm == 1 || env.yarn == 1
-        run: |
-          if jq -e '.scripts.lint' package.json > /dev/null; then
-            npm lint
-          else
-            echo "No NPM linter found, skipping."
-          fi
-
-      - name: Run NPM tests
-        if: env.npm == 1 || env.yarn == 1
-        run: |
-          if jq -e '.scripts.test' package.json > /dev/null; then
-            npm test
-          else
-            echo "No NPM test script found, skipping tests."
           fi
