@@ -1113,3 +1113,4 @@
 * New: qa-checks is split into npm-qa-checks and php-qa-checks (c8fd4a9 by George Shestayev)
 * New: added self-ai-plan and self-ai-implement workflows (32a1ec0 by George Shestayev)
 * Update: ai-implement now takes feedback through PR review, not issue comments (f202ec7 by George Shestayev)
+* Update: removed AI assisted workflows form this repo as it's a public repo (5e0158de by George Shestayev)
