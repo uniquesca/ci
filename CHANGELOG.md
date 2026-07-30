@@ -1118,3 +1118,6 @@
 ## v9.3.0
 
 * New: introduced AI review agent (3eedf24 by George Shestayev)
+
+## v9.3.1
+
