@@ -37,6 +37,11 @@ on:
         required: false
         default: 'claude-opus-4-8'
         type: string
+      branch_prefix:
+        description: 'Prefix of the branch the implementing workflow pushes to. Used only to find the pull request already implementing this issue, so that a revised plan can be announced there. Keep it the same as the implementing workflow branch_prefix'
+        required: false
+        default: 'ai-feature/'
+        type: string
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -62,6 +67,10 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # Read-only: the planner never touches a pull request beyond finding the one already
+      # implementing this issue. Commenting on it needs nothing more, because a pull request
+      # conversation comment is an issue comment as far as Github is concerned.
+      pull-requests: read
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -282,7 +291,41 @@ jobs:
             exit 1
           fi
 
-          gh issue comment "$ISSUE" --body-file plan-comment.md
+          # `gh` prints the URL of the comment it created, which is what the next step links
+          # to when it tells an open pull request the plan under it has moved
+          plan_url=$(gh issue comment "$ISSUE" --body-file plan-comment.md)
+          echo "url=$plan_url" >> "$GITHUB_OUTPUT"
+          echo "Posted the plan at $plan_url"
+
+      # Replanning stays available after the work has started - it is the escape hatch for
+      # when the approach was wrong rather than the code. By then people are looking at the
+      # pull request rather than at the issue, though, and a specification that moved under a
+      # review in progress has to say so where the review is happening. The next round reads
+      # the plan off the issue again, so the revision reaches the code without anybody
+      # copying it anywhere.
+      - name: Tell the pull request that the plan changed
+        if: >-
+          ${{ success()
+          && steps.task.outputs.has_task == 'true'
+          && steps.post.outcome == 'success' }}
+        env:
+          BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
+          PLAN_URL: ${{ steps.post.outputs.url }}
+        run: |
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')
+
+          if [[ -z "$number" ]]; then
+            echo "No open pull request is implementing issue #$ISSUE yet"
+            exit 0
+          fi
+
+          {
+            printf 'The plan for #%s has been revised: %s\n\n' "$ISSUE" "$PLAN_URL"
+            printf 'Requested by @%s. This pull request was built from the previous version, so read the revision before reviewing further - the next round works to the new one.\n' "$COMMENTER"
+          } > replan-comment.md
+
+          gh issue comment "$number" --body-file replan-comment.md
+          echo "Told pull request #$number that the plan changed"
 
       # A failed run is otherwise invisible from the issue - whoever ran the command is
       # left waiting for a comment that never comes. Scoped to the agent step's own
