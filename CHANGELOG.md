@@ -1114,3 +1114,7 @@
 * New: added self-ai-plan and self-ai-implement workflows (32a1ec0 by George Shestayev)
 * Update: ai-implement now takes feedback through PR review, not issue comments (f202ec7 by George Shestayev)
 * Update: removed AI assisted workflows form this repo as it's a public repo (5e0158de by George Shestayev)
+
+## v9.3.0
+
+* New: introduced AI review agent (3eedf24 by George Shestayev)
