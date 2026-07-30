@@ -27,6 +27,10 @@ inputs:
     description: 'First line of a review reply the implementing agent has already posted. A thread whose newest comment carries it has been answered, and is left out of the feedback'
     required: false
     default: '<!-- ai-implement-reply -->'
+  include_answered_threads:
+    description: 'Keep threads the implementing agent has already answered. Off for an implementing agent, which would otherwise redo the same work every round; on for a reviewing agent, to which an answered thread is the most interesting kind - it is where its own last concern was addressed or argued with'
+    required: false
+    default: false
   ignore_check_patterns:
     description: 'Case-insensitive regular expression matching check runs to leave out. The AI workflows own check runs live on the same commit, and feeding a run its own red status back as a code defect sends it in circles'
     required: false
@@ -87,6 +91,7 @@ runs:
         DIR: ${{ inputs.directory }}
         ROUND_MARKER: ${{ inputs.round_marker }}
         REPLY_MARKER: ${{ inputs.reply_marker }}
+        INCLUDE_ANSWERED: ${{ inputs.include_answered_threads }}
         IGNORE_CHECKS: ${{ inputs.ignore_check_patterns }}
         MAX_ANNOTATIONS: ${{ inputs.max_annotations }}
       run: |
@@ -206,11 +211,16 @@ runs:
         # has been answered and is waiting on a person to resolve it. Leaving those in would
         # have every round re-address the same comment forever. A human replying after the
         # bot puts the thread back in play, which is what makes the exception safe.
-        jq --arg reply_marker "$REPLY_MARKER" '
+        #
+        # A reviewing agent wants the opposite: an answered thread is where its own last
+        # concern was either met or argued with, and it has to read the answer to judge. So
+        # the exception is switchable, and the `answered` flag says which is which either way.
+        jq --arg reply_marker "$REPLY_MARKER" --argjson include_answered "$INCLUDE_ANSWERED" '
           [ .data.repository.pullRequest.reviewThreads.nodes[]? ]
           | map(select(.isResolved == false))
           | map(select((.comments.nodes | length) > 0))
-          | map(select((.comments.nodes | last | .body | startswith($reply_marker)) | not))
+          | map(. + {answered: (.comments.nodes | last | .body | startswith($reply_marker))})
+          | map(select($include_answered or (.answered | not)))
           | map(.comments.nodes[0] as $first | {
               id: .id,
               source: "thread",
@@ -224,6 +234,7 @@ runs:
                 diff_hunk: ($first.diffHunk // "")
               },
               state: (if .isOutdated then "outdated" else "unresolved" end),
+              answered: .answered,
               reply_target: $first.databaseId,
               text: (.comments.nodes
                      | map("@" + (.author.login // "unknown") + " wrote:\n" + (.body // ""))

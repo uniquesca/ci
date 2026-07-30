@@ -1,0 +1,297 @@
+name: AI post review
+
+description: Submit the review a reviewing agent wrote as a real Github review, with its inline comments validated against the lines the diff actually has
+
+inputs:
+  pull_request:
+    description: 'Number of the pull request to review'
+    required: true
+  repository:
+    description: 'Repository the pull request belongs to, in owner/name form'
+    required: true
+  token:
+    description: 'Github token used to submit the review. This is the one place where GITHUB_TOKEN is usually the wrong choice: Github rejects `REQUEST_CHANGES` on a pull request the same identity opened, and the implementing workflow opens its pull requests as `github-actions[bot]`. Supply a machine user PAT or a Github App token to be able to request changes at all'
+    required: true
+  head_sha:
+    description: 'Commit the review is submitted against. Pinned explicitly so a push that landed since the diff was taken makes the review outdated rather than silently misplaced'
+    required: true
+  review_file:
+    description: 'File the agent wrote: an object with `verdict`, `summary` and `comments`'
+    required: false
+    default: '.ai-review/review.json'
+  diff_file:
+    description: 'The unified diff the agent reviewed. Every inline comment is checked against it, because Github rejects the whole review if one comment lands on a line the diff does not contain'
+    required: false
+    default: '.ai-review/diff.patch'
+  marker:
+    description: 'Hidden first line of the review body. The implementing workflow reads it to tell a review an agent wrote from one a person wrote, which is what keeps the unattended round cap honest when the review token belongs to a machine user account'
+    required: false
+    default: '<!-- ai-review -->'
+  max_comments:
+    description: 'How many inline comments one review may carry'
+    required: false
+    default: 30
+  max_length:
+    description: 'Longest inline comment body, in characters. Anything over is truncated rather than dropped'
+    required: false
+    default: 4000
+
+outputs:
+  submitted:
+    description: 'Whether a review was submitted - "true" or "false"'
+    value: ${{ steps.review.outputs.submitted }}
+  event:
+    description: 'What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Not always what was asked for: a rejected `REQUEST_CHANGES` is downgraded rather than lost'
+    value: ${{ steps.review.outputs.event }}
+  verdict:
+    description: 'The verdict the agent asked for - `changes_requested` or `comment`'
+    value: ${{ steps.review.outputs.verdict }}
+  comments_posted:
+    description: 'How many inline comments the submitted review carries'
+    value: ${{ steps.review.outputs.comments_posted }}
+  comments_dropped:
+    description: 'How many inline comments were rejected before submitting - a line the diff does not have, an empty body, or over the cap'
+    value: ${{ steps.review.outputs.comments_dropped }}
+
+runs:
+  using: composite
+  steps:
+    # The agent has no token and cannot submit anything itself. It writes what it wants to
+    # say to a file, and this turns that into a Github review - the same shape as the input
+    # side, where the workflow hands it files in the checkout.
+    - name: Submit the review
+      id: review
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull_request }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+        REVIEW_FILE: ${{ inputs.review_file }}
+        DIFF_FILE: ${{ inputs.diff_file }}
+        MARKER: ${{ inputs.marker }}
+        MAX_COMMENTS: ${{ inputs.max_comments }}
+        MAX_LENGTH: ${{ inputs.max_length }}
+      run: |
+        submitted='false'
+        event=''
+        verdict=''
+        comments_posted=0
+        comments_dropped=0
+
+        finish() {
+          {
+            printf 'submitted=%s\n' "$submitted"
+            printf 'event=%s\n' "$event"
+            printf 'verdict=%s\n' "$verdict"
+            printf 'comments_posted=%s\n' "$comments_posted"
+            printf 'comments_dropped=%s\n' "$comments_dropped"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        # Nothing here fails the run. A review that could not be submitted is worth a warning
+        # and an output the caller can act on, but going red adds nothing - and the caller
+        # still has the agent's summary to post as a plain comment.
+        if [[ ! -f "$REVIEW_FILE" ]]; then
+          echo "::warning title=No review produced::The agent wrote no $REVIEW_FILE"
+          finish
+        fi
+
+        tmp="$RUNNER_TEMP/ai-post-review"
+        rm -rf "$tmp"
+        mkdir -p "$tmp"
+
+        if ! jq -e 'type == "object"' "$REVIEW_FILE" > /dev/null 2>&1; then
+          echo "::warning title=Review unusable::$REVIEW_FILE is not a JSON object"
+          finish
+        fi
+
+        verdict=$(jq -r '.verdict // ""' "$REVIEW_FILE")
+
+        # Only two verdicts are meaningful. Approving is deliberately not one of them:
+        # merging is a person's decision, and an agent approving its own pipeline's work is
+        # not a signal anybody should be acting on.
+        case "$verdict" in
+          changes_requested) event='REQUEST_CHANGES' ;;
+          comment)           event='COMMENT' ;;
+          *)
+            echo "::warning title=Unknown verdict::The agent asked for '$verdict', which is not changes_requested or comment - submitting as a comment"
+            verdict='comment'
+            event='COMMENT'
+            ;;
+        esac
+
+        jq -r '.summary // ""' "$REVIEW_FILE" > "$tmp/summary.md"
+        if [[ ! -s "$tmp/summary.md" ]]; then
+          printf 'The reviewing agent returned no summary. Its inline comments, if any, are below.\n' > "$tmp/summary.md"
+        fi
+
+        # --- Which lines a comment may anchor to ----------------------------------------
+        #
+        # Github rejects the entire review - summary, every comment, the lot - if one inline
+        # comment names a line the diff does not contain. So the positions are worked out
+        # here and the bad comments are dropped, rather than finding out on submit and losing
+        # the whole review.
+        #
+        # A comment may sit on any line of a hunk on the RIGHT side, which means added lines
+        # and context lines, numbered in the new file.
+        cat > "$tmp/positions.awk" <<'AWK'
+        BEGIN { path = ""; n = 0; inhunk = 0 }
+        /^diff --git / { path = ""; inhunk = 0; next }
+        /^--- /        { next }
+        /^\+\+\+ /     {
+                         p = $2
+                         if (p == "/dev/null") { path = "" }
+                         else { sub(/^b\//, "", p); path = p }
+                         inhunk = 0
+                         next
+                       }
+        /^@@ /         {
+                         if (match($0, /\+[0-9]+/)) {
+                           n = substr($0, RSTART + 1, RLENGTH - 1) + 0
+                           inhunk = 1
+                         }
+                         next
+                       }
+        {
+          if (!inhunk || path == "") next
+          # A blank context line can reach here with its leading space stripped
+          if (length($0) == 0) { print path "\t" n; n++; next }
+          c = substr($0, 1, 1)
+          if (c == "+" || c == " ") { print path "\t" n; n++ }
+          else if (c == "-" || c == "\\") { }
+          else { inhunk = 0 }
+        }
+        AWK
+
+        if [[ -f "$DIFF_FILE" ]]; then
+          awk -f "$tmp/positions.awk" "$DIFF_FILE" | sort -u > "$tmp/positions.txt"
+        else
+          echo "::warning title=No diff staged::$DIFF_FILE is missing, so no inline comment can be placed - submitting the summary alone"
+          : > "$tmp/positions.txt"
+        fi
+
+        jq -R -s 'split("\n")
+                  | map(select(length > 0))
+                  | map(split("\t"))
+                  | map({key: (.[0] + ":" + .[1]), value: true})
+                  | from_entries' "$tmp/positions.txt" > "$tmp/positions.json"
+
+        # The agent read a diff and review threads that any collaborator can write, so what it
+        # hands back is untreated input rather than trusted structure.
+        jq --slurpfile pos "$tmp/positions.json" \
+           --argjson max_comments "$MAX_COMMENTS" \
+           --argjson max_length "$MAX_LENGTH" '
+          [ .comments[]? ]
+          | map(select((.path | type) == "string" and (.line | type) == "number"))
+          | map(select((.body | type) == "string"))
+          | map(select((.body | gsub("\\s"; "") | length) > 0))
+          | map(select($pos[0][(.path + ":" + (.line | tostring))] // false))
+          | map({path, line, side: "RIGHT", body: (.body | .[0:$max_length])})
+          | .[0:$max_comments]
+        ' "$REVIEW_FILE" > "$tmp/comments.json"
+
+        wanted=$(jq '[.comments[]?] | length' "$REVIEW_FILE")
+        comments_posted=$(jq 'length' "$tmp/comments.json")
+        comments_dropped=$(( wanted - comments_posted ))
+
+        if [[ "$comments_dropped" -gt 0 ]]; then
+          echo "::warning title=Inline comments dropped::$comments_dropped of $wanted inline comments were not placed - the line is not in the diff, the body was empty, or the cap was reached"
+          # Named, because "the reviewer said something about a line and it vanished" is worth
+          # being able to see in the log
+          jq --slurpfile pos "$tmp/positions.json" -r '
+            [ .comments[]? ]
+            | map(select(($pos[0][((.path // "?") + ":" + ((.line // 0) | tostring))] // false) | not))
+            | .[] | "  dropped: \(.path // "?"):\(.line // "?")"' "$REVIEW_FILE" || true
+        fi
+
+        submit() {
+          local payload="$1"
+          if gh api --method POST "repos/$GH_REPO/pulls/$PR/reviews" \
+               --input "$payload" --silent 2> "$tmp/error.log"; then
+            return 0
+          fi
+          cat "$tmp/error.log"
+          return 1
+        }
+
+        build() {
+          # $1 = event, $2 = whether to include the inline comments
+          jq -n --rawfile summary "$tmp/summary.md" \
+                --slurpfile comments "$tmp/comments.json" \
+                --arg marker "$MARKER" \
+                --arg event "$1" \
+                --arg sha "$HEAD_SHA" \
+                --argjson inline "$2" '
+            {
+              commit_id: $sha,
+              body: ($marker + "\n\n" + $summary),
+              event: $event
+            }
+            + (if $inline and (($comments[0] | length) > 0)
+               then {comments: $comments[0]}
+               else {} end)
+          ' > "$tmp/payload.json"
+        }
+
+        try() {
+          # $1 = event, $2 = whether to include the inline comments
+          build "$1" "$2"
+          submit "$tmp/payload.json"
+        }
+
+        # Github's word for "you cannot review your own pull request". Worth telling apart from
+        # a rejected comment position: the fix is a different token, and the inline comments
+        # were never the problem - a comment review carries them perfectly well.
+        own_pull_request() {
+          grep -qi 'your own pull request' "$tmp/error.log"
+        }
+
+        if try "$event" true; then
+          submitted='true'
+          echo "Submitted a $event review on #$PR with $comments_posted inline comment(s)"
+          finish
+        fi
+
+        # The implementing workflow opens its pull requests as `github-actions[bot]`, so a
+        # review token that is the same identity lands here every single time. Downgrade the
+        # verdict, keep everything else - losing the inline comments over this would throw away
+        # the most useful half of the review.
+        if own_pull_request && [[ "$event" == 'REQUEST_CHANGES' ]]; then
+          echo "::warning title=Could not request changes::Github rejects REQUEST_CHANGES from the identity that opened the pull request, so this was submitted as a comment instead. It cannot block a merge and it will not start another round. Supply a machine user PAT or a Github App token as the review token"
+          event='COMMENT'
+          if try "$event" true; then
+            submitted='true'
+            echo "Submitted a COMMENT review on #$PR with $comments_posted inline comment(s)"
+            finish
+          fi
+        fi
+
+        # Something about the inline comments is still unacceptable. The summary and the
+        # verdict are what matter most - the verdict is what starts the next round - so try
+        # again without them rather than lose everything.
+        if [[ "$comments_posted" -gt 0 ]]; then
+          echo "::warning title=Retrying without inline comments::Github rejected the review with its inline comments attached"
+          comments_dropped=$(( comments_dropped + comments_posted ))
+          comments_posted=0
+          if try "$event" false; then
+            submitted='true'
+            echo "Submitted a $event review on #$PR, summary only"
+            finish
+          fi
+        fi
+
+        if [[ "$event" == 'REQUEST_CHANGES' ]]; then
+          echo "::warning title=Downgrading to a comment::Requesting changes was rejected, submitting the summary as a comment review"
+          event='COMMENT'
+          if try "$event" false; then
+            submitted='true'
+            echo "Submitted a COMMENT review on #$PR"
+            finish
+          fi
+        fi
+
+        echo "::warning title=Review not submitted::Every attempt to submit the review was rejected - the caller still has the agent's summary"
+        event=''
+        finish

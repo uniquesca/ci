@@ -45,7 +45,7 @@ on:
       branch_prefix:
         description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
         required: false
-        default: 'ai-implement/'
+        default: 'ai-feature/'
         type: string
       max_unattended_rounds:
         description: 'How many rounds in a row a bot may trigger before a person has to look. Rounds a person asked for are not counted and reset this to zero. Without a bound, a reviewing agent and this one can hand work back and forth until the API key runs dry'
@@ -55,7 +55,17 @@ on:
       ignore_check_patterns:
         description: 'Case-insensitive regular expression matching check runs to leave out of the feedback. The AI workflows report their own check runs on the same commit, and a run that reads its own red status back as a code defect goes in circles'
         required: false
-        default: '(ai.implement|ai.plan)'
+        default: '(ai.implement|ai.plan|ai.review)'
+        type: string
+      dispatch_review:
+        description: 'Ask a reviewing agent to look at the work as soon as it is pushed, by sending a `repository_dispatch` event. Off by default: turn it on once a workflow is subscribed to that event, or the dispatch goes nowhere. Nothing is dispatched for a round that changed no file - re-reviewing the same commit produces the same review and the loop makes no progress'
+        required: false
+        default: false
+        type: boolean
+      review_dispatch_type:
+        description: 'The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as the reviewing workflow dispatch_type'
+        required: false
+        default: 'ai-review'
         type: string
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
@@ -124,6 +134,12 @@ jobs:
       # a thread the agent has answered from one still waiting.
       ROUND_MARKER: '<!-- ai-implement-round -->'
       REPLY_MARKER: '<!-- ai-implement-reply -->'
+      # First line of a review the reviewing workflow submitted. Identity is not enough to
+      # recognise one: requesting changes needs a token that is not `GITHUB_TOKEN`, and if that
+      # token belongs to a machine *user* account Github reports the review as authored by a
+      # `User`. Keying off the marker as well is what keeps the unattended round cap working
+      # whatever kind of token the reviewer was given.
+      REVIEW_MARKER: '<!-- ai-review -->'
     steps:
       # Two event shapes carry the same work, and nothing below should have to care which one
       # it got. Everything after this reads these outputs rather than `github.event`, which is
@@ -141,6 +157,9 @@ jobs:
           REVIEW_NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_ACTOR: ${{ github.event.review.user.login }}
           REVIEW_ACTOR_TYPE: ${{ github.event.review.user.type }}
+          # Untrusted text, read here and never interpolated into a script. Only its first line
+          # is ever looked at, and only to compare against a marker.
+          REVIEW_BODY: ${{ github.event.review.body }}
         run: |
           if [[ "$EVENT_NAME" == 'pull_request_review' ]]; then
             mode='round'; trigger='review'
@@ -162,6 +181,14 @@ jobs:
           # person acting on an agent's review is still a person looking at the work.
           attended='true'
           [[ "$actor_type" == 'Bot' ]] && attended='false'
+
+          # A review the reviewing agent wrote is a machine's, whichever account submitted it.
+          # Anyone can paste this marker into a review of their own, and all that does is make
+          # their own round count against the cap - it can only ever stop the loop sooner,
+          # never let it run longer.
+          if [[ "$trigger" == 'review' && "$REVIEW_BODY" == "$REVIEW_MARKER"* ]]; then
+            attended='false'
+          fi
 
           # Where anything said about this run goes. On a pull request the conversation is
           # the issues comment list - Github stores both in one place, which is why
@@ -746,6 +773,7 @@ jobs:
             # a fresh one is better than failing the run over it.
             if gh pr reopen "$REOPEN" 2>&1; then
               url=$(gh pr view "$REOPEN" --json url --jq '.url')
+              number="$REOPEN"
               echo "Reopened $url"
               echo "created=false" >> "$GITHUB_OUTPUT"
             else
@@ -772,11 +800,16 @@ jobs:
             } > "$RUNNER_TEMP/pr-body.md"
 
             url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
+            # `gh pr create` prints the pull request URL, which ends in its number
+            number="${url##*/}"
             echo "Opened $url"
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
 
-          echo "url=$url" >> "$GITHUB_OUTPUT"
+          {
+            printf 'url=%s\n' "$url"
+            printf 'number=%s\n' "$number"
+          } >> "$GITHUB_OUTPUT"
 
       # The issue is where the work was asked for, so the pull request has to be findable
       # from it. This is also the hand-off: after this comment, the issue is only for the
@@ -892,6 +925,44 @@ jobs:
 
           cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$PR" --body-file "$RUNNER_TEMP/round-comment.md"
+
+      # Hand the work to a reviewing agent. Last, so that the round comment and the thread
+      # replies are already in place - the reviewer reads both, and a review that arrived
+      # before them would be reviewing a round it cannot see the end of.
+      #
+      # `repository_dispatch` rather than letting a `pull_request` trigger notice the push:
+      # events made with `GITHUB_TOKEN` do not start workflow runs, and dispatch events are the
+      # documented exception. A `pull_request` run for a branch automation pushed would sit
+      # waiting for somebody to approve it, which is the opposite of what this is for.
+      #
+      # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
+      # produces the same review, and the loop would turn without moving.
+      - name: Ask for a review
+        id: dispatch
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && inputs.dispatch_review
+          && steps.push.outputs.pushed == 'true' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request || steps.pr.outputs.number }}
+          DISPATCH_TYPE: ${{ inputs.review_dispatch_type }}
+        run: |
+          if [[ -z "$PR" ]]; then
+            echo "::warning title=No pull request to review::Nothing was dispatched"
+            exit 0
+          fi
+
+          jq -n --arg type "$DISPATCH_TYPE" --argjson pr "$PR" \
+            '{event_type: $type, client_payload: {pull_request: $pr}}' \
+            > "$RUNNER_TEMP/dispatch.json"
+
+          # A dispatch that does not land costs the review, not the work - which is already
+          # pushed and already commented on. Warn rather than turn a good round red.
+          if gh api --method POST "repos/$GH_REPO/dispatches" --input "$RUNNER_TEMP/dispatch.json"; then
+            echo "Asked for a '$DISPATCH_TYPE' review of #$PR"
+          else
+            echo "::warning title=Could not ask for a review::The $DISPATCH_TYPE dispatch for #$PR failed - review it yourself, or comment on it to start another round"
+          fi
 
       # A failed run is otherwise invisible from the issue or the pull request - whoever asked
       # is left waiting for something that never appears. Scoped to these steps' own outcomes
