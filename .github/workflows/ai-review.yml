@@ -241,6 +241,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
+          # The action refuses to run for a bot actor unless the bot is listed here, and a
+          # review is always started by one: the implementing workflow dispatches it with
+          # `GITHUB_TOKEN`, so the actor is `github-actions[bot]`. Without this the agent
+          # quits before it reads anything. Comma-separated, and unrelated to the
+          # `allowed_bots` input of the implementing workflow, which gates who may trigger
+          # a round and is checked by that workflow itself
+          allowed_bots: 'github-actions[bot],github-actions'
           prompt: |
             You are a senior engineer reviewing a colleague's pull request. Review
             #${{ steps.pull_request.outputs.number }} of this repository. You are reviewing it,

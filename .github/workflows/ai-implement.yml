@@ -249,6 +249,17 @@ jobs:
           echo "permission=$permission" >> "$GITHUB_OUTPUT"
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
+          # The agent action has an `allowed_bots` of its own and refuses to run for a bot
+          # actor that is not in it - which is every round handed back by a reviewing agent.
+          # Its list is comma-separated where this input is space-separated, and it is not
+          # documented whether it matches `github-actions[bot]` or the bare `github-actions`,
+          # so each login goes in both ways.
+          csv=''
+          for login in $ALLOWED_BOTS; do
+            csv="${csv:+$csv,}$login,${login%\[bot\]}"
+          done
+          echo "bots_csv=$csv" >> "$GITHUB_OUTPUT"
+
       # Refusals stop the job, so the steps below only ever run for an allowed actor. This
       # gate is what keeps an agent with a shell and write access out of the hands of anyone
       # who can merely comment on an issue or leave a review.
@@ -542,6 +553,9 @@ jobs:
           # Off by default - this prints every tool call and every tool result, and a tool
           # result is whatever the agent just read out of the repository
           show_full_output: ${{ inputs.debug }}
+          # Without this the action quits before it reads anything whenever a bot triggered
+          # the run - see where this is built, in the permission check
+          allowed_bots: ${{ steps.permissions.outputs.bots_csv }}
           prompt: |
             You are a senior software engineer. Implement the approved plan for issue
             #${{ steps.event.outputs.issue }} of this repository, in the working tree you
@@ -620,6 +634,9 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
+          # This is the step a reviewing agent hands work back to, so the actor here is a bot
+          # on every round - without this the action quits before it reads anything
+          allowed_bots: ${{ steps.permissions.outputs.bots_csv }}
           prompt: |
             You are a senior software engineer. Changes have been asked for on pull request
             #${{ steps.event.outputs.pull_request }} of this repository. Act on them, in the
