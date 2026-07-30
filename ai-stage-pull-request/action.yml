@@ -1,0 +1,406 @@
+name: AI stage pull request
+
+description: Write a pull request and everything asking for changes on it - review threads, review bodies, conversation comments and failing checks - into the checkout as one normalised feedback list
+
+inputs:
+  pull_request:
+    description: 'Number of the pull request to stage'
+    required: true
+  repository:
+    description: 'Repository the pull request belongs to, in owner/name form'
+    required: true
+  token:
+    description: 'Github token used to read the pull request. Needs `checks: read` on top of `pull-requests: read`, or the failing checks are staged as an empty list'
+    required: true
+  head_sha:
+    description: 'Commit the checks are read from. This is the tip of the pull request branch, not the merge commit - a check run is attached to what was pushed'
+    required: true
+  directory:
+    description: 'Directory inside the checkout to write into'
+    required: false
+    default: '.ai-review'
+  round_marker:
+    description: 'First line of the comment this workflow posts at the end of each round. Used to count rounds and to find the watermark, so it has to match what the caller posts'
+    required: false
+    default: '<!-- ai-implement-round -->'
+  reply_marker:
+    description: 'First line of a review reply the implementing agent has already posted. A thread whose newest comment carries it has been answered, and is left out of the feedback'
+    required: false
+    default: '<!-- ai-implement-reply -->'
+  ignore_check_patterns:
+    description: 'Case-insensitive regular expression matching check runs to leave out. The AI workflows own check runs live on the same commit, and feeding a run its own red status back as a code defect sends it in circles'
+    required: false
+    default: '(ai.implement|ai.plan)'
+  max_annotations:
+    description: 'How many annotations of a failing check to stage. A broken linter can produce hundreds, and the agent has a shell to run it again for the rest'
+    required: false
+    default: 20
+
+outputs:
+  has_feedback:
+    description: 'Whether anything is asking for changes - "true" or "false"'
+    value: ${{ steps.stage.outputs.has_feedback }}
+  feedback_count:
+    description: 'How many feedback items were staged, across every source'
+    value: ${{ steps.stage.outputs.feedback_count }}
+  thread_count:
+    description: 'How many unresolved review threads were staged'
+    value: ${{ steps.stage.outputs.thread_count }}
+  check_count:
+    description: 'How many failing check runs were staged'
+    value: ${{ steps.stage.outputs.check_count }}
+  checks_pending:
+    description: 'How many check runs had not finished yet. Anything above zero means the commit is not known to be green, it is only not known to be red'
+    value: ${{ steps.stage.outputs.checks_pending }}
+  round:
+    description: 'Which round this run is, counting from 1'
+    value: ${{ steps.stage.outputs.round }}
+  unattended_rounds:
+    description: 'How many rounds in a row were triggered by a bot, counting back from the most recent. Reset by any round a person asked for'
+    value: ${{ steps.stage.outputs.unattended_rounds }}
+  since:
+    description: 'Timestamp the time-based sources were filtered from - the previous round staged_at, or the pull request creation time on the first round'
+    value: ${{ steps.stage.outputs.since }}
+  staged_at:
+    description: 'Timestamp taken before anything was read. The caller records it in the round comment, and it becomes the next round `since`'
+    value: ${{ steps.stage.outputs.staged_at }}
+  title:
+    description: 'Title of the pull request'
+    value: ${{ steps.stage.outputs.title }}
+
+runs:
+  using: composite
+  steps:
+    # Everything an agent needs to act on a review, written into the checkout as files. The
+    # agent has a shell here, but no network and no token, so it cannot fetch any of this
+    # for itself. Writing it to disk is also what keeps review text out of the calling
+    # workflow: `gh` and `jq` write straight to files, so nothing a reviewer typed is ever
+    # expanded into YAML.
+    - name: Stage the pull request
+      id: stage
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull_request }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+        DIR: ${{ inputs.directory }}
+        ROUND_MARKER: ${{ inputs.round_marker }}
+        REPLY_MARKER: ${{ inputs.reply_marker }}
+        IGNORE_CHECKS: ${{ inputs.ignore_check_patterns }}
+        MAX_ANNOTATIONS: ${{ inputs.max_annotations }}
+      run: |
+        set -o pipefail
+
+        mkdir -p "$DIR"
+
+        # Scratch lives outside the checkout: the calling workflow commits its working tree,
+        # so nothing intermediate belongs in it
+        tmp="$RUNNER_TEMP/ai-stage-pull-request"
+        rm -rf "$tmp"
+        mkdir -p "$tmp"
+
+        # Taken before anything is read, not after. It becomes the next round's watermark,
+        # and a review submitted while this action is running has to land on the next round
+        # rather than falling into the gap between the two.
+        staged_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+        owner=${GH_REPO%%/*}
+        name=${GH_REPO##*/}
+
+        gh api "repos/$GH_REPO/pulls/$PR" --jq '{
+          number, title, state, draft, body,
+          head: .head.ref, base: .base.ref,
+          created_at, url: .html_url,
+          commits, changed_files, additions, deletions
+        }' > "$DIR/pull-request.json"
+
+        title=$(jq -r '.title // ""' "$DIR/pull-request.json" | tr -d '\r\n')
+
+        # The pull request conversation is the issues comment list - Github stores both in
+        # one place, which is also why `gh issue comment` works on a pull request number.
+        gh api --paginate --slurp "repos/$GH_REPO/issues/$PR/comments" \
+          | jq 'flatten' > "$tmp/conversation.json"
+
+        # Each finished round leaves one marker comment behind, carrying its own metadata on
+        # the second line. Those comments are the round history: how many rounds have run,
+        # which of them a person asked for, and where the last one drew its watermark.
+        jq --arg marker "$ROUND_MARKER" '
+          map(select(.user.type == "Bot" and (.body | startswith($marker))))
+          | map(.body
+                | split("\n")
+                | (.[1] // "")
+                | ltrimstr("<!-- ") | rtrimstr(" -->")
+                | (try fromjson catch {}))
+        ' "$tmp/conversation.json" > "$tmp/rounds.json"
+
+        round=$(( $(jq 'length' "$tmp/rounds.json") + 1 ))
+
+        # Consecutive bot-triggered rounds, counting back from the newest. Any round a
+        # person asked for resets this to zero - a human looking at the pull request is
+        # exactly the thing the cap on it exists to wait for. A round whose metadata could
+        # not be parsed counts as unattended, which errs towards stopping rather than
+        # towards looping.
+        unattended_rounds=$(
+          jq 'reverse
+              | (map(.attended) | index(true)) as $i
+              | if $i == null then length else $i end' "$tmp/rounds.json"
+        )
+
+        # Time-based sources are read from the end of the previous round. State-based ones -
+        # review threads and checks - ignore this entirely, because "still unresolved" and
+        # "currently red" are not questions about when something was said.
+        since=$(jq -r 'last | .staged_at // ""' "$tmp/rounds.json")
+        if [[ -z "$since" || "$since" == 'null' ]]; then
+          # First round: the pull request was opened by the initial implementation, so
+          # everything on it is feedback on that
+          since=$(jq -r '.created_at // ""' "$DIR/pull-request.json")
+        fi
+
+        # --- Review threads -------------------------------------------------------------
+        #
+        # Inline comments come from GraphQL rather than REST, because resolution state only
+        # exists there. It is also the only place `isOutdated` lives, which is what says the
+        # code under a comment has since moved.
+        #
+        # The reply endpoint is REST and wants the root comment's databaseId, so that is
+        # asked for in the same query rather than looked up again per thread.
+        gh api graphql \
+          -F owner="$owner" -F name="$name" -F number="$PR" \
+          -f query='
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100) {
+                    totalCount
+                    nodes {
+                      id
+                      isResolved
+                      isOutdated
+                      path
+                      line
+                      originalLine
+                      comments(first: 50) {
+                        nodes {
+                          databaseId
+                          body
+                          createdAt
+                          url
+                          diffHunk
+                          author { login __typename }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }' > "$tmp/threads-raw.json" || echo '{}' > "$tmp/threads-raw.json"
+
+        thread_total=$(jq '.data.repository.pullRequest.reviewThreads.totalCount // 0' "$tmp/threads-raw.json")
+        if [[ "$thread_total" -gt 100 ]]; then
+          echo "::warning title=Review threads truncated::This pull request has $thread_total review threads and only the first 100 were staged"
+        fi
+
+        # Resolution is the reviewer's call, so an unresolved thread is still open work -
+        # with one exception. A thread whose newest comment is a reply this workflow posted
+        # has been answered and is waiting on a person to resolve it. Leaving those in would
+        # have every round re-address the same comment forever. A human replying after the
+        # bot puts the thread back in play, which is what makes the exception safe.
+        jq --arg reply_marker "$REPLY_MARKER" '
+          [ .data.repository.pullRequest.reviewThreads.nodes[]? ]
+          | map(select(.isResolved == false))
+          | map(select((.comments.nodes | length) > 0))
+          | map(select((.comments.nodes | last | .body | startswith($reply_marker)) | not))
+          | map(.comments.nodes[0] as $first | {
+              id: .id,
+              source: "thread",
+              author: ($first.author.login // "unknown"),
+              is_bot: (($first.author.__typename // "") == "Bot"),
+              created_at: $first.createdAt,
+              url: $first.url,
+              anchor: {
+                path: (.path // ""),
+                line: (.line // .originalLine),
+                diff_hunk: ($first.diffHunk // "")
+              },
+              state: (if .isOutdated then "outdated" else "unresolved" end),
+              reply_target: $first.databaseId,
+              text: (.comments.nodes
+                     | map("@" + (.author.login // "unknown") + " wrote:\n" + (.body // ""))
+                     | join("\n\n"))
+            })
+        ' "$tmp/threads-raw.json" > "$tmp/threads.json"
+
+        # --- Review bodies --------------------------------------------------------------
+        #
+        # The summary a reviewer types above their inline comments. Its state matters as
+        # much as its text: `changes_requested` is a decision, `commented` is a remark, and
+        # an `approved` review with a body is usually a nit the author may take or leave.
+        #
+        # Note the case. The webhook that triggered this reports `changes_requested`, but
+        # REST reports `CHANGES_REQUESTED` - these are lowercased so a caller comparing the
+        # two does not silently never match.
+        gh api --paginate --slurp "repos/$GH_REPO/pulls/$PR/reviews" \
+          | jq --arg since "$since" '
+              flatten
+              | map(select(.state != "PENDING"))
+              | map(select(((.body // "") | gsub("\\s"; "") | length) > 0))
+              | map(select((.submitted_at // "") > $since))
+              | map({
+                  id: ("review-" + (.id | tostring)),
+                  source: "review",
+                  author: (.user.login // "unknown"),
+                  is_bot: ((.user.type // "") == "Bot"),
+                  created_at: .submitted_at,
+                  url: (.html_url // ""),
+                  anchor: null,
+                  state: (.state // "" | ascii_downcase),
+                  reply_target: null,
+                  text: .body
+                })' > "$tmp/reviews.json"
+
+        # --- Conversation comments ------------------------------------------------------
+        #
+        # Anything said in the pull request conversation since the last round, including the
+        # comment that triggered this run - a `/ai-do` with instructions after it is
+        # feedback, and dropping the text after the command would throw those away. The
+        # workflow's own round comments are filtered out, or it would read its own summaries
+        # back as requests.
+        jq --arg since "$since" --arg marker "$ROUND_MARKER" '
+          map(select((.created_at // "") > $since))
+          | map(select((.body | startswith($marker)) | not))
+          | map({
+              id: ("comment-" + (.id | tostring)),
+              source: "comment",
+              author: (.user.login // "unknown"),
+              is_bot: ((.user.type // "") == "Bot"),
+              created_at: .created_at,
+              url: (.html_url // ""),
+              anchor: null,
+              state: null,
+              reply_target: null,
+              text: .body
+            })' "$tmp/conversation.json" > "$tmp/comments.json"
+
+        # --- Failing checks -------------------------------------------------------------
+        #
+        # Read on every round rather than triggered on, so each round accounts for whatever
+        # is red right now with no extra event and no race against a suite still running.
+        #
+        # `checks: read` may not be granted, and a missing permission here should cost the
+        # review feedback nothing - an empty check list is a worse run, not a failed one.
+        if ! gh api --paginate --slurp "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" \
+             | jq 'map(.check_runs) | flatten' > "$tmp/check-runs.json"; then
+          echo "::warning title=Checks unreadable::Could not read the check runs for $HEAD_SHA - continuing without them. The job needs `checks: read`"
+          echo '[]' > "$tmp/check-runs.json"
+        fi
+
+        # The AI workflows report their own check runs on this very commit. Without this the
+        # previous round's red status arrives as a code defect to fix, and the agent spends
+        # a round chasing its own tail.
+        jq --arg ignore "$IGNORE_CHECKS" '
+          map(select((.name // "") | test($ignore; "i") | not))
+        ' "$tmp/check-runs.json" > "$tmp/checks-considered.json"
+
+        # Not "green" - only "not known to be red". Said out loud in the staged data,
+        # because an agent that reads an empty failure list ten seconds after a push will
+        # otherwise report the branch as passing.
+        checks_pending=$(jq '[.[] | select(.status != "completed")] | length' "$tmp/checks-considered.json")
+
+        jq '[.[] | select(.conclusion == "failure"
+                          or .conclusion == "timed_out"
+                          or .conclusion == "action_required")]' \
+          "$tmp/checks-considered.json" > "$tmp/failing-checks.json"
+
+        # Annotations are a separate request per check run, and they are the useful part -
+        # they carry the file and line, which is what makes a broken linter as actionable as
+        # a review comment.
+        echo '{}' > "$tmp/annotations.json"
+        while read -r id; do
+          [[ -z "$id" ]] && continue
+          if gh api --paginate --slurp "repos/$GH_REPO/check-runs/$id/annotations" \
+             | jq 'flatten' > "$tmp/one-annotation-set.json"; then
+            :
+          else
+            echo '[]' > "$tmp/one-annotation-set.json"
+          fi
+          jq --arg id "$id" --slurpfile set "$tmp/one-annotation-set.json" \
+            '. + {($id): ($set[0] // [])}' "$tmp/annotations.json" > "$tmp/annotations.next"
+          mv "$tmp/annotations.next" "$tmp/annotations.json"
+        done < <(jq -r '.[].id' "$tmp/failing-checks.json")
+
+        # A failing check becomes one feedback item rather than one per annotation. Hundreds
+        # of lint errors would otherwise bury every human comment in the list, and the agent
+        # has a shell to run the linter again for the full set.
+        #
+        # `reply_target` is null: a check run has no thread to answer, so what the agent did
+        # about it is covered in the round summary instead.
+        jq --slurpfile ann "$tmp/annotations.json" --argjson max "$MAX_ANNOTATIONS" '
+          map(. as $c
+              | (($ann[0][($c.id | tostring)]) // []) as $a
+              | {
+                  id: ("check-" + ($c.id | tostring)),
+                  source: "check",
+                  author: ($c.app.slug // "ci"),
+                  is_bot: true,
+                  created_at: ($c.completed_at // $c.started_at // ""),
+                  url: ($c.html_url // ""),
+                  anchor: null,
+                  state: ($c.conclusion // "failure"),
+                  reply_target: null,
+                  text: (
+                    "Check `" + ($c.name // "unnamed") + "` reported `" + ($c.conclusion // "failure") + "`."
+                    + (if (($c.output.title // "") | length) > 0
+                       then "\n\n" + $c.output.title else "" end)
+                    + (if (($c.output.summary // "") | length) > 0
+                       then "\n\n" + ($c.output.summary | .[0:4000]) else "" end)
+                    + (if ($a | length) > 0
+                       then "\n\nAnnotations:\n"
+                            + ($a[0:$max]
+                               | map("- " + (.path // "?")
+                                     + ":" + ((.start_line // 0) | tostring)
+                                     + " " + (.annotation_level // "")
+                                     + ": " + ((.message // "") | gsub("\\s+"; " ") | .[0:500]))
+                               | join("\n"))
+                            + (if ($a | length) > $max
+                               then "\n- ... and " + ((($a | length) - $max) | tostring)
+                                    + " more, run the check yourself for the rest"
+                               else "" end)
+                       else "" end)
+                  )
+                })' "$tmp/failing-checks.json" > "$tmp/checks.json"
+
+        # --- One list -------------------------------------------------------------------
+        #
+        # Every source normalised to the same shape and sorted oldest first, so the agent
+        # reads one file and the next source to arrive - a reviewing agent, a different kind
+        # of check - is one more entry in this concatenation and nothing else.
+        jq -s 'add | sort_by(.created_at // "")' \
+          "$tmp/threads.json" "$tmp/reviews.json" "$tmp/comments.json" "$tmp/checks.json" \
+          > "$DIR/feedback.json"
+
+        thread_count=$(jq 'length' "$tmp/threads.json")
+        check_count=$(jq 'length' "$tmp/checks.json")
+        feedback_count=$(jq 'length' "$DIR/feedback.json")
+
+        has_feedback='false'
+        [[ "$feedback_count" -gt 0 ]] && has_feedback='true'
+
+        # Written once each - a key repeated in $GITHUB_OUTPUT has no defined winner
+        {
+          printf 'has_feedback=%s\n' "$has_feedback"
+          printf 'feedback_count=%s\n' "$feedback_count"
+          printf 'thread_count=%s\n' "$thread_count"
+          printf 'check_count=%s\n' "$check_count"
+          printf 'checks_pending=%s\n' "$checks_pending"
+          printf 'round=%s\n' "$round"
+          printf 'unattended_rounds=%s\n' "$unattended_rounds"
+          printf 'since=%s\n' "$since"
+          printf 'staged_at=%s\n' "$staged_at"
+          printf 'title=%s\n' "$title"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "Staged pull request #$PR round $round: $feedback_count feedback item(s)" \
+             "- $thread_count unresolved thread(s), $check_count failing check(s)," \
+             "$checks_pending check(s) still running. Watermark $since, $unattended_rounds" \
+             "unattended round(s) behind us."

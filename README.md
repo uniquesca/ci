@@ -3,6 +3,7 @@
 This repository is Uniques CI framework. It is heavily based on Github Actions platform and contains:
 * Reusable workflows and actions:
   * [AI](docs/ai.md)
+  * [QA Checks](docs/qa-checks.md)
 * Actions
 * Base docker images for Uniques projects
 

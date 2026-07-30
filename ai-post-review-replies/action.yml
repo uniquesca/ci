@@ -1,0 +1,147 @@
+name: AI post review replies
+
+description: Post the implementing agent's answer to each review thread it was given, from a file the agent wrote
+
+inputs:
+  pull_request:
+    description: 'Number of the pull request the replies belong to'
+    required: true
+  repository:
+    description: 'Repository the pull request belongs to, in owner/name form'
+    required: true
+  token:
+    description: 'Github token used to post the replies. Needs `pull-requests: write`'
+    required: true
+  replies_file:
+    description: 'File the agent wrote, a JSON array of `{reply_target, body}`. Nothing is posted when it is missing, which is not an error - an agent that answered in its summary alone is a worse round, not a failed one'
+    required: false
+    default: '.ai-review/replies.json'
+  feedback_file:
+    description: 'The staged feedback the agent was given. Every `reply_target` has to appear in it, which is what stops a made-up or copied identifier being posted to'
+    required: false
+    default: '.ai-review/feedback.json'
+  marker:
+    description: 'Hidden first line added to every reply. It is what later rounds use to tell a thread the agent has already answered from one still waiting for it, so it has to match what the stager looks for'
+    required: false
+    default: '<!-- ai-implement-reply -->'
+  max_replies:
+    description: 'How many replies may be posted in one round'
+    required: false
+    default: 50
+  max_length:
+    description: 'Longest reply body, in characters. Anything over is truncated rather than dropped'
+    required: false
+    default: 4000
+
+outputs:
+  posted:
+    description: 'How many replies were posted'
+    value: ${{ steps.reply.outputs.posted }}
+  skipped:
+    description: 'How many entries were rejected - a duplicate, or a target that was not in the staged feedback'
+    value: ${{ steps.reply.outputs.skipped }}
+
+runs:
+  using: composite
+  steps:
+    # The agent cannot post anything itself - it has no token, and it is told not to try. It
+    # writes what it wants to say to a file instead, and this posts it. That keeps the same
+    # shape as the input side: the workflow talks to the agent through files in the
+    # checkout, so the agent talks back the same way.
+    #
+    # Nothing here fails the run. By the time this executes the work is already committed and
+    # pushed, and a rejected reply must not turn a good round red.
+    - name: Post the review replies
+      id: reply
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull_request }}
+        REPLIES_FILE: ${{ inputs.replies_file }}
+        FEEDBACK_FILE: ${{ inputs.feedback_file }}
+        MARKER: ${{ inputs.marker }}
+        MAX_REPLIES: ${{ inputs.max_replies }}
+        MAX_LENGTH: ${{ inputs.max_length }}
+      run: |
+        posted=0
+        skipped=0
+
+        finish() {
+          {
+            printf 'posted=%s\n' "$posted"
+            printf 'skipped=%s\n' "$skipped"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        if [[ ! -f "$REPLIES_FILE" ]]; then
+          echo "The agent wrote no $REPLIES_FILE, so there is nothing to reply with"
+          finish
+        fi
+
+        tmp="$RUNNER_TEMP/ai-post-review-replies"
+        rm -rf "$tmp"
+        mkdir -p "$tmp"
+
+        if ! jq -e 'type == "array"' "$REPLIES_FILE" > /dev/null 2>&1; then
+          echo "::warning title=Replies unusable::$REPLIES_FILE is not a JSON array - see the round summary for what the agent did instead"
+          finish
+        fi
+
+        if [[ ! -f "$FEEDBACK_FILE" ]]; then
+          echo "::warning title=No staged feedback::$FEEDBACK_FILE is missing, so no reply target can be verified and nothing is posted"
+          finish
+        fi
+
+        # The agent read a pull request body and review comments that any collaborator can
+        # write, so what it hands back is untreated input. A reply is only posted to a thread
+        # that was actually staged for this run: the reply endpoint is scoped to this pull
+        # request, so a wrong identifier fails rather than posting somewhere unexpected, but
+        # there is no reason to try it in the first place.
+        #
+        # Duplicates are dropped in the order the agent wrote them, so one thread gets one
+        # answer.
+        jq --slurpfile feedback "$FEEDBACK_FILE" \
+           --argjson max_replies "$MAX_REPLIES" \
+           --argjson max_length "$MAX_LENGTH" '
+          ($feedback[0] | map(.reply_target) | map(select(. != null))) as $allowed
+          | map(select((.reply_target | type) == "number"))
+          | map(select(.reply_target as $t | $allowed | index($t) != null))
+          | map(select((.body | type) == "string"))
+          | map(select((.body | gsub("\\s"; "") | length) > 0))
+          | reduce .[] as $r ([];
+              if any(.[]; .reply_target == $r.reply_target) then . else . + [$r] end)
+          | map({reply_target, body: (.body | .[0:$max_length])})
+          | .[0:$max_replies]
+        ' "$REPLIES_FILE" > "$tmp/valid.json"
+
+        wanted=$(jq 'length' "$REPLIES_FILE")
+        valid=$(jq 'length' "$tmp/valid.json")
+        skipped=$(( wanted - valid ))
+
+        if [[ "$skipped" -gt 0 ]]; then
+          echo "::warning title=Replies rejected::$skipped of $wanted replies the agent wrote were not posted - a duplicate thread, an empty body, or a target that was not staged for this round"
+        fi
+
+        # Bodies are moved from file to request by jq alone. A review comment can hold
+        # anything, including quoted shell, and none of it is ever a shell word here.
+        for (( i = 0; i < valid; i++ )); do
+          target=$(jq -r ".[$i].reply_target" "$tmp/valid.json")
+
+          jq -n --slurpfile v "$tmp/valid.json" --arg marker "$MARKER" --argjson i "$i" \
+            '{body: ($marker + "\n\n" + $v[0][$i].body)}' > "$tmp/payload.json"
+
+          if gh api --method POST \
+               "repos/$GH_REPO/pulls/$PR/comments/$target/replies" \
+               --input "$tmp/payload.json" --silent 2> "$tmp/error.log"; then
+            posted=$(( posted + 1 ))
+          else
+            skipped=$(( skipped + 1 ))
+            echo "::warning title=Reply failed::Could not reply to review comment $target"
+            cat "$tmp/error.log"
+          fi
+        done
+
+        echo "Posted $posted repl(ies) on pull request #$PR, skipped $skipped"
+        finish

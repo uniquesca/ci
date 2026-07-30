@@ -8,7 +8,7 @@ on:
         required: true
     inputs:
       command:
-        description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment'
+        description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round of it'
         required: false
         default: '/ai-do'
         type: string
@@ -17,8 +17,13 @@ on:
         required: false
         default: 'admin write'
         type: string
+      allowed_bots:
+        description: 'Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back'
+        required: false
+        default: 'github-actions[bot]'
+        type: string
       timeout_minutes:
-        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so on the issue'
+        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so'
         required: false
         default: 65
         type: number
@@ -33,14 +38,24 @@ on:
         default: 60
         type: number
       model:
-        description: 'Model used to implement the plan'
+        description: 'Model used to implement the plan and to act on review feedback'
         required: false
         default: 'claude-opus-4-8'
         type: string
       branch_prefix:
-        description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what makes a re-run update the same pull request instead of opening another'
+        description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
         required: false
         default: 'ai-implement/'
+        type: string
+      max_unattended_rounds:
+        description: 'How many rounds in a row a bot may trigger before a person has to look. Rounds a person asked for are not counted and reset this to zero. Without a bound, a reviewing agent and this one can hand work back and forth until the API key runs dry'
+        required: false
+        default: 5
+        type: number
+      ignore_check_patterns:
+        description: 'Case-insensitive regular expression matching check runs to leave out of the feedback. The AI workflows report their own check runs on the same commit, and a run that reads its own red status back as a code defect goes in circles'
+        required: false
+        default: '(ai.implement|ai.plan)'
         type: string
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
@@ -51,80 +66,298 @@ on:
 jobs:
   implement:
     name: Implement the plan
-    # Only react to a fresh comment on a real issue that starts with the command
+    # Three ways in, two of which are new. `/ai-do` on an issue starts the work. `/ai-do` on
+    # the pull request runs another round of it. A submitted review asking for changes runs a
+    # round without anybody typing a command - which is the whole point, because that review
+    # may come from an agent.
+    #
+    # The webhook reports `changes_requested`, while the REST API reports
+    # `CHANGES_REQUESTED` for the same review. It does not matter here, because `==` in a
+    # Github expression is case-insensitive - but it matters anywhere the two are compared in
+    # bash or jq, which is why the staging action lowercases what it reads from REST.
+    #
+    # An `approved` or `commented` review deliberately does nothing. Requesting changes is a
+    # decision, and it batches every inline comment in that review into one round.
     if: >-
-      ${{ github.event_name == 'issue_comment'
-      && github.event.action == 'created'
-      && !github.event.issue.pull_request
-      && startsWith(github.event.comment.body, inputs.command) }}
+      ${{ (github.event_name == 'issue_comment'
+           && github.event.action == 'created'
+           && startsWith(github.event.comment.body, inputs.command))
+          || (github.event_name == 'pull_request_review'
+              && github.event.action == 'submitted'
+              && github.event.review.state == 'changes_requested') }}
     runs-on: ubuntu-latest
     # Github expressions have no arithmetic, so this cannot be derived from the agent's
     # budget - the two are separate inputs, and the defaults leave five minutes between
     # them. That gap matters: a job timeout cancels every remaining step, so if the agent
     # were allowed to run right up to it, it would take the failure comment down with it
-    # and the issue would hear nothing at all.
+    # and nothing would be said anywhere.
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    # Two rounds on one pull request must not run at once - they would push over each other
+    # on the same branch. Queued rather than cancelled, so the second round starts from what
+    # the first one pushed. Issues and pull requests share one numbering sequence, so this
+    # group cannot collide between the two.
+    concurrency:
+      group: ai-implement-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
     permissions:
       # Wider than the planner needs, because this one pushes a branch and opens a pull
       # request. It never writes to the default branch: everything lands on a branch of
-      # its own, behind a pull request somebody has to review.
+      # its own, behind a pull request somebody has to review and merge.
       contents: write
       issues: write
       pull-requests: write
+      # Failing checks are part of the feedback, and their annotations are what make a broken
+      # linter as actionable as a review comment. Without this the checks are simply staged
+      # as an empty list.
+      checks: read
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      ISSUE: ${{ github.event.issue.number }}
-      COMMENTER: ${{ github.event.comment.user.login }}
-      # One branch per issue, which is the whole reason a re-run updates the existing pull
-      # request rather than opening a second one
-      BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
+      # Any guard below can set this to false in $GITHUB_ENV, and every step after it stands
+      # down. A job cannot stop itself early without failing, and failing is wrong for most
+      # of what the guards catch - running the command too early, or on the wrong pull
+      # request, is not a CI error.
+      PROCEED: 'true'
+      # Shared with the staging and reply actions, which look for exactly these. The round
+      # marker is how a later round finds the previous one; the reply marker is how it tells
+      # a thread the agent has answered from one still waiting.
+      ROUND_MARKER: '<!-- ai-implement-round -->'
+      REPLY_MARKER: '<!-- ai-implement-reply -->'
     steps:
-      - name: Check the commenter permissions
+      # Two event shapes carry the same work, and nothing below should have to care which one
+      # it got. Everything after this reads these outputs rather than `github.event`, which is
+      # also where the next trigger - a reviewing agent, a red suite - will slot in.
+      - name: Work out what this run is
+        id: event
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          # Github sets this object only on a comment that belongs to a pull request. It is
+          # the only thing separating the two `issue_comment` cases.
+          IS_PULL_REQUEST: ${{ github.event.issue.pull_request != null }}
+          COMMENT_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_ACTOR: ${{ github.event.comment.user.login }}
+          COMMENT_ACTOR_TYPE: ${{ github.event.comment.user.type }}
+          REVIEW_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_ACTOR: ${{ github.event.review.user.login }}
+          REVIEW_ACTOR_TYPE: ${{ github.event.review.user.type }}
+        run: |
+          if [[ "$EVENT_NAME" == 'pull_request_review' ]]; then
+            mode='round'; trigger='review'
+            pull_request="$REVIEW_NUMBER"; issue=''
+            actor="$REVIEW_ACTOR"; actor_type="$REVIEW_ACTOR_TYPE"
+          elif [[ "$IS_PULL_REQUEST" == 'true' ]]; then
+            mode='round'; trigger='pr-command'
+            pull_request="$COMMENT_NUMBER"; issue=''
+            actor="$COMMENT_ACTOR"; actor_type="$COMMENT_ACTOR_TYPE"
+          else
+            mode='initial'; trigger='issue-command'
+            pull_request=''; issue="$COMMENT_NUMBER"
+            actor="$COMMENT_ACTOR"; actor_type="$COMMENT_ACTOR_TYPE"
+          fi
+
+          # A round a person asked for is attended, and an attended round resets the cap on
+          # unattended ones. This is the only thing that distinguishes the two, and it is
+          # deliberately about who triggered the round rather than who wrote the feedback: a
+          # person acting on an agent's review is still a person looking at the work.
+          attended='true'
+          [[ "$actor_type" == 'Bot' ]] && attended='false'
+
+          # Where anything said about this run goes. On a pull request the conversation is
+          # the issues comment list - Github stores both in one place, which is why
+          # `gh issue comment` works on a pull request number.
+          target="${pull_request:-$issue}"
+
+          {
+            printf 'mode=%s\n' "$mode"
+            printf 'trigger=%s\n' "$trigger"
+            printf 'pull_request=%s\n' "$pull_request"
+            printf 'issue=%s\n' "$issue"
+            printf 'actor=%s\n' "$actor"
+            printf 'attended=%s\n' "$attended"
+            printf 'target=%s\n' "$target"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "$mode run on #$target, triggered by $trigger from @$actor (attended: $attended)"
+
+      - name: Check the actor is allowed to run this
         id: permissions
         env:
           ALLOWED: ${{ inputs.allowed_permissions }}
+          ALLOWED_BOTS: ${{ inputs.allowed_bots }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          ATTENDED: ${{ steps.event.outputs.attended }}
         run: |
-          if permission=$(gh api "repos/$GH_REPO/collaborators/$COMMENTER/permission" --jq '.permission' 2> error.log); then
-            echo "@$COMMENTER has the '$permission' permission in $GH_REPO"
+          allowed='false'
+
+          if [[ "$ATTENDED" == 'false' ]]; then
+            # The collaborators API has no answer for a bot - it 404s, which would read as
+            # "not allowed" and make an agent-triggered round impossible. Bots are checked
+            # against an explicit list of logins instead.
+            permission='bot'
+            for login in $ALLOWED_BOTS; do
+              if [[ "$ACTOR" == "$login" ]]; then
+                allowed='true'
+                break
+              fi
+            done
+          elif permission=$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission' 2> error.log); then
+            echo "@$ACTOR has the '$permission' permission in $GH_REPO"
+            for level in $ALLOWED; do
+              if [[ "$permission" == "$level" ]]; then
+                allowed='true'
+                break
+              fi
+            done
           elif grep -q 'Not Found' error.log; then
             # Not a collaborator at all - expected, no permission to run the command
             permission='none'
           else
             # Anything other than a 404 is a real failure, do not silently treat it as a refusal
             cat error.log
-            echo "::error title=Permission check failed::Could not read the permissions of @$COMMENTER"
+            echo "::error title=Permission check failed::Could not read the permissions of @$ACTOR"
             exit 1
           fi
-
-          allowed='false'
-          for level in $ALLOWED; do
-            if [[ "$permission" == "$level" ]]; then
-              allowed='true'
-              break
-            fi
-          done
 
           echo "permission=$permission" >> "$GITHUB_OUTPUT"
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
-      # Refusals stop the job, so the steps below only ever run for an allowed commenter.
-      # This gate is what keeps an agent with a shell and write access out of the hands of
-      # anyone who can merely comment on an issue.
+      # Refusals stop the job, so the steps below only ever run for an allowed actor. This
+      # gate is what keeps an agent with a shell and write access out of the hands of anyone
+      # who can merely comment on an issue or leave a review.
       - name: Refuse the request
         if: ${{ steps.permissions.outputs.allowed != 'true' }}
         env:
           COMMAND: ${{ inputs.command }}
           PERMISSION: ${{ steps.permissions.outputs.permission }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          TARGET: ${{ steps.event.outputs.target }}
         run: |
-          gh issue comment "$ISSUE" --body "@$COMMENTER you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you."
-          echo "::error title=Permission denied::@$COMMENTER ($PERMISSION) is not allowed to run $COMMAND"
+          gh issue comment "$TARGET" --body "@$ACTOR you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you."
+          echo "::error title=Permission denied::@$ACTOR ($PERMISSION) is not allowed to run $COMMAND"
           exit 1
 
+      # A round works on a branch this workflow pushed, and on no other. Both new triggers
+      # fire on pull requests nobody here created - including pull requests from forks, which
+      # `issue_comment` and `pull_request_review` run with a write token and full access to
+      # secrets. Checking out fork code and handing it a shell with ANTHROPIC_API_KEY in the
+      # environment is exactly what this step exists to prevent.
+      - name: Resolve the pull request
+        id: pull_request
+        if: ${{ success() && steps.event.outputs.mode == 'round' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request }}
+          PREFIX: ${{ inputs.branch_prefix }}
+          TRIGGER: ${{ steps.event.outputs.trigger }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          gh pr view "$PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
+            > "$RUNNER_TEMP/pull-request.json"
+
+          state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
+          head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pull-request.json")
+          head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
+
+          reason=''
+          if [[ "$head_repo" != "$GH_REPO" ]]; then
+            reason="its branch lives in \`$head_repo\` rather than in this repository"
+          elif [[ "$head_ref" != "$PREFIX"* ]]; then
+            reason="its branch \`$head_ref\` was not created by this workflow"
+          elif [[ "$state" != 'OPEN' ]]; then
+            reason="it is $(echo "$state" | tr '[:upper:]' '[:lower:]')"
+          fi
+
+          if [[ -n "$reason" ]]; then
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+
+            # A review is a broad trigger: it fires on every pull request in the repository,
+            # most of which have nothing to do with this workflow. Saying so on each one
+            # would be noise on somebody else's review. An explicit command is different -
+            # a person asked, and deserves an answer.
+            if [[ "$TRIGGER" == 'pr-command' ]]; then
+              gh issue comment "$PR" --body "@$ACTOR I cannot run \`$COMMAND\` on this pull request - $reason. This command only continues work this workflow started, on a \`$PREFIX\` branch of this repository."
+            fi
+
+            echo "Standing down on #$PR: $reason"
+            exit 0
+          fi
+
+          # The branch name carries the issue number, which is what lets a round read the
+          # plan it is still working to. Derived rather than looked up in the pull request
+          # body, because the branch is this workflow's own construction and the body is
+          # editable prose.
+          issue="${head_ref##*issue-}"
+          if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
+            exit 1
+          fi
+
+          {
+            printf 'issue=%s\n' "$issue"
+            printf 'branch=%s\n' "$head_ref"
+            printf 'head_sha=%s\n' "$(jq -r '.headRefOid' "$RUNNER_TEMP/pull-request.json")"
+            printf 'base=%s\n' "$(jq -r '.baseRefName' "$RUNNER_TEMP/pull-request.json")"
+            printf 'title=%s\n' "$(jq -r '.title' "$RUNNER_TEMP/pull-request.json" | tr -d '\r\n')"
+            printf 'url=%s\n' "$(jq -r '.url' "$RUNNER_TEMP/pull-request.json")"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Round on #$PR, branch $head_ref, implementing issue #$issue"
+
+      # Once there is a pull request, that is where the work continues. Running the command
+      # on the issue again would push a round nobody can review in place, and split the
+      # conversation across two threads.
+      - name: Send the issue to its pull request
+        id: existing
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
+        env:
+          ISSUE: ${{ steps.event.outputs.issue }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          COMMAND: ${{ inputs.command }}
+          BRANCH: ${{ inputs.branch_prefix }}issue-${{ steps.event.outputs.issue }}
+        run: |
+          gh pr list --head "$BRANCH" --state all --json number,state,url \
+            --jq 'sort_by(.number) | last // {}' > "$RUNNER_TEMP/existing.json"
+
+          state=$(jq -r '.state // ""' "$RUNNER_TEMP/existing.json")
+          url=$(jq -r '.url // ""' "$RUNNER_TEMP/existing.json")
+
+          # Multi-line bodies are built up in a file rather than written as one quoted
+          # argument. A quoted string laid out to match this script's indentation puts several
+          # spaces in front of every line after the first, and four spaces in markdown is a
+          # code block.
+          case "$state" in
+            OPEN)
+              {
+                printf '@%s the work for this issue is already open at %s, so this is not the place to ask for changes any more.\n\n' "$ACTOR" "$url"
+                printf 'Review it there: comment on the lines you want changed and submit the review as **Request changes**, and another round starts by itself. `%s` works in that pull request too, if you would rather just say what you want and run it.\n\n' "$COMMAND"
+                printf 'This issue is still where the plan lives. If the approach itself is wrong rather than the code, run `/ai-plan` here to revise it - the next round will pick the revision up.\n'
+              } > "$RUNNER_TEMP/redirect.md"
+              gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/redirect.md"
+              echo "PROCEED=false" >> "$GITHUB_ENV"
+              echo "Issue #$ISSUE already has an open pull request at $url"
+              ;;
+            MERGED)
+              gh issue comment "$ISSUE" --body "@$ACTOR the work for this issue was already merged in $url, so there is nothing here to implement again. Open a new issue for what you want next."
+              echo "PROCEED=false" >> "$GITHUB_ENV"
+              echo "Issue #$ISSUE was already implemented and merged in $url"
+              ;;
+            CLOSED)
+              # Somebody abandoned the previous attempt. Starting over is reasonable, and the
+              # closed pull request is reopened later rather than a second one being opened
+              # alongside it.
+              echo "reopen=$(jq -r '.number' "$RUNNER_TEMP/existing.json")" >> "$GITHUB_OUTPUT"
+              echo "Reviving the closed pull request $url for issue #$ISSUE"
+              ;;
+            *)
+              echo "Issue #$ISSUE has no pull request yet"
+              ;;
+          esac
+
       # Full history rather than a shallow clone: this pushes to a branch that may already
-      # exist from an earlier run, and a shallow clone makes that awkward.
+      # exist from an earlier round, and a shallow clone makes that awkward.
       - name: Check out the repository
+        if: ${{ success() && env.PROCEED == 'true' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -135,36 +368,103 @@ jobs:
           # pushing anything itself, however it is asked to.
           persist-credentials: false
 
-      # The agent has no network of its own, so the issue is fetched for it. This is also
-      # why the issue body never reaches this file: `gh` writes it straight to disk, so
-      # nothing written by whoever opened the issue is ever expanded into the workflow.
+      # The plan is the specification in both modes, and it lives on the issue in exactly one
+      # copy. A round reads it too: the code under review is meant to implement it, and a
+      # revised plan has to reach the next round without anybody copying it anywhere.
       - name: Stage the issue and its plan
-        id: stage
+        id: stage_issue
+        if: ${{ success() && env.PROCEED == 'true' }}
         uses: uniquesca/ci/ai-stage-issue@main
         with:
-          issue: ${{ github.event.issue.number }}
+          issue: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # No plan is not a failure - the command was simply run too early. Say so and stop.
-      #
-      # Every `if` from here down carries `success()`. An explicit condition replaces the
-      # implicit one Github applies, so without it a step would keep running after an
-      # earlier one failed - which for the commit and push below would mean pushing
-      # half-finished work.
+      # No plan is not a failure - the command was simply run too early. Only the first run
+      # needs one: by the time there is a pull request the work exists, and a plan somebody
+      # has since deleted should not stop a review being acted on.
       - name: Make sure there is a plan to implement
-        if: ${{ success() && steps.stage.outputs.has_plan != 'true' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.stage_issue.outputs.has_plan != 'true' }}
         env:
+          ISSUE: ${{ steps.event.outputs.issue }}
+          ACTOR: ${{ steps.event.outputs.actor }}
           COMMAND: ${{ inputs.command }}
         run: |
-          gh issue comment "$ISSUE" --body "@$COMMENTER there is no plan on this issue yet, so there is nothing to implement. Run \`/ai-plan\` first, review the plan it posts, then run \`$COMMAND\` again."
+          gh issue comment "$ISSUE" --body "@$ACTOR there is no plan on this issue yet, so there is nothing to implement. Run \`/ai-plan\` first, review the plan it posts, then run \`$COMMAND\` again."
+          echo "PROCEED=false" >> "$GITHUB_ENV"
           echo "Issue #$ISSUE has no plan comment, nothing to implement"
 
-      # Re-running has to build on the previous attempt rather than start over, so an
-      # existing branch is checked out and the agent works on top of it.
+      # Everything asking for a change, from every source, normalised into one list. This is
+      # the round's actual input.
+      - name: Stage the review feedback
+        id: stage_pr
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
+        uses: uniquesca/ci/ai-stage-pull-request@main
+        with:
+          pull_request: ${{ steps.event.outputs.pull_request }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          head_sha: ${{ steps.pull_request.outputs.head_sha }}
+          round_marker: ${{ env.ROUND_MARKER }}
+          reply_marker: ${{ env.REPLY_MARKER }}
+          ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
+
+      # An empty review, or a command run when everything has already been dealt with. Not a
+      # failure, and worth saying rather than starting an agent with nothing to give it.
+      - name: Make sure there is feedback to act on
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.stage_pr.outputs.has_feedback != 'true' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          SINCE: ${{ steps.stage_pr.outputs.since }}
+        run: |
+          {
+            printf '@%s I could not find anything to act on: no unresolved review thread, nothing said since %s, and no failing check.\n\n' "$ACTOR" "$SINCE"
+            printf 'If you left inline comments, submit the review so they become visible. A thread the agent has already answered stays out of the way until somebody replies to it again or resolves it.\n'
+          } > "$RUNNER_TEMP/nothing-to-do.md"
+          gh issue comment "$PR" --body-file "$RUNNER_TEMP/nothing-to-do.md"
+          echo "PROCEED=false" >> "$GITHUB_ENV"
+          echo "Nothing to act on for #$PR"
+
+      # A person asking for another round is bounded by their own patience. A bot asking is
+      # not: a reviewing agent and this one will hand work back and forth for as long as the
+      # API key lasts. Rounds a person asked for reset the count, so this only ever stops a
+      # machine talking to a machine.
+      - name: Make sure a person is still in the loop
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.attended == 'false'
+          && steps.stage_pr.outputs.unattended_rounds >= inputs.max_unattended_rounds }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          ROUNDS: ${{ steps.stage_pr.outputs.unattended_rounds }}
+          MAX: ${{ inputs.max_unattended_rounds }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          {
+            printf 'Stopping here: the last %s rounds on this pull request all came from a bot, and the limit is %s. @%s asked for another one and it has not been started.\n\n' "$ROUNDS" "$MAX" "$ACTOR"
+            printf 'Something needs a person to look - when a machine asks this many times in a row, the feedback and the change are usually talking past each other. Read the last few rounds, then either say what you want and run `%s` here, or submit a review yourself. Either one resets the count.\n' "$COMMAND"
+          } > "$RUNNER_TEMP/loop-stopped.md"
+          gh issue comment "$PR" --body-file "$RUNNER_TEMP/loop-stopped.md"
+          echo "PROCEED=false" >> "$GITHUB_ENV"
+          echo "::warning title=Unattended round limit reached::$ROUNDS unattended rounds on #$PR, limit is $MAX"
+
+      # Both modes work on the same branch, created on the first run and continued on every
+      # one after. A round is always continuing something, so this normally takes the fetch
+      # path.
       - name: Prepare the branch
         id: branch
-        if: ${{ success() && steps.stage.outputs.has_plan == 'true' }}
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          BRANCH: ${{ steps.pull_request.outputs.branch || format('{0}issue-{1}', inputs.branch_prefix, steps.event.outputs.issue) }}
         run: |
           # The credential goes on the command line of the one command that needs it, the
           # same header `actions/checkout` would otherwise leave in .git/config
@@ -176,8 +476,8 @@ jobs:
             git -c http.extraheader="AUTHORIZATION: basic $auth" \
               fetch --no-tags origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
             git checkout -B "$BRANCH" "refs/remotes/origin/$BRANCH"
-            # What the agent's work is measured against, so a run that changes nothing can
-            # say so instead of opening an empty pull request
+            # What the agent's work is measured against, so a round that changes nothing can
+            # say so instead of pushing an empty commit
             compare_ref="refs/remotes/origin/$BRANCH"
           else
             echo "Starting $BRANCH from $(git rev-parse --short HEAD)"
@@ -185,23 +485,26 @@ jobs:
             git checkout -b "$BRANCH"
           fi
 
-          # Local-only and never committed, so the staged issue cannot end up in the branch
-          # however the agent leaves the working tree
-          echo '/.ai-plan/' >> .git/info/exclude
+          # Local-only and never committed, so neither the staged input nor the agent's
+          # replies can end up in the branch however it leaves the working tree
+          printf '/.ai-plan/\n/.ai-review/\n' >> .git/info/exclude
 
           git config --local user.name 'github-actions[bot]'
           git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          printf 'compare_ref=%s\n' "$compare_ref" >> "$GITHUB_OUTPUT"
+          {
+            printf 'compare_ref=%s\n' "$compare_ref"
+            printf 'branch=%s\n' "$BRANCH"
+          } >> "$GITHUB_OUTPUT"
 
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
       # workflow. Only the issue number goes in, which Github restricts to digits.
       - name: Implement the plan
-        id: implement
-        if: ${{ success() && steps.stage.outputs.has_plan == 'true' }}
+        id: implement_initial
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
         # The agent's own budget, below the job's, so running over fails this step and
-        # leaves the steps after it to explain that on the issue
+        # leaves the steps after it to explain that
         timeout-minutes: ${{ inputs.agent_timeout_minutes }}
         uses: anthropics/claude-code-action@v1
         with:
@@ -214,7 +517,7 @@ jobs:
           show_full_output: ${{ inputs.debug }}
           prompt: |
             You are a senior software engineer. Implement the approved plan for issue
-            #${{ github.event.issue.number }} of this repository, in the working tree you
+            #${{ steps.event.outputs.issue }} of this repository, in the working tree you
             are already in.
 
             Everything you need has been fetched for you. Read these first:
@@ -231,10 +534,6 @@ jobs:
             If `.ai-plan/plan.md` is missing or unreadable, stop straight away and say
             exactly that as your final message. Do not go looking for another route to the
             issue - there isn't one, and hunting for it burns the whole run.
-
-            This may not be the first attempt. The branch you are on may already carry work
-            from an earlier run, so read what is there before changing it, and build on it
-            rather than redoing it. Treat the newest feedback as the thing to act on.
 
             Before you write anything, read the code the plan touches and learn the
             conventions actually in use - how modules are structured, how errors are
@@ -266,6 +565,95 @@ jobs:
             that needs a human decision. Markdown, no preamble, no sign-off, well under
             10000 characters. Do not add a title, a link to the issue, or a footer - the
             workflow adds those.
+
+            Once this is open as a pull request, the review happens there and you will be
+            asked for changes on the lines themselves. Make that easy: small commits of
+            related work, and no unrelated tidying mixed in.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Task,Bash"
+            ${{ inputs.debug && '--debug' || '' }}
+
+      # The other half of the loop. Everything a reviewer said is on disk in one file, and
+      # what the agent wants to say back goes to disk the same way - it has no token and
+      # cannot post anything itself.
+      - name: Act on the review feedback
+        id: implement_round
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
+        timeout-minutes: ${{ inputs.agent_timeout_minutes }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: ${{ inputs.debug }}
+          prompt: |
+            You are a senior software engineer. Changes have been asked for on pull request
+            #${{ steps.event.outputs.pull_request }} of this repository. Act on them, in the
+            working tree you are already in - it is that pull request's branch, with the work
+            from every earlier round already on it.
+
+            This is round ${{ steps.stage_pr.outputs.round }}. Read these first:
+
+            - `.ai-review/feedback.json` - everything asking for a change. This is the work.
+              Each entry has:
+              - `source` - `thread` is an inline review comment, `review` a reviewer's
+                summary, `comment` something said in the pull request conversation, `check`
+                a failing CI check.
+              - `anchor` - the file and line an inline comment is attached to, and the diff
+                hunk it was written against. Null when the feedback is not about one place.
+              - `state` - for a thread, `unresolved` or `outdated`. `outdated` means the code
+                under the comment has moved since it was written, so work out whether it
+                still applies before acting on it. For a review, the review's state. For a
+                check, its conclusion.
+              - `reply_target` - the identifier you answer that thread on, or null.
+              - `is_bot` - whether a machine wrote it. Weigh it on its merits either way.
+            - `.ai-review/pull-request.json` - the pull request itself.
+            - `.ai-plan/plan.md` - the approved plan this branch implements, if the issue
+              still has one. It is the specification, and it may have been revised since the
+              last round. Where it and the feedback disagree, the feedback wins: it is newer,
+              and somebody wrote it after seeing the code.
+            - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
+
+            If `.ai-review/feedback.json` is missing or unreadable, stop straight away and say
+            exactly that as your final message.
+
+            ${{ steps.stage_pr.outputs.checks_pending }} check(s) had not finished when this
+            round started, so the branch is not known to be green - only not known to be red.
+            A check that is red and not in the feedback was filtered out as one of the AI
+            workflows' own.
+
+            Work through every item. For each one, either make the change or decide it should
+            not be made. Both are legitimate. A round that does what it was told against its
+            own better judgement is worse than one that pushes back with a reason - you have
+            read the code and the reviewer may not have.
+
+            Then answer the review. Write `.ai-review/replies.json`: a JSON array of
+            `{"reply_target": <number>, "body": "<markdown>"}`, with one entry for every
+            feedback item that has a non-null `reply_target`, including the ones you decided
+            against. Say what you changed, or why you did not. A few sentences each. Use only
+            `reply_target` values that appear in the feedback - invented ones are discarded.
+            Items whose `reply_target` is null have no thread to answer; cover those in your
+            final message instead.
+
+            You have a shell. Use it: read the code around a comment before you change it,
+            run this project's tests and linters, and fix what you break. A failing check in
+            the feedback is yours to make pass, not to explain.
+
+            Two things you must not do:
+
+            - Do not commit, push, or comment anywhere. The workflow does all of that after
+              you finish, including posting your replies.
+            - Do not modify anything under `.ai-plan/`, and do not modify anything under
+              `.ai-review/` other than by creating `replies.json`.
+
+            Leave your work in the working tree as uncommitted changes.
+
+            Your final message is posted as a comment on the pull request, so write it for the
+            reviewer: what you changed this round, what you declined and why, what you ran and
+            what it said, and anything still needing a decision. Markdown, no preamble, no
+            sign-off, well under 10000 characters. Do not add a title or a footer - the
+            workflow adds those.
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
@@ -277,19 +665,26 @@ jobs:
       # that died partway is exactly when you want to see how far it got.
       - name: Report on the run
         id: report
-        if: ${{ always() && steps.implement.outcome != 'skipped' }}
+        if: >-
+          ${{ always()
+          && (steps.implement_initial.outcome != 'skipped'
+          || steps.implement_round.outcome != 'skipped') }}
         uses: uniquesca/ci/ai-run-report@main
         with:
-          execution_file: ${{ steps.implement.outputs.execution_file }}
-          verb: 'Implemented'
+          execution_file: ${{ steps.implement_initial.outputs.execution_file || steps.implement_round.outputs.execution_file }}
+          verb: ${{ steps.event.outputs.mode == 'initial' && 'Implemented' || 'Revised' }}
 
       - name: Commit and push the work
         id: push
-        if: ${{ success() && steps.stage.outputs.has_plan == 'true' }}
+        if: ${{ success() && env.PROCEED == 'true' }}
         env:
           COMPARE_REF: ${{ steps.branch.outputs.compare_ref }}
-          TITLE: ${{ steps.stage.outputs.title }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          MODE: ${{ steps.event.outputs.mode }}
+          ROUND: ${{ steps.stage_pr.outputs.round }}
+          TITLE: ${{ steps.stage_issue.outputs.title }}
+          ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
+          ACTOR: ${{ steps.event.outputs.actor }}
         run: |
           git add -A
 
@@ -298,16 +693,21 @@ jobs:
             # anyway - if it did, there is still something to push.
             if [[ "$(git rev-list --count "$COMPARE_REF..HEAD")" -eq 0 ]]; then
               echo "pushed=false" >> "$GITHUB_OUTPUT"
-              gh issue comment "$ISSUE" --body "@$COMMENTER the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: $RUN_URL"
               echo "The agent left the working tree unchanged"
               exit 0
             fi
             echo "The agent committed its own work - pushing that"
           else
             {
-              printf '%s\n\n' "$TITLE"
-              printf 'Implements #%s\n\n' "$ISSUE"
-              printf 'Written by the AI implement workflow, requested by @%s.\n' "$COMMENTER"
+              if [[ "$MODE" == 'initial' ]]; then
+                printf '%s\n\n' "$TITLE"
+                printf 'Implements #%s\n\n' "$ISSUE"
+                printf 'Written by the AI implement workflow, requested by @%s.\n' "$ACTOR"
+              else
+                printf 'Address review feedback (round %s)\n\n' "$ROUND"
+                printf 'Implements #%s\n\n' "$ISSUE"
+                printf 'Written by the AI implement workflow, for review feedback from @%s.\n' "$ACTOR"
+              fi
             } > "$RUNNER_TEMP/commit-message.txt"
             git commit --quiet -F "$RUNNER_TEMP/commit-message.txt"
           fi
@@ -318,29 +718,48 @@ jobs:
 
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
-      # One pull request per issue. A second run has just pushed onto the same branch, so
-      # the existing pull request is already up to date and only needs finding.
+      # One pull request per issue, opened by the first run and reused by every round after.
+      # A round never reaches this - it already has one.
       - name: Open or reuse the pull request
         id: pr
-        if: ${{ success() && steps.push.outputs.pushed == 'true' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.push.outputs.pushed == 'true' }}
         env:
-          TITLE: ${{ steps.stage.outputs.title }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          TITLE: ${{ steps.stage_issue.outputs.title }}
           BASE: ${{ github.event.repository.default_branch }}
-          PLAN_URL: ${{ steps.stage.outputs.plan_url }}
+          ISSUE: ${{ steps.event.outputs.issue }}
+          PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          REOPEN: ${{ steps.existing.outputs.reopen }}
         run: |
-          url=$(gh pr list --head "$BRANCH" --state open --json url --jq '.[0].url // ""')
+          url=''
 
-          if [[ -n "$url" ]]; then
-            echo "Updated the existing pull request $url"
-            echo "created=false" >> "$GITHUB_OUTPUT"
-          else
+          if [[ -n "$REOPEN" ]]; then
+            # A pull request somebody closed. Pushing to its branch does not reopen it, and
+            # opening a second one for the same issue would split the review.
+            #
+            # Github refuses to reopen a pull request whose branch was deleted after it was
+            # closed, and that is a normal thing to have happened. Falling through to opening
+            # a fresh one is better than failing the run over it.
+            if gh pr reopen "$REOPEN" 2>&1; then
+              url=$(gh pr view "$REOPEN" --json url --jq '.url')
+              echo "Reopened $url"
+              echo "created=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning title=Could not reopen::Pull request #$REOPEN would not reopen - opening a new one instead"
+            fi
+          fi
+
+          if [[ -z "$url" ]]; then
             # Written to RUNNER_TEMP rather than the checkout - this workflow commits its
             # working tree, so nothing scratch belongs in it.
             #
-            # `Implements` rather than `Closes` on purpose. Adjusting and re-running is the
-            # point of this workflow, and auto-closing the issue on the first merge cuts
-            # that short - as does merging a partial implementation.
+            # `Implements` rather than `Closes` on purpose. Review here is the point, and
+            # auto-closing the issue on the first merge cuts that short - as does merging a
+            # partial implementation.
             {
               printf 'Implements #%s.\n\n' "$ISSUE"
               [[ -n "$PLAN_URL" ]] && printf 'Built from the [approved plan](%s).\n\n' "$PLAN_URL"
@@ -348,6 +767,8 @@ jobs:
                 cat "$SUMMARY_FILE"
                 printf '\n'
               fi
+              printf -- '---\n\n'
+              printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n'
             } > "$RUNNER_TEMP/pr-body.md"
 
             url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
@@ -357,28 +778,29 @@ jobs:
 
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      # The issue is where the work is directed from, so the pull request has to be
-      # findable there. The marker exists only so that "the current pull request for this
-      # issue" can be found among the other comments.
-      - name: Post the pull request link
-        id: post
-        if: ${{ success() && steps.pr.outputs.url != '' }}
+      # The issue is where the work was asked for, so the pull request has to be findable
+      # from it. This is also the hand-off: after this comment, the issue is only for the
+      # plan.
+      - name: Post the pull request link on the issue
+        id: post_link
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.pr.outputs.url != '' }}
         env:
+          ISSUE: ${{ steps.event.outputs.issue }}
           PR_URL: ${{ steps.pr.outputs.url }}
-          CREATED: ${{ steps.pr.outputs.created }}
+          ACTOR: ${{ steps.event.outputs.actor }}
           USAGE: ${{ steps.report.outputs.summary }}
           COMMAND: ${{ inputs.command }}
         run: |
           {
             printf '<!-- ai-implement -->\n\n'
-            if [[ "$CREATED" == 'true' ]]; then
-              printf 'Opened %s with an implementation of the plan.\n\n' "$PR_URL"
-            else
-              printf 'Pushed another round of changes to %s.\n\n' "$PR_URL"
-            fi
-            printf 'Review it there. If something needs changing, comment what you want on this issue and run `%s` again - it will update the same pull request rather than opening another.\n\n' "$COMMAND"
+            printf 'Opened %s with an implementation of the plan.\n\n' "$PR_URL"
+            printf 'The work continues there, not here. Comment on the lines you want changed and submit the review as **Request changes** - another round starts by itself. `%s` works in the pull request too.\n\n' "$COMMAND"
+            printf 'This issue keeps the plan. Run `/ai-plan` here if the approach itself needs revising, and the next round will pick it up.\n\n'
             printf -- '---\n\n'
-            printf 'Requested by @%s.' "$COMMENTER"
+            printf 'Requested by @%s.' "$ACTOR"
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
             printf '\n'
           } > "$RUNNER_TEMP/implement-comment.md"
@@ -386,28 +808,125 @@ jobs:
           cat "$RUNNER_TEMP/implement-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/implement-comment.md"
 
-      # A failed run is otherwise invisible from the issue - whoever ran the command is
-      # left waiting for a pull request that never appears. Scoped to these steps' own
-      # outcomes rather than `failure()`, which would also fire for the permission refusal
-      # above, and that already comments for itself.
-      - name: Report a failed implementation
+      # An initial run that produced nothing has no pull request to say so in.
+      - name: Report an empty implementation
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.push.outputs.pushed == 'false' }}
+        env:
+          ISSUE: ${{ steps.event.outputs.issue }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue comment "$ISSUE" --body "@$ACTOR the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: $RUN_URL"
+
+      # Answering each thread is how a review loop closes. Posted after the push, so a reply
+      # can talk about work that is actually on the branch, and only for a round - the first
+      # run has no threads to answer.
+      - name: Post the replies to the review
+        id: replies
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
+        uses: uniquesca/ci/ai-post-review-replies@main
+        with:
+          pull_request: ${{ steps.event.outputs.pull_request }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          marker: ${{ env.REPLY_MARKER }}
+
+      # Every round ends with one of these, whether or not it changed a file. It is what the
+      # next round counts to find the unattended streak, and what it reads to know where to
+      # draw its watermark - so a round that skipped this would have the next one act on the
+      # same feedback all over again.
+      - name: Close the round
+        id: close
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          TRIGGER: ${{ steps.event.outputs.trigger }}
+          ATTENDED: ${{ steps.event.outputs.attended }}
+          ROUND: ${{ steps.stage_pr.outputs.round }}
+          STAGED_AT: ${{ steps.stage_pr.outputs.staged_at }}
+          FEEDBACK_COUNT: ${{ steps.stage_pr.outputs.feedback_count }}
+          CHECK_COUNT: ${{ steps.stage_pr.outputs.check_count }}
+          PUSHED: ${{ steps.push.outputs.pushed }}
+          POSTED: ${{ steps.replies.outputs.posted }}
+          SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          USAGE: ${{ steps.report.outputs.summary }}
+        run: |
+          # Built with jq rather than printf, so a timestamp or a flag can never break the
+          # line the next round parses
+          meta=$(jq -nc \
+            --argjson attended "$ATTENDED" \
+            --argjson round "$ROUND" \
+            --arg staged_at "$STAGED_AT" \
+            --arg trigger "$TRIGGER" \
+            '{attended: $attended, round: $round, staged_at: $staged_at, trigger: $trigger}')
+
+          {
+            printf '%s\n' "$ROUND_MARKER"
+            printf '<!-- %s -->\n\n' "$meta"
+
+            if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
+              cat "$SUMMARY_FILE"
+            else
+              printf 'The agent finished without a summary of this round. The run log has what it did.\n'
+            fi
+
+            printf '\n\n'
+            printf -- '---\n\n'
+            printf 'Round %s, on %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
+            [[ "$CHECK_COUNT" != '0' ]] && printf ' including %s failing check(s)' "$CHECK_COUNT"
+            printf '.'
+            if [[ "$TRIGGER" == 'review' ]]; then
+              printf ' Started by @%s requesting changes.' "$ACTOR"
+            else
+              printf ' Requested by @%s.' "$ACTOR"
+            fi
+            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' Answered %s review thread(s).' "$POSTED"
+            [[ "$PUSHED" != 'true' ]] && printf ' **No file changed this round.**'
+            [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+            printf '\n'
+          } > "$RUNNER_TEMP/round-comment.md"
+
+          cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
+          gh issue comment "$PR" --body-file "$RUNNER_TEMP/round-comment.md"
+
+      # A failed run is otherwise invisible from the issue or the pull request - whoever asked
+      # is left waiting for something that never appears. Scoped to these steps' own outcomes
+      # rather than `failure()`, which would also fire for the permission refusal above, and
+      # that already comments for itself.
+      - name: Report a failed run
         if: >-
           ${{ always()
-          && (steps.branch.outcome == 'failure'
-          || steps.implement.outcome == 'failure'
+          && (steps.pull_request.outcome == 'failure'
+          || steps.stage_issue.outcome == 'failure'
+          || steps.stage_pr.outcome == 'failure'
+          || steps.branch.outcome == 'failure'
+          || steps.implement_initial.outcome == 'failure'
+          || steps.implement_round.outcome == 'failure'
           || steps.report.outcome == 'failure'
           || steps.push.outcome == 'failure'
           || steps.pr.outcome == 'failure'
-          || steps.post.outcome == 'failure') }}
+          || steps.post_link.outcome == 'failure'
+          || steps.close.outcome == 'failure') }}
         env:
+          TARGET: ${{ steps.event.outputs.target }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          MODE: ${{ steps.event.outputs.mode }}
           # Why the agent stopped, where it recorded one. It turns "the run went red" into
           # something actionable - an exhausted credit balance and a genuine bug look
-          # identical from the issue otherwise.
+          # identical otherwise.
           REASON: ${{ steps.report.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
-            printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$COMMENTER"
+            if [[ "$MODE" == 'initial' ]]; then
+              printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$ACTOR"
+            else
+              printf '@%s this round did not finish, so the feedback on this pull request has not been acted on.\n\n' "$ACTOR"
+            fi
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
@@ -415,4 +934,4 @@ jobs:
           } > "$RUNNER_TEMP/failure-comment.md"
 
           cat "$RUNNER_TEMP/failure-comment.md" >> "$GITHUB_STEP_SUMMARY"
-          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/failure-comment.md"
+          gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md"

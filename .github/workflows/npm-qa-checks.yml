@@ -1,0 +1,94 @@
+name: NPM QA Checks
+
+on:
+  workflow_call:
+    secrets:
+      NPM_ACCESS_TOKEN:
+        description: 'Access token for authentication with the NPM registry'
+        required: false
+    inputs:
+      node_version:
+        description: 'Node version to use for the QA checks'
+        required: false
+        default: 20
+        type: number
+      working_directory:
+        description: 'Directory where the package lives and where NPM/Yarn commands should be executed'
+        required: false
+        default: '.'
+        type: string
+      setup_cmd:
+        description: 'Command to run to set up environment before the QA checks execution'
+        required: false
+        default: ''
+        type: string
+      env_variables:
+        description: 'JSON string representing an object with environment variables to set up an environment'
+        required: false
+        default: '{}'
+        type: string
+
+jobs:
+  npm-qa:
+    name: Run NPM QA checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run setup cmd (if specified)
+        run: ${{ inputs.setup_cmd }}
+
+      # Detection has to match uniquesca/ci/install-packages, so that the package manager
+      # running the scripts is the same one that installed the dependencies
+      - name: Check if we have NPM or Yarn
+        id: detect
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          # A missing or unreadable package.json is a misconfiguration for this workflow, so
+          # let jq fail the job here rather than skipping every check further down
+          jq -e . package.json > /dev/null
+
+          if [[ -f ".yarnrc" ]]; then
+            echo "runner=yarn" >> $GITHUB_OUTPUT
+            echo "Yarn found, will run Yarn checks."
+          else
+            echo "runner=npm run" >> $GITHUB_OUTPUT
+            echo "NPM found, will run NPM checks."
+          fi
+
+      - name: Set up environment
+        uses: uniquesca/ci/prepare-environment@main
+        with:
+          env_variables: ${{ inputs.env_variables }}
+
+      - name: Install dependencies
+        uses: uniquesca/ci/install-packages@main
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
+          skip_composer: true
+
+      - name: Run linter
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          if jq -e '.scripts.lint' package.json > /dev/null; then
+            npm run lint
+          else
+            echo "No lint script found, skipping."
+          fi
+
+      - name: Run tests
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          if jq -e '.scripts.test' package.json > /dev/null; then
+            npm run test
+          else
+            echo "No test script found, skipping tests."
+          fi
