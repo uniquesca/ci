@@ -575,6 +575,12 @@ jobs:
             yours to execute, not to list. If you cannot get something passing, say so in
             your final message rather than leaving it quietly broken.
 
+            Do the work yourself, in this run. You have no helpers to delegate to and
+            nothing is arriving later, so never end a turn saying you are waiting on
+            anything - there is nothing to wait for, and a run that stops to wait opens no
+            pull request at all. Where something is still unresolved, finish everything
+            that does not depend on it and say what you left and why in your final message.
+
             Two things you must not do:
 
             - Do not commit, push, create a branch, open a pull request, or comment
@@ -599,7 +605,7 @@ jobs:
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Task,Bash"
+            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
       # The other half of the loop. Everything a reviewer said is on disk in one file, and
@@ -667,6 +673,12 @@ jobs:
             run this project's tests and linters, and fix what you break. A failing check in
             the feedback is yours to make pass, not to explain.
 
+            Do the work yourself, in this run. You have no helpers to delegate to and nothing
+            is arriving later, so never end a turn saying you are waiting on anything - there
+            is nothing to wait for, and a round that stops to wait pushes nothing and answers
+            nobody. Where something is still unresolved, finish the rest and say what you left
+            and why.
+
             Two things you must not do:
 
             - Do not commit, push, or comment anywhere. The workflow does all of that after
@@ -684,7 +696,7 @@ jobs:
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Task,Bash"
+            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
       # Reads the agent's execution log: prints what it said and what it touched, and hands

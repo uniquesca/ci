@@ -304,6 +304,12 @@ jobs:
 
             Everything smaller is a `comment` verdict, or not worth saying.
 
+            Do the reading yourself, in this run. You have no helpers to delegate to and
+            nothing is arriving later, so never end a turn saying you are waiting on anything -
+            there is nothing to wait for, and a run that stops to wait writes no review at all.
+            Where you could not settle something from the code, say so in the summary and move
+            on.
+
             Write your review to `.ai-review/review.json` and nothing else. Do not modify any
             other file - your edits are discarded, this job cannot push, and time spent
             changing code is time not spent reviewing it. The file is:
@@ -336,7 +342,7 @@ jobs:
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Task,Write"
+            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Write"
             ${{ inputs.debug && '--debug' || '' }}
 
       - name: Report on the run
