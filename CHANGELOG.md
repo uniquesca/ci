@@ -1105,3 +1105,11 @@
 ## v9.2.2
 
 * Fix: fixed check for NPM and Yarn in QA checks (7e201d4 by George Shestayev)
+
+## v9.2.3
+
+* Deprecated: qa-checks workflow is deprecated (c8fd4a9 by George Shestayev)
+* Fix: fixed running test and lint npm commands (13c73a8 by George Shestayev)
+* New: qa-checks is split into npm-qa-checks and php-qa-checks (c8fd4a9 by George Shestayev)
+* New: added self-ai-plan and self-ai-implement workflows (32a1ec0 by George Shestayev)
+* Update: ai-implement now takes feedback through PR review, not issue comments (f202ec7 by George Shestayev)
