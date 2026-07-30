@@ -217,6 +217,13 @@ jobs:
             This repository may commit its dependencies. Ignore `node_modules`, `vendor`,
             `dist` and `build` unless the task is specifically about one of them.
 
+            Do the investigation yourself, in this run. You have no helpers to delegate to
+            and nothing is arriving later, so never end a turn saying you are waiting on
+            anything - there is nothing to wait for, and a run that stops to wait posts no
+            plan at all. When a question is still open after you have looked at what you
+            can, write the plan anyway and put the question in the risks and assumptions
+            section. A plan with a stated unknown is worth far more than no plan.
+
             The plan is markdown, in this order:
 
             - A short summary of the approach, in prose. If you are revising an earlier
@@ -244,7 +251,7 @@ jobs:
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}
-            --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash"
+            --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash,Task,Agent"
             ${{ inputs.debug && '--debug' || '' }}
 
       # Reads the agent's execution log: prints what it said and what it touched, and hands
