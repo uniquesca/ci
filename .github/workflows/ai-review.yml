@@ -1,0 +1,444 @@
+name: AI Review
+
+on:
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        description: 'Anthropic API key used to call the AI reviewing agent'
+        required: true
+      AI_REVIEW_TOKEN:
+        description: 'Token the review is submitted with. Optional, but without it the review cannot request changes and cannot start another round: Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and the implementing workflow opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the loop turn'
+        required: false
+    inputs:
+      dispatch_type:
+        description: 'The `repository_dispatch` event type this reacts to. The implementing workflow sends this after it pushes, which is what starts a review - a `pull_request` trigger cannot do the job, because a pull request opened by `GITHUB_TOKEN` produces a run that waits for a human to approve it'
+        required: false
+        default: 'ai-review'
+        type: string
+      branch_prefix:
+        description: 'Only pull requests whose branch lives in this repository and starts with this prefix are reviewed. Keep it the same as the implementing workflow branch_prefix'
+        required: false
+        default: 'ai-feature/'
+        type: string
+      timeout_minutes:
+        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes'
+        required: false
+        default: 30
+        type: number
+      agent_timeout_minutes:
+        description: 'How long the reviewing agent itself may run before it is given up on'
+        required: false
+        default: 25
+        type: number
+      max_turns:
+        description: 'How many turns the agent may spend reading the code before it has to review with what it found'
+        required: false
+        default: 40
+        type: number
+      model:
+        description: 'Model used to review'
+        required: false
+        default: 'claude-opus-4-8'
+        type: string
+      max_comments:
+        description: 'How many inline comments one review may carry'
+        required: false
+        default: 30
+        type: number
+      max_diff_bytes:
+        description: 'Longest diff to stage. A change bigger than this is truncated, and the agent is told so - it has the repository on disk and can read the files themselves'
+        required: false
+        default: 400000
+        type: number
+      max_unattended_rounds:
+        description: 'Only used to tell the agent how close the loop is to needing a person. The limit itself is enforced by the implementing workflow, so keep the two the same'
+        required: false
+        default: 5
+        type: number
+      ignore_check_patterns:
+        description: 'Case-insensitive regular expression matching check runs to leave out of the context, default covers the AI workflows own check runs'
+        required: false
+        default: '(ai.implement|ai.plan|ai.review)'
+        type: string
+      debug:
+        description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  review:
+    name: Review the pull request
+    # Started by the implementing workflow, not by a person and not by a pull request event.
+    # `repository_dispatch` is the one kind of event `GITHUB_TOKEN` is allowed to create that
+    # still starts a workflow run - which is exactly what is needed here, because the
+    # alternative (`pull_request: opened`) produces an approval-required run when the pull
+    # request was opened by automation, and would sit there waiting for a human.
+    if: >-
+      ${{ github.event_name == 'repository_dispatch'
+          && github.event.action == inputs.dispatch_type }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    # One review per pull request at a time. Queued rather than cancelled: a second push
+    # deserves its own review, and cancelling would leave the loop with nothing to answer.
+    concurrency:
+      group: ai-review-${{ github.repository }}-${{ github.event.client_payload.pull_request }}
+      cancel-in-progress: false
+    permissions:
+      # Read-only on the code. The reviewing agent has no shell and nothing here pushes, so
+      # this is the boundary that actually holds - the same shape as the planner.
+      contents: read
+      # Submitting the review, and replying in the pull request conversation when it could
+      # not be submitted
+      pull-requests: write
+      issues: write
+      # Failing checks are context: a reviewer should not spend its comments on something CI
+      # already said
+      checks: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PROCEED: 'true'
+      REVIEW_MARKER: '<!-- ai-review -->'
+    steps:
+      # The pull request number arrives in the dispatch payload, which is arbitrary JSON that
+      # anybody with `contents: write` could have sent. It is validated as a number and then
+      # checked against the same boundary the implementing workflow uses.
+      - name: Resolve the pull request
+        id: pull_request
+        env:
+          PAYLOAD_PR: ${{ github.event.client_payload.pull_request }}
+          PREFIX: ${{ inputs.branch_prefix }}
+        run: |
+          if [[ ! "$PAYLOAD_PR" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Bad dispatch payload::client_payload.pull_request is not a number"
+            exit 1
+          fi
+
+          gh pr view "$PAYLOAD_PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
+            > "$RUNNER_TEMP/pull-request.json"
+
+          state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
+          head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pull-request.json")
+          head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
+
+          # The same gate as the implementing workflow. Nothing here checks out somebody
+          # else's code: this job holds an Anthropic key and, where one is configured, a
+          # review token with more reach than `GITHUB_TOKEN`.
+          reason=''
+          if [[ "$head_repo" != "$GH_REPO" ]]; then
+            reason="its branch lives in $head_repo rather than in this repository"
+          elif [[ "$head_ref" != "$PREFIX"* ]]; then
+            reason="its branch $head_ref was not created by the implementing workflow"
+          elif [[ "$state" != 'OPEN' ]]; then
+            reason="it is not open"
+          fi
+
+          if [[ -n "$reason" ]]; then
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            echo "Not reviewing #$PAYLOAD_PR: $reason"
+            exit 0
+          fi
+
+          issue="${head_ref##*issue-}"
+          if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
+            exit 1
+          fi
+
+          {
+            printf 'number=%s\n' "$PAYLOAD_PR"
+            printf 'issue=%s\n' "$issue"
+            printf 'branch=%s\n' "$head_ref"
+            printf 'base=%s\n' "$(jq -r '.baseRefName' "$RUNNER_TEMP/pull-request.json")"
+            printf 'head_sha=%s\n' "$(jq -r '.headRefOid' "$RUNNER_TEMP/pull-request.json")"
+            printf 'url=%s\n' "$(jq -r '.url' "$RUNNER_TEMP/pull-request.json")"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Reviewing #$PAYLOAD_PR on $head_ref, implementing issue #$issue"
+
+      # The branch itself, at full depth so the base branch is there to diff against
+      - name: Check out the pull request branch
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pull_request.outputs.branch }}
+          fetch-depth: 0
+          # Nothing here pushes, and the agent can read the whole working tree - without this,
+          # checkout leaves a live `x-access-token:ghs_...` in .git/config for it to find
+          persist-credentials: false
+
+      # The agent has no shell, so it cannot run `git diff` itself. Three dots rather than two:
+      # what this branch changed since it left the base, not everything that has happened on
+      # the base since.
+      - name: Stage the diff
+        id: diff
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          BASE: ${{ steps.pull_request.outputs.base }}
+          MAX_DIFF_BYTES: ${{ inputs.max_diff_bytes }}
+        run: |
+          mkdir -p .ai-review
+
+          git diff "origin/$BASE...HEAD" > "$RUNNER_TEMP/full.diff"
+          git diff --stat "origin/$BASE...HEAD" > .ai-review/diffstat.txt
+          git diff --name-only "origin/$BASE...HEAD" > .ai-review/changed-files.txt
+
+          size=$(wc -c < "$RUNNER_TEMP/full.diff")
+          truncated='false'
+
+          if [[ "$size" -gt "$MAX_DIFF_BYTES" ]]; then
+            # Truncated rather than dropped, and the agent is told - it has the files on disk
+            # and can read whatever the diff stops short of
+            head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/full.diff" > .ai-review/diff.patch
+            truncated='true'
+            echo "::warning title=Diff truncated::The diff is $size bytes, staged the first $MAX_DIFF_BYTES"
+          else
+            cp "$RUNNER_TEMP/full.diff" .ai-review/diff.patch
+          fi
+
+          {
+            printf 'truncated=%s\n' "$truncated"
+            printf 'files=%s\n' "$(wc -l < .ai-review/changed-files.txt)"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Staged a $size byte diff over $(wc -l < .ai-review/changed-files.txt) file(s)"
+
+      # A review that does not know what the change was meant to do is a style check. The plan
+      # is the specification, and "this does not do what the plan says" is the most valuable
+      # thing a reviewer can find.
+      - name: Stage the issue and its plan
+        id: stage_issue
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-stage-issue@main
+        with:
+          issue: ${{ steps.pull_request.outputs.issue }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # What has already been said on this pull request, and what CI already thinks. Answered
+      # threads are kept here, unlike for the implementing agent: a thread where the previous
+      # concern was addressed - or argued with - is exactly what this agent has to read before
+      # deciding whether to raise it again.
+      - name: Stage the review history
+        id: stage_pr
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-stage-pull-request@main
+        with:
+          pull_request: ${{ steps.pull_request.outputs.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          head_sha: ${{ steps.pull_request.outputs.head_sha }}
+          include_answered_threads: true
+          ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
+
+      - name: Review the change
+        id: agent
+        if: ${{ success() && env.PROCEED == 'true' }}
+        timeout-minutes: ${{ inputs.agent_timeout_minutes }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: ${{ inputs.debug }}
+          prompt: |
+            You are a senior engineer reviewing a colleague's pull request. Review
+            #${{ steps.pull_request.outputs.number }} of this repository. You are reviewing it,
+            not fixing it - another agent does that, from what you write here.
+
+            Everything has been fetched for you. Read these first:
+
+            - `.ai-review/diff.patch` - the change under review, against
+              `${{ steps.pull_request.outputs.base }}`. This is what you are reviewing.
+              ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED because it is large, so it stops partway. Read the files themselves for the rest.' || '' }}
+            - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - the shape of it.
+            - `.ai-plan/plan.md` - the approved plan this was built from, if the issue still has
+              one. It is the specification. "This does not do what the plan says" is the most
+              valuable finding you can produce.
+            - `.ai-plan/issue.json` - why the work was wanted in the first place.
+            - `.ai-review/feedback.json` - what has already been said on this pull request, and
+              what CI currently thinks. Each entry has a `source` (`thread` for an inline
+              comment, `review`, `comment`, `check` for a failing check), an `anchor`, a
+              `state`, and for a thread an `answered` flag.
+
+            **The working tree is the branch.** Do not review the diff in isolation - open the
+            files it touches and read around each hunk. A comment that misses the function
+            three lines below the hunk is worse than no comment, and this is the single biggest
+            difference between a useful review and a noisy one.
+
+            This is round ${{ steps.stage_pr.outputs.round }}. After
+            ${{ inputs.max_unattended_rounds }} rounds in a row without a person involved, the
+            loop stops and asks for one. If you are near that and the same problem is still
+            not fixed, say so plainly in your summary and stop trying to get it fixed by
+            repetition.
+
+            Before you raise anything, read `.ai-review/feedback.json` properly:
+
+            - A thread with `answered: true` is one where the implementing agent has already
+              replied. Read the reply. If it made the change, do not raise it again. If it
+              gave a reasoned argument for not making it, either accept the argument or say
+              in your summary that a person should settle it - **do not simply repeat the
+              original comment**. Two agents restating positions at each other is the failure
+              mode this whole mechanism has to avoid.
+            - An unanswered open thread is already raised. Do not duplicate it.
+            - A failing `check` has already been reported to the implementing agent and is
+              already being worked on. Do not spend an inline comment restating what a linter
+              said.
+
+            **You must be willing to find nothing.** A change that implements the plan
+            correctly and reads like the surrounding code should get the `comment` verdict and
+            a short summary saying so. Do not manufacture a concern to justify the review, and
+            do not request changes over a preference. Every unnecessary round costs real money
+            and moves nothing forward. A reviewer that always finds something is worse than no
+            reviewer at all, because the loop never ends.
+
+            Request changes only for things that genuinely should not merge as they are:
+
+            - it does not do what the plan or the issue asked
+            - a real bug, a broken edge case, a race, a resource leak
+            - a security problem, or untrusted input reaching somewhere it should not
+            - it breaks or bypasses an existing convention in this repository, in a way that
+              will have to be undone later
+            - it needs a test that is missing, where the rest of the repository tests that
+              kind of thing
+
+            Everything smaller is a `comment` verdict, or not worth saying.
+
+            Write your review to `.ai-review/review.json` and nothing else. Do not modify any
+            other file - your edits are discarded, this job cannot push, and time spent
+            changing code is time not spent reviewing it. The file is:
+
+            ```json
+            {
+              "verdict": "changes_requested",
+              "summary": "markdown, for the top of the review",
+              "comments": [
+                {"path": "src/config.js", "line": 42, "body": "markdown, for this line"}
+              ]
+            }
+            ```
+
+            - `verdict` - `changes_requested` or `comment`. Nothing else. You cannot approve;
+              merging is a person's decision.
+            - `summary` - what you looked at, what you concluded, and anything that does not
+              belong on one line. If your verdict is `comment` because it is fine, say that in
+              a sentence or two rather than padding it.
+            - `comments` - inline comments. `line` is the line number **in the new file**, and
+              it has to be a line the diff actually contains: an added line or a context line
+              inside a hunk. A comment on any other line is dropped before the review is
+              submitted, so check `.ai-review/diff.patch` for the number rather than guessing.
+              At most ${{ inputs.max_comments }}. Each one says what is wrong and what to do
+              instead - the agent acting on it has your words and the code, nothing else.
+
+            Your final message is not published anywhere. Put everything you want said in
+            `review.json`; the final message is only for the run log, so a sentence on what
+            you concluded is plenty.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Task,Write"
+            ${{ inputs.debug && '--debug' || '' }}
+
+      - name: Report on the run
+        id: report
+        if: ${{ always() && steps.agent.outcome != 'skipped' }}
+        uses: uniquesca/ci/ai-run-report@main
+        with:
+          execution_file: ${{ steps.agent.outputs.execution_file }}
+          verb: 'Reviewed'
+
+      # This is where the loop turns. A review submitted with a token that is not
+      # `GITHUB_TOKEN` creates a `pull_request_review` event, and that event is what starts the
+      # next implementing round - so the token matters more here than anywhere else in these
+      # workflows.
+      - name: Submit the review
+        id: submit
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-post-review@main
+        with:
+          pull_request: ${{ steps.pull_request.outputs.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.AI_REVIEW_TOKEN || secrets.GITHUB_TOKEN }}
+          head_sha: ${{ steps.pull_request.outputs.head_sha }}
+          marker: ${{ env.REVIEW_MARKER }}
+          max_comments: ${{ inputs.max_comments }}
+
+      # Whatever happened to the review, what the agent concluded should be visible on the pull
+      # request. On the happy path this is a short line under a review that speaks for itself;
+      # when the review could not be submitted it carries the whole thing.
+      - name: Say what came of it
+        id: comment
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          PR: ${{ steps.pull_request.outputs.number }}
+          SUBMITTED: ${{ steps.submit.outputs.submitted }}
+          EVENT: ${{ steps.submit.outputs.event }}
+          VERDICT: ${{ steps.submit.outputs.verdict }}
+          POSTED: ${{ steps.submit.outputs.comments_posted }}
+          DROPPED: ${{ steps.submit.outputs.comments_dropped }}
+          ROUND: ${{ steps.stage_pr.outputs.round }}
+          SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          USAGE: ${{ steps.report.outputs.summary }}
+          HAS_TOKEN: ${{ secrets.AI_REVIEW_TOKEN != '' }}
+        run: |
+          if [[ "$SUBMITTED" == 'true' ]]; then
+            {
+              printf 'Reviewed round %s' "$ROUND"
+              [[ "$POSTED" != '0' ]] && printf ' with %s inline comment(s)' "$POSTED"
+              printf ' - submitted as `%s`.' "$EVENT"
+              [[ "$DROPPED" != '0' ]] && printf ' %s comment(s) could not be placed on a line the diff contains; see the run log.' "$DROPPED"
+              if [[ "$VERDICT" == 'changes_requested' && "$EVENT" != 'REQUEST_CHANGES' ]]; then
+                printf '\n\n**The agent wanted to request changes and could not.** Github does not allow it from the identity that opened this pull request, so this landed as a comment: it does not block merging, and it will not start another round on its own. Run `/ai-do` here to act on it, or configure an `AI_REVIEW_TOKEN`.'
+              fi
+              [[ -n "$USAGE" ]] && printf '\n\n%s.' "$USAGE"
+              printf '\n'
+            } > "$RUNNER_TEMP/outcome.md"
+          else
+            # The review itself never reached Github, so the whole thing goes in a comment
+            # rather than being lost with the run
+            {
+              printf 'The review could not be submitted, so here it is as a comment.\n\n'
+              if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
+                cat "$SUMMARY_FILE"
+              else
+                printf 'The reviewing agent produced nothing. The run log has what it did.\n'
+              fi
+              printf '\n\n'
+              printf -- '---\n\n'
+              printf 'Round %s.' "$ROUND"
+              [[ "$HAS_TOKEN" != 'true' ]] && printf ' No `AI_REVIEW_TOKEN` is configured.'
+              [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+              printf '\n'
+            } > "$RUNNER_TEMP/outcome.md"
+          fi
+
+          cat "$RUNNER_TEMP/outcome.md" >> "$GITHUB_STEP_SUMMARY"
+          gh issue comment "$PR" --body-file "$RUNNER_TEMP/outcome.md"
+
+      # A failed review is otherwise invisible from the pull request, and it is the step that
+      # would have started the next round - so silence here stalls the whole loop.
+      - name: Report a failed review
+        if: >-
+          ${{ always() && env.PROCEED == 'true'
+          && (steps.diff.outcome == 'failure'
+          || steps.stage_issue.outcome == 'failure'
+          || steps.stage_pr.outcome == 'failure'
+          || steps.agent.outcome == 'failure'
+          || steps.report.outcome == 'failure'
+          || steps.submit.outcome == 'failure'
+          || steps.comment.outcome == 'failure') }}
+        env:
+          PR: ${{ steps.pull_request.outputs.number }}
+          REASON: ${{ steps.report.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            printf 'The reviewing agent did not finish, so this round has not been reviewed.\n\n'
+            if [[ -n "$REASON" ]]; then
+              printf 'It stopped with: `%s`\n\n' "$REASON"
+            fi
+            printf 'Nothing is waiting on it - review it yourself, or comment `/ai-do` to run another implementing round. The run log has the detail: %s\n' "$RUN_URL"
+          } > "$RUNNER_TEMP/failure.md"
+
+          cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"
+          gh issue comment "$PR" --body-file "$RUNNER_TEMP/failure.md"
