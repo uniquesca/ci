@@ -16,6 +16,9 @@ them:
   requesting changes never starts a round and nothing says why.
 * **`checks: read`** on the job. Without it, failing CI checks are simply not part of the feedback.
 
+That is enough to run. [Wiring CI into the loop](#wiring-ci-into-the-loop) adds two optional
+things: showing the agent what a check printed, and letting a red check start a round.
+
 Inputs are documented in `.github/workflows/ai-implement.yml`. The two you are most likely to
 change are `max_unattended_rounds` (see [the round cap](#the-round-cap)) and `dispatch_review`
 (see [AI Review](ai-review.md)).
@@ -82,7 +85,89 @@ start a round and it will be there.
 Where a check is red, expect it to be fixed rather than explained. A failing check has no thread
 to answer, so what the agent did about it is in the round summary comment instead.
 
+## Wiring CI into the loop
+
+Two opt-in additions, both useful, both independent of each other. Details and traps for each are
+in [Dig deeper](#dig-deeper).
+
+**Show the agent what a check printed.** It cannot read job logs, so upload an artifact named
+`ai-report-*` from a run on the pull request's head commit. Every match is collected into
+`.ai-reports/` before each round, and the agent is told to read it. Nothing to configure here:
+
+```yaml
+      - name: Run the thing
+        run: |
+          set -o pipefail
+          mkdir -p .ai-reports
+          ./run-e2e 2>&1 | tee .ai-reports/e2e.log
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-report-e2e
+          path: .ai-reports
+          retention-days: 1
+          if-no-files-found: ignore
+```
+
+**Let a red check start a round.** By default only a review can, so a failing check that nobody
+commented on is never acted on. Add this to the caller and whichever of your QA workflows and the
+reviewing agent finishes **second** starts one round, with both sources in the feedback:
+
+```yaml
+on:
+  workflow_run:
+    workflows: [ 'PHP QA Checks' ]   # the QA workflow's `name:`, not its filename
+    types: [ completed ]
+
+jobs:
+  ai-implement:
+    permissions:
+      actions: read
+```
+
 ## Dig deeper
+
+### Reports from other workflows
+
+Both lines at the top of that upload step are load-bearing, and getting either wrong fails quietly:
+
+* **`if: always()`** - a failed step skips the ones after it, so without this the run you wanted the
+  report from is the one that uploads nothing.
+* **`set -o pipefail`** - a `run:` step that does not name its shell does not get it, and `tee` then
+  returns success for a command that failed, turning a red check green.
+
+Reports are found by commit, so a workflow triggered by a schedule or `workflow_dispatch` is not
+picked up. Missing reports never fail a round - the agent says what it could not see instead.
+
+**Keep secrets out of them.** Stack traces and environment dumps carry credentials, and a model
+reads these and quotes from them in pull request comments.
+
+Uploading a report does not start a round; it is picked up by whatever round runs next. Starting one
+is the `workflow_run` trigger, below.
+
+### How the wait works
+
+A round pushes, and your QA workflows and the reviewing agent start in parallel and finish in either
+order. The first to finish starts a round, sees the other still working, and exits within about a
+minute having posted nothing. The second finds nothing pending and runs the round properly.
+
+There is no handshake between them - each asks GitHub what is still reporting on that commit - so a
+duplicated or lost trigger cannot wedge it. If `dispatch_review` is off or the reviewing agent
+fails, nothing waits for it: the question is whether the reviewer is *still working*, not whether a
+review arrived.
+
+**The trap:** `workflow_run` only fires when the workflow file containing it is on your **default
+branch**. On a feature branch it does nothing, which looks exactly like a broken gate.
+
+Two consequences worth expecting:
+
+* **These rounds never count as attended**, whoever pushed the commit CI ran on. Nobody asked for
+  them, so they count against [the round cap](#the-round-cap) - which is what stops the
+  round → push → CI → round cycle running away.
+* **A green pull request produces no comment.** The round starts, finds nothing to act on and exits
+  silently, because this fires on every push and saying so each time would be noise.
 
 ### The round cap
 

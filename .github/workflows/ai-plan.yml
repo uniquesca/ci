@@ -138,7 +138,7 @@ jobs:
       # mainline, not about whatever branch happens to be open.
       - name: Check out the repository
         if: ${{ steps.task.outputs.has_task == 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Nothing here pushes, and the agent can read the whole working tree - without
           # this, checkout leaves a live `x-access-token:ghs_...` in .git/config for it

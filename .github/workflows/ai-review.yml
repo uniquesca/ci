@@ -160,7 +160,7 @@ jobs:
       # The branch itself, at full depth so the base branch is there to diff against
       - name: Check out the pull request branch
         if: ${{ success() && env.PROCEED == 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.pull_request.outputs.branch }}
           fetch-depth: 0

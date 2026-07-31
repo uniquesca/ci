@@ -57,7 +57,7 @@ jobs:
           echo "::warning title=Deprecated workflow::uniquesca/ci/.github/workflows/qa-checks.yml is deprecated. Please migrate to php-qa-checks.yml and/or npm-qa-checks.yml."
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Get QA matrix
         id: matrix
@@ -71,6 +71,10 @@ jobs:
       phpunit: 0
       composer: 0
       npm: 0
+      # Where each check's output is kept, and what gets uploaded as an artifact at the end.
+      # An implementing agent cannot read job logs, and a check run on its own carries nothing
+      # but `Process completed with exit code 1` - this is how it finds out what actually broke
+      AI_REPORT_DIR: .ai-reports
     strategy:
       fail-fast: false
       matrix:
@@ -84,10 +88,13 @@ jobs:
           ini-values: xdebug.mode="coverage"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
+
+      - name: Prepare the report directory
+        run: mkdir -p "$AI_REPORT_DIR"
 
       - name: Check if we have NPM or Yarn
         run: |
@@ -171,9 +178,15 @@ jobs:
         if: inputs.use_db == true && env.phpunit == 1
         run: ${{ inputs.db_migration_cmd }}
 
+      # Every check below tees its output to a file as well as the log, and the files go up as an
+      # artifact at the end. `set -o pipefail` is there because a `run:` step that does not name
+      # its shell does not get it, and without it `tee` would return success for a tool that
+      # failed - turning every red check green.
       - name: Run PHPUnit
         if: env.phpunit == 1
-        run: php ./vendor/bin/phpunit
+        run: |
+          set -o pipefail
+          php ./vendor/bin/phpunit 2>&1 | tee "$AI_REPORT_DIR/phpunit.log"
 
       - name: Generate coverage badge
         if: ${{ env.phpunit == 1 && github.event_name == 'pull_request' && inputs.generate_coverage_badge == true }}
@@ -185,18 +198,20 @@ jobs:
 
       - name: Run PHP Codesniffer
         run: |
+          set -o pipefail
           if [[ -f "phpcs.xml" ]] || [[ -f "phpcs.xml.dist" ]]; then
-            ./vendor/bin/phpcs
+            ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log"
           else
             echo "No PHP_Codesniffer configuration file found, skipping code check."
           fi
 
       - name: Run Psalm
         run: |
+          set -o pipefail
           if [[ -f "psalm.xml" ]]; then
-            ./vendor/bin/psalm
+            ./vendor/bin/psalm 2>&1 | tee "$AI_REPORT_DIR/psalm.log"
           elif [[ -f "psalm.xml.dist" ]]; then
-            ./vendor/bin/psalm --config=psalm.xml.dist
+            ./vendor/bin/psalm --config=psalm.xml.dist 2>&1 | tee "$AI_REPORT_DIR/psalm.log"
           else
             echo "No Psalm configuration file found, skipping code check."
           fi
@@ -204,8 +219,9 @@ jobs:
       - name: Run NPM Linter
         if: env.npm == 1 || env.yarn == 1
         run: |
+          set -o pipefail
           if jq -e '.scripts.lint' package.json > /dev/null; then
-            npm run lint
+            npm run lint 2>&1 | tee "$AI_REPORT_DIR/lint.log"
           else
             echo "No NPM linter found, skipping."
           fi
@@ -213,8 +229,24 @@ jobs:
       - name: Run NPM tests
         if: env.npm == 1 || env.yarn == 1
         run: |
+          set -o pipefail
           if jq -e '.scripts.test' package.json > /dev/null; then
-            npm run test
+            npm run test 2>&1 | tee "$AI_REPORT_DIR/test.log"
           else
             echo "No NPM test script found, skipping tests."
           fi
+
+      # `always()`, because the only run anybody wants these from is the one that failed - and a
+      # failed step skips everything after it by default. Short retention: this is written to be
+      # read by the next implementing round, within minutes, not kept.
+      #
+      # The name carries the matrix leg because artifact names have to be unique within a run,
+      # and because which PHP version went red is part of the answer.
+      - name: Upload the check reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-report-qa-${{ matrix.setup.php.version }}-${{ matrix.setup.os }}
+          path: ${{ env.AI_REPORT_DIR }}
+          retention-days: 1
+          if-no-files-found: ignore

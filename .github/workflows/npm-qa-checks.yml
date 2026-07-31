@@ -32,15 +32,21 @@ jobs:
   npm-qa:
     name: Run NPM QA checks
     runs-on: ubuntu-latest
+    env:
+      # Where each check's output is kept, and what gets uploaded as an artifact at the end.
+      # An implementing agent cannot read job logs, and a check run on its own carries nothing
+      # but `Process completed with exit code 1` - this is how it finds out what actually broke.
+      # Outside `working_directory`, so that one path works wherever the package lives
+      AI_REPORT_DIR: ${{ github.workspace }}/.ai-reports
     steps:
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
           package-manager-cache: false
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
@@ -75,11 +81,17 @@ jobs:
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
           skip_composer: true
 
+      # Both checks tee their output to a file as well as the log. `set -o pipefail` is there
+      # because a `run:` step that does not name its shell does not get it, and without it
+      # `tee` would return success for a script that failed - turning every red check green.
       - name: Run linter
         working-directory: ${{ inputs.working_directory }}
         run: |
+          set -o pipefail
+          mkdir -p "$AI_REPORT_DIR"
+
           if jq -e '.scripts.lint' package.json > /dev/null; then
-            npm run lint
+            npm run lint 2>&1 | tee "$AI_REPORT_DIR/lint.log"
           else
             echo "No lint script found, skipping."
           fi
@@ -87,8 +99,23 @@ jobs:
       - name: Run tests
         working-directory: ${{ inputs.working_directory }}
         run: |
+          set -o pipefail
+          mkdir -p "$AI_REPORT_DIR"
+
           if jq -e '.scripts.test' package.json > /dev/null; then
-            npm run test
+            npm run test 2>&1 | tee "$AI_REPORT_DIR/test.log"
           else
             echo "No test script found, skipping tests."
           fi
+
+      # `always()`, because the only run anybody wants these from is the one that failed - and a
+      # failed step skips everything after it by default. Short retention: this is written to be
+      # read by the next implementing round, within minutes, not kept.
+      - name: Upload the check reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-report-npm
+          path: ${{ env.AI_REPORT_DIR }}
+          retention-days: 1
+          if-no-files-found: ignore
