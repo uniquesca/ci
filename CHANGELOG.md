@@ -1124,3 +1124,8 @@
 
 ## v9.3.2
 
+
+## v9.4.0
+
+* Update: introduced an ability to pass reports from various workflows into AI coding agent as feedback (6cd2fa2 by George Shestayev)
+* Update: updated qa-checks and related workflows to pass reports to AI coding agent (6cd2fa2 by George Shestayev)

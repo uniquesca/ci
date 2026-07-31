@@ -67,6 +67,11 @@ on:
         required: false
         default: 'ai-review'
         type: string
+      review_check_patterns:
+        description: 'Case-insensitive regular expression matching the reviewing agent own check runs. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Deliberately separate from `ignore_check_patterns`, which hides those same check runs from the feedback - the gate has to see what the feedback must not'
+        required: false
+        default: 'ai.review'
+        type: string
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -76,25 +81,37 @@ on:
 jobs:
   implement:
     name: Implement the plan
-    # Three ways in, two of which are new. `/ai-do` on an issue starts the work. `/ai-do` on
-    # the pull request runs another round of it. A submitted review asking for changes runs a
-    # round without anybody typing a command - which is the whole point, because that review
-    # may come from an agent.
+    # Four ways in. `/ai-do` on an issue starts the work. `/ai-do` on the pull request runs
+    # another round of it. A submitted review asking for changes runs a round without anybody
+    # typing a command - which is the whole point, because that review may come from an agent.
+    # And a finished QA workflow runs one too, so that a red check reaches the agent even when
+    # the reviewer had nothing to say about it.
+    #
+    # The last two race each other: they start in parallel after a push and finish in either
+    # order. Neither is filtered on its outcome here - the gate below works out whether the
+    # other one is still running, and `has_feedback` works out whether there is anything to do.
+    # A `cancelled` or `skipped` QA run is the one case worth dropping outright, because it
+    # concluded without ever reporting on the commit.
     #
     # The webhook reports `changes_requested`, while the REST API reports
     # `CHANGES_REQUESTED` for the same review. It does not matter here, because `==` in a
     # Github expression is case-insensitive - but it matters anywhere the two are compared in
     # bash or jq, which is why the staging action lowercases what it reads from REST.
     #
-    # An `approved` or `commented` review deliberately does nothing. Requesting changes is a
-    # decision, and it batches every inline comment in that review into one round.
+    # An `approved` or `commented` review deliberately does not trigger a round by itself.
+    # Requesting changes is a decision, and it batches every inline comment in that review into
+    # one round. A `commented` review still reaches the agent - the next round to run for any
+    # reason stages it out of the feedback like anything else.
     if: >-
       ${{ (github.event_name == 'issue_comment'
            && github.event.action == 'created'
            && startsWith(github.event.comment.body, inputs.command))
           || (github.event_name == 'pull_request_review'
               && github.event.action == 'submitted'
-              && github.event.review.state == 'changes_requested') }}
+              && github.event.review.state == 'changes_requested')
+          || (github.event_name == 'workflow_run'
+              && github.event.workflow_run.conclusion != 'cancelled'
+              && github.event.workflow_run.conclusion != 'skipped') }}
     runs-on: ubuntu-latest
     # Github expressions have no arithmetic, so this cannot be derived from the agent's
     # budget - the two are separate inputs, and the defaults leave five minutes between
@@ -106,8 +123,18 @@ jobs:
     # on the same branch. Queued rather than cancelled, so the second round starts from what
     # the first one pushed. Issues and pull requests share one numbering sequence, so this
     # group cannot collide between the two.
+    #
+    # Cancelling instead would be worse than the duplicate it prevents: a round killed
+    # mid-flight loses whatever the agent had edited but not pushed, or lands commits whose
+    # replies never get posted so every review thread still reads unanswered - and the agent
+    # tokens are spent either way. A queued duplicate is cheap, because the first round's push
+    # moves the head SHA and the gate below then stands the duplicate down in seconds.
+    #
+    # A `workflow_run` event carries neither number, so it falls back to the branch. Without
+    # that, every QA-triggered round in the repository would share one group and queue behind
+    # unrelated pull requests.
     concurrency:
-      group: ai-implement-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
+      group: ai-implement-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     permissions:
       # Wider than the planner needs, because this one pushes a branch and opens a pull
@@ -120,6 +147,11 @@ jobs:
       # linter as actionable as a review comment. Without this the checks are simply staged
       # as an empty list.
       checks: read
+      # Artifacts live under the Actions API, so without this the check reports cannot be
+      # listed or downloaded and the agent is back to guessing at why a check went red. A
+      # reusable workflow cannot hold a permission its caller does not grant, so the caller
+      # needs this too.
+      actions: read
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -160,8 +192,28 @@ jobs:
           # Untrusted text, read here and never interpolated into a script. Only its first line
           # is ever looked at, and only to compare against a marker.
           REVIEW_BODY: ${{ github.event.review.body }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          RUN_ACTOR_TYPE: ${{ github.event.workflow_run.actor.type }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
         run: |
-          if [[ "$EVENT_NAME" == 'pull_request_review' ]]; then
+          if [[ "$EVENT_NAME" == 'workflow_run' ]]; then
+            mode='round'; trigger='checks'
+            issue=''
+            actor="$RUN_ACTOR"; actor_type="$RUN_ACTOR_TYPE"
+
+            # Resolved from the branch rather than from `workflow_run.pull_requests`: that array
+            # is empty whenever the workflow it describes was triggered by a push, which is the
+            # ordinary case for a branch this workflow pushed. The branch is what ties the two
+            # together, and it is unique per pull request here.
+            pull_request=$(gh pr list --head "$RUN_BRANCH" --state open \
+              --json number --jq '.[0].number // empty' 2> /dev/null || true)
+
+            if [[ -z "$pull_request" ]]; then
+              echo "PROCEED=false" >> "$GITHUB_ENV"
+              echo "'$RUN_NAME' finished on $RUN_BRANCH, which has no open pull request - nothing to do"
+            fi
+          elif [[ "$EVENT_NAME" == 'pull_request_review' ]]; then
             mode='round'; trigger='review'
             pull_request="$REVIEW_NUMBER"; issue=''
             actor="$REVIEW_ACTOR"; actor_type="$REVIEW_ACTOR_TYPE"
@@ -187,6 +239,14 @@ jobs:
           # their own round count against the cap - it can only ever stop the loop sooner,
           # never let it run longer.
           if [[ "$trigger" == 'review' && "$REVIEW_BODY" == "$REVIEW_MARKER"* ]]; then
+            attended='false'
+          fi
+
+          # A round that a finished QA workflow started is never attended, whoever pushed the
+          # commit it ran on. The actor there is whoever triggered that workflow, which is not
+          # somebody asking for a round - and treating it as attended would both skip the wait
+          # below and reset the cap that stops two machines talking to each other.
+          if [[ "$trigger" == 'checks' ]]; then
             attended='false'
           fi
 
@@ -396,7 +456,7 @@ jobs:
       # exist from an earlier round, and a shallow clone makes that awkward.
       - name: Check out the repository
         if: ${{ success() && env.PROCEED == 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # The agent runs with a shell and can read the whole working tree - without this,
@@ -450,12 +510,72 @@ jobs:
           reply_marker: ${{ env.REPLY_MARKER }}
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
 
+      # A push starts two things at once - the QA checks and the reviewing agent - and they
+      # finish in either order. Whichever finishes first arrives here, sees the other still
+      # working, and stands down. Whichever finishes second finds nothing pending and runs one
+      # round with both sources already in the feedback.
+      #
+      # There is no handshake between the two. Both questions are answered by Github's own state
+      # on this commit, so neither has to know the other exists, and a lost or duplicated
+      # trigger cannot deadlock it.
+      #
+      # Only unattended rounds wait. Somebody who typed the command wants a round now, not
+      # whenever CI happens to finish.
+      - name: Wait for the other half of the feedback
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.attended == 'false' }}
+        env:
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
+          REVIEW_PATTERNS: ${{ inputs.review_check_patterns }}
+        run: |
+          # The reviewer's own check run is hidden from the staged feedback by
+          # `ignore_check_patterns`, so it has to be counted separately here. Asking whether it
+          # is still working - rather than whether a review has arrived - is what stops this
+          # waiting forever for a reviewer that was never turned on, or that died: neither has
+          # a check run in progress.
+          review_pending=$(gh api --paginate --slurp \
+            "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" 2> /dev/null \
+            | jq --arg re "$REVIEW_PATTERNS" '
+                [ (map(.check_runs) | flatten)[]
+                  | select(.status != "completed")
+                  | select(.name | test($re; "i")) ] | length' 2> /dev/null || echo '')
+
+          # An unreadable answer must not hold the round back for ever - carry on and let the
+          # feedback be whatever has landed so far
+          [[ -z "$review_pending" ]] && review_pending=0
+
+          qa_pending="${CHECKS_PENDING:-0}"
+          echo "On $HEAD_SHA: $qa_pending QA check(s) pending, $review_pending reviewer run(s) pending"
+
+          if [[ "$qa_pending" -gt 0 || "$review_pending" -gt 0 ]]; then
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            echo "Standing down - whatever is still reporting on this commit will start the round when it finishes"
+          fi
+
+      # A round nobody asked for, on a commit where everything passed and the reviewer had
+      # nothing to say. Silent on purpose: this fires on every green pull request, and a comment
+      # each time would be noise rather than news.
+      - name: Nothing to act on
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.trigger == 'checks'
+          && steps.stage_pr.outputs.has_feedback != 'true' }}
+        run: |
+          echo "PROCEED=false" >> "$GITHUB_ENV"
+          echo "Nothing to act on for #${{ steps.event.outputs.pull_request }} - no failing check and no unanswered feedback"
+
       # An empty review, or a command run when everything has already been dealt with. Not a
-      # failure, and worth saying rather than starting an agent with nothing to give it.
+      # failure, and worth saying rather than starting an agent with nothing to give it. Only
+      # for a round somebody asked for - the automatic ones stand down silently above.
       - name: Make sure there is feedback to act on
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.trigger != 'checks'
           && steps.stage_pr.outputs.has_feedback != 'true' }}
         env:
           PR: ${{ steps.event.outputs.pull_request }}
@@ -525,7 +645,7 @@ jobs:
 
           # Local-only and never committed, so neither the staged input nor the agent's
           # replies can end up in the branch however it leaves the working tree
-          printf '/.ai-plan/\n/.ai-review/\n' >> .git/info/exclude
+          printf '/.ai-plan/\n/.ai-review/\n/.ai-reports/\n' >> .git/info/exclude
 
           git config --local user.name 'github-actions[bot]'
           git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -534,6 +654,43 @@ jobs:
             printf 'compare_ref=%s\n' "$compare_ref"
             printf 'branch=%s\n' "$BRANCH"
           } >> "$GITHUB_OUTPUT"
+
+      # What the checks on this commit actually printed, fetched from the artifacts the QA
+      # workflows upload. This is the answer to a red check: the agent cannot read job logs,
+      # and a check run carries only `Process completed with exit code 1`.
+      #
+      # Discovered by name rather than by passing artifact ids around: any run on this commit
+      # may have uploaded one, including runs nothing here triggered. Missing is normal - the
+      # checks may still be running, the reports expire after a day, and a repository may not
+      # upload any - so nothing here fails the round.
+      - name: Fetch the check reports
+        id: reports
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.pull_request.outputs.head_sha != '' }}
+        env:
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+        run: |
+          mkdir -p .ai-reports
+
+          for run_id in $(gh api \
+                "repos/$GH_REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+                --jq '.workflow_runs[].id' 2>/dev/null); do
+            # Its own run has nothing to offer it, and `|| true` because "no artifacts match"
+            # is the ordinary case rather than a failure
+            [[ "$run_id" == "$GITHUB_RUN_ID" ]] && continue
+            gh run download "$run_id" --pattern 'ai-report-*' --dir .ai-reports 2>/dev/null || true
+          done
+
+          found=$(find .ai-reports -type f | wc -l)
+          echo "found=$found" >> "$GITHUB_OUTPUT"
+
+          if [[ "$found" -eq 0 ]]; then
+            echo "No check reports for $HEAD_SHA - the agent will work from the feedback alone"
+          else
+            echo "Staged $found report file(s) for $HEAD_SHA:"
+            find .ai-reports -type f -printf '  %p (%s bytes)\n'
+          fi
 
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
@@ -664,6 +821,12 @@ jobs:
               last round. Where it and the feedback disagree, the feedback wins: it is newer,
               and somebody wrote it after seeing the code.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
+            - `.ai-reports/` - what the checks on this commit actually printed, one directory
+              per CI job. A failing `check` in the feedback almost certainly has its output in
+              here, and reading it beats inferring what the check meant from its name. It is
+              empty when the checks have not finished, when the reports have expired, or when
+              this repository does not upload any - in which case say what you could not see
+              rather than guessing.
 
             If `.ai-review/feedback.json` is missing or unreadable, stop straight away and say
             exactly that as your final message.

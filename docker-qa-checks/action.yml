@@ -6,6 +6,11 @@ inputs:
     required: false
     default: ''
     type: string
+  report_name:
+    description: 'Name of the artifact the check output is uploaded as. Anything starting with `ai-report-` is picked up by the AI implementing workflow, which is how an agent finds out what a red check printed. Artifact names have to be unique within a run, so give each leg its own if this runs more than once'
+    required: false
+    default: 'ai-report-docker'
+    type: string
 
 runs:
   using: "composite"
@@ -14,23 +19,48 @@ runs:
       shell: bash
       run: ${{ inputs.setup_cmd }}
 
+    - name: Prepare the report directory
+      shell: bash
+      run: mkdir -p .ai-reports
+
+    # Every check below tees its output to a file as well as the log, and the files go up as an
+    # artifact at the end - an implementing agent cannot read job logs, and a check run on its own
+    # carries nothing but `Process completed with exit code 1`.
+    #
+    # `set -o pipefail` so that `tee` cannot return success for a task that failed, which would
+    # turn every red check green.
     - name: Run tests
       shell: bash
       run: |
+        set -o pipefail
         if ./task.sh supports test > /dev/null; then
-          ./task.sh test
+          ./task.sh test 2>&1 | tee .ai-reports/test.log
         fi
 
     - name: Run code quality checks
       shell: bash
       run: |
+        set -o pipefail
         if ./task.sh supports cs-check > /dev/null; then
-          ./task.sh cs-check
+          ./task.sh cs-check 2>&1 | tee .ai-reports/cs-check.log
         fi
 
     - name: Run Psalm
       shell: bash
       run: |
+        set -o pipefail
         if ./task.sh supports psalm > /dev/null; then
-          ./task.sh psalm
+          ./task.sh psalm 2>&1 | tee .ai-reports/psalm.log
         fi
+
+    # `always()`, because the only run anybody wants these from is the one that failed - and a
+    # failed step skips everything after it by default. Short retention: this is written to be read
+    # by the next implementing round, within minutes, not kept.
+    - name: Upload the check reports
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.report_name }}
+        path: .ai-reports
+        retention-days: 1
+        if-no-files-found: ignore
