@@ -9,7 +9,7 @@ inputs:
   report_name:
     description: 'Name of the artifact the check output is uploaded as. Anything starting with `ai-report-` is picked up by the AI implementing workflow, which is how an agent finds out what a red check printed. Artifact names have to be unique within a run, so give each leg its own if this runs more than once'
     required: false
-    default: 'ai-report-docker'
+    default: 'ai-report-qa-checks'
     type: string
 
 runs:

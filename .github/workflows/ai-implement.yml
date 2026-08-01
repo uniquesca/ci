@@ -261,11 +261,12 @@ jobs:
             printf 'pull_request=%s\n' "$pull_request"
             printf 'issue=%s\n' "$issue"
             printf 'actor=%s\n' "$actor"
+            printf 'actor_type=%s\n' "$actor_type"
             printf 'attended=%s\n' "$attended"
             printf 'target=%s\n' "$target"
           } >> "$GITHUB_OUTPUT"
 
-          echo "$mode run on #$target, triggered by $trigger from @$actor (attended: $attended)"
+          echo "$mode run on #$target, triggered by $trigger from @$actor ($actor_type, attended: $attended)"
 
       - name: Check the actor is allowed to run this
         id: permissions
@@ -273,11 +274,15 @@ jobs:
           ALLOWED: ${{ inputs.allowed_permissions }}
           ALLOWED_BOTS: ${{ inputs.allowed_bots }}
           ACTOR: ${{ steps.event.outputs.actor }}
-          ATTENDED: ${{ steps.event.outputs.attended }}
+          # Deliberately the actor's type and not `attended`. The two used to be the same test,
+          # because only a bot produced an unattended round - but a round a finished QA workflow
+          # started is unattended whoever pushed the commit, so a person's login would have been
+          # looked up in the bot list and refused with "your access level is bot".
+          ACTOR_TYPE: ${{ steps.event.outputs.actor_type }}
         run: |
           allowed='false'
 
-          if [[ "$ATTENDED" == 'false' ]]; then
+          if [[ "$ACTOR_TYPE" == 'Bot' ]]; then
             # The collaborators API has no answer for a bot - it 404s, which would read as
             # "not allowed" and make an agent-triggered round impossible. Bots are checked
             # against an explicit list of logins instead.
