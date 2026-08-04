@@ -13,9 +13,6 @@ inputs:
     description: 'Dist folder to use for publishing. Ignored if attach_dist input is not set to `true`'
     required: false
     default: 'dist'
-  repo_token:
-    description: 'GitHub access token with the access to publish package in the repository'
-    required: true
 
 env:
   FILES: ''
@@ -67,9 +64,15 @@ runs:
       run: cat CHANGELOG.md
       shell: bash
 
+    # The run's own token, and nothing else. The calling job has to grant `contents: write` for it
+    # to publish anything.
+    #
+    # Worth knowing: a release, or a tag, created with `GITHUB_TOKEN` starts no workflow run, so
+    # nothing that waits on a `release:` or a `push: tags` event fires for it. Both tag-triggered
+    # workflows here run off the tag push that got us this far, not off the release below.
     - uses: softprops/action-gh-release@v3
       with:
-        token: ${{ inputs.repo_token }}
+        token: ${{ github.token }}
         body_path: '_github_ci_changelog/CHANGELOG.md'
         tag_name: ${{ inputs.release_version }}
         prerelease: false

@@ -6,9 +6,6 @@ on:
       NODE_AUTH_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: true
-      UNIQUES_GITHUB_ACCESS_TOKEN:
-        description: 'Access token for cloning Uniques private repositories from GitHub'
-        required: true
     inputs:
       node_version:
         description: 'Node version to use for building and publishing the package'
@@ -49,6 +46,10 @@ jobs:
   publish-npm:
     name: Publish NPM package
     runs-on: ubuntu-latest
+    # What lets the run's own token publish the Github release below. The NPM package itself is
+    # published with `NODE_AUTH_TOKEN`, which is a registry credential and not a Github permission
+    permissions:
+      contents: write
     steps:
       - uses: actions/setup-node@v6
         with:
@@ -62,7 +63,7 @@ jobs:
         uses: uniquesca/ci/install-packages@main
         with:
           working_directory: ${{ inputs.working_directory }}
-          access_token: ${{ secrets.NODE_AUTH_TOKEN }}
+          npm_access_token: ${{ secrets.NODE_AUTH_TOKEN }}
           skip_composer: true
           npm_install_cmd: npm install --no-audit --no-fund --prefer-offline --no-progress --loglevel=error
 
@@ -111,4 +112,3 @@ jobs:
           release_version: ${{ inputs.release_version }}
           attach_dist: true
           dist_folder: ../dist
-          repo_token: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}

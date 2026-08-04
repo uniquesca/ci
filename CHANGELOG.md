@@ -1139,3 +1139,7 @@
 * Fix: fixed uploading AI reports by QA checks (b41f535 by George Shestayev)
 * New: updating php-related QA checks to attempt fixing code style and committing instead of bothering developers (f08d5de by George Shestayev)
 * Update: AI coding agent will request a review from the initiator (3971eca by George Shestayev)
+
+## v10.0.0
+
+* BREAKING: switching multitude of workflows to use GITHUB_TOKEN to avoid complexity of passing token as an input (c548a39 by George Shestayev)

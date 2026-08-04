@@ -8,6 +8,10 @@ on:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
+    # What lets the run's own token publish the release. `github-release` uses `GITHUB_TOKEN` and
+    # nothing else, so without this the release cannot be created
+    permissions:
+      contents: write
     steps:
       - id: get_version
         run: echo "version=$(echo ${GITHUB_REF#refs/tags/})" >> "$GITHUB_OUTPUT"
@@ -15,4 +19,3 @@ jobs:
       - uses: uniquesca/ci/github-release@main
         with:
           release_version: ${{ steps.get_version.outputs.version }}
-          repo_token: ${{ secrets.GHA_PUBLIC_ACCESS_TOKEN }}
