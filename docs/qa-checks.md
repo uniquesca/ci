@@ -21,6 +21,10 @@ on. This means both workflows can be added to a repository before all of its too
 The one exception is `package.json`: it is what `npm-qa-checks` exists to check, so a
 repository without it fails rather than passing vacuously.
 
+A code style problem a tool can fix is not worth a developer's time, so on a pull request the
+PHP checks fix it and commit the fix instead of reporting it - see
+[Automatic code style fixes](#automatic-code-style-fixes).
+
 > The older combined [`qa-checks.yml`](#deprecated-qa-checks) workflow is deprecated. See
 > [Migrating from qa-checks](#migrating-from-qa-checks).
 
@@ -42,9 +46,12 @@ What happens on each run:
    entry. For an unlocked one, an alternative `composer.<php-version>.lock` is used if the
    repository has one, and `composer update` otherwise. **NPM and Yarn are deliberately not
    touched** - that is what the NPM workflow is for.
-5. If `use_db` is set and the repository has PHPUnit, MySQL is started, the `phpunit`
+5. PHP_CodeSniffer runs in fixing mode, and whatever it fixed is committed back to the pull
+   request branch. This happens before the tests, so a failing test cannot stop a fix that is
+   ready from landing. [Details, and what it needs](#automatic-code-style-fixes).
+6. If `use_db` is set and the repository has PHPUnit, MySQL is started, the `phpunit`
    database is created, `db_dump_path` is imported, and `db_migration_cmd` runs.
-6. PHPUnit runs, then PHP_CodeSniffer, then Psalm. `fail-fast` is off, so one PHP version
+7. PHPUnit runs, then PHP_CodeSniffer, then Psalm. `fail-fast` is off, so one PHP version
    failing does not cancel the others.
 
 The MySQL steps are skipped entirely when the repository has no PHPUnit configuration -
@@ -62,6 +69,9 @@ on:
 
 jobs:
   php-qa:
+    # What lets the code style fixes be committed - see below
+    permissions:
+      contents: write
     uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
@@ -91,6 +101,7 @@ jobs:
 
 | Input | Type | Default | Description |
 |---|---|---|---|
+| `auto_fix` | boolean | `true` | Whether to [fix the code style and commit it](#automatic-code-style-fixes) before the checks run |
 | `setup_cmd` | string | `''` | Command to run before the checks execute |
 | `use_db` | boolean | `false` | Whether a database is needed, for example for unit tests |
 | `mysql_version` | string | `8.0` | Version of MySQL to set up |
@@ -174,12 +185,113 @@ jobs:
 If the PHP tests need built JavaScript assets, they are not two independent things and this
 does not apply - build the assets in the PHP workflow's `setup_cmd` instead.
 
+## Automatic code style fixes
+
+On a pull request, PHP_CodeSniffer runs as `phpcbf` before anything else, and whatever it fixed
+is committed back to the branch as `CI: automatic code style fixes`. Only what no tool can fix
+reaches the code style check afterwards, and therefore a person.
+
+This is [`cs-fix`](../cs-fix/action.yml), used by all three QA entry points - `php-qa-checks`,
+the deprecated `qa-checks`, and the [`docker-qa-checks`](#docker-qa-checks) action.
+
+### The calling job needs `contents: write`
+
+That is the whole setup - there is no secret to wire up:
+
+```yaml
+jobs:
+  php-qa:
+    permissions:
+      contents: write
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    secrets:
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+```
+
+The fixes are pushed with the run's own `GITHUB_TOKEN`, and the fix commit becomes the new head of
+the pull request - so the run whose checks the pull request ends up showing is the one that push
+starts, not the one that pushed.
+
+**That run has to be released by hand.** Github holds a `pull_request` run triggered by
+`GITHUB_TOKEN` in an approval-required state, deliberately, so that a workflow cannot start itself
+in a loop; somebody with write access releases it with *Approve workflows to run*. The run says so
+as a notice when it pushes. The checks are pending rather than missing, so the pull request is not
+mergeable until then - one click instead of a developer fixing whitespace by hand.
+
+Worth knowing: the [AI implementing workflow](ai/ai-implement.md) is started by your QA workflows
+finishing, so it waits on that approval as well.
+
+### When it does nothing
+
+| Situation | What happens |
+|---|---|
+| The calling job has no `contents: write` | The push is refused, so after one attempt per matrix leg the fixes are taken back out and the code style check reports them as it used to |
+| A `push` run, for example to `develop` | Nothing is fixed - there is no pull request branch to iterate on, and CI does not write to your default branch. Style problems on `develop` are reported as they always were |
+| A pull request from a fork | Nothing is fixed - the branch is not ours to push to, and the token a fork's run gets is read-only |
+| No `phpcs.xml` or `phpcs.xml.dist` | The step does not run, same as the check itself |
+| `phpcbf` is not installed | Warning, nothing is fixed |
+| The branch moved on mid-run, or the push is refused | The fixer runs again against the branch as it now is, and that is what lands - see [below](#every-php-version-fixes-its-own). Only after one attempt per matrix leg does it warn, take the fixes back out of the working tree and let the code style check report them the way it used to |
+| `auto_fix: false` | The step does not run |
+
+One rule runs through all of them, and it is the invariant worth remembering: **a job is green
+only if the fixes it made are on the branch.** A fix that cannot land is undone locally first, so
+a check never passes on the strength of a fix nobody else can see.
+
+### Every PHP version fixes its own
+
+A matrix does not necessarily produce one fix. A sniff that only fires on newer syntax, or an
+unlocked leg that resolved a newer coding standard, means 8.2 can fix strictly more than 8.1.
+
+Every leg fixes and tries to push, and a ref update is atomic, so one of them wins. What the
+losers do is the whole design: **a loser goes back to the tip the winner just pushed, runs its own
+fixer again over the code as it now stands, and tries again.**
+
+- If its version had nothing the winner did not already fix - the usual case - the second run of
+  the fixer finds nothing, and the job is done and green.
+- If its version fixes more, that difference is what it pushes on top. It is derived against the
+  exact commit it will be pushed onto, so there is never a patch to merge and nothing to conflict.
+- The same thing happens when the branch moved for any other reason, a person pushing to it for
+  instance: the stale fixes are dropped, the fixer runs against what is there now, and that is
+  what lands.
+
+It tries this **once per leg of the matrix** (`attempts: ${{ strategy.job-total }}` in both
+workflows), because that is how many jobs can be racing to land a fix of their own. Only after
+running out of attempts does a leg revert and let its code style check go red.
+
+So a matrix settles within one run, and every version's fixes end up on the branch whichever one
+got there first.
+
+**It gives up rather than loop.** After five consecutive automatic fix commits on a branch, no
+sixth is pushed: past that the fixer is not settling, and it needs a person. That counts commits
+on the branch across runs, separately from the attempts within one run.
+
+Also, the commit carries the fixer's files and nothing else. A `setup_cmd` is free to write into
+the working tree; a commit about code style is not where that should turn up.
+
+### docker-qa-checks
+
+This one runs `./task.sh cs-fix`, skipped when `task.sh` does not support it. The job calling it
+needs the same `contents: write`:
+
+```yaml
+    permissions:
+      contents: write
+    steps:
+      - uses: uniquesca/ci/docker-qa-checks@main
+```
+
+| Input | Default | Description |
+|---|---|---|
+| `auto_fix` | `'true'` | Whether to run `cs-fix` and commit what it fixed |
+
+Everything else on this page applies unchanged.
+
 ## Deprecated: qa-checks
 
-`qa-checks.yml` did all of the above in one job. It still works and still runs the same
-checks, but it emits a deprecation warning and will not receive fixes. Every consumer had to
-supply the union of both ecosystems' secrets and inputs, and a pure-JavaScript repository
-paid for a PHP version matrix it never used.
+`qa-checks.yml` did all of the above in one job. It still works, still runs the same checks and
+does fix the code style like the others do, but it emits a deprecation warning and no further
+work goes into it. Every consumer had to supply the union of both ecosystems' secrets and
+inputs, and a pure-JavaScript repository paid for a PHP version matrix it never used.
 
 ### Migrating from qa-checks
 

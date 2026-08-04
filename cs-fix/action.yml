@@ -1,0 +1,266 @@
+name: Fix code style
+
+description: 'Runs a code style fixer and commits what it fixed back to the pull request branch, so that a problem a tool can fix does not become a check a developer has to act on'
+
+inputs:
+  cmd:
+    description: 'Command that fixes the code style in place. Whatever it leaves in the working tree is what gets committed'
+    required: false
+    default: './vendor/bin/phpcbf'
+  attempts:
+    description: 'How many times to try landing the fixes. Every attempt after the first starts over from the tip of the branch as it is by then, so **set this to the size of the matrix** (`strategy.job-total`): that is how many jobs can be racing to land a fix of their own, and each one that wins costs the others an attempt'
+    required: false
+    default: '3'
+  report_dir:
+    description: 'Directory the fixer output is written to, for the AI implementing workflow to read back. Nothing is written when it is empty'
+    required: false
+    default: ''
+  commit_message:
+    description: 'Subject of the fix commit. It is also how the circuit breaker below recognises its own commits, so keep it stable'
+    required: false
+    default: 'CI: automatic code style fixes'
+
+outputs:
+  fixed:
+    description: '`true` when the fixer changed something'
+    value: ${{ steps.fix.outputs.fixed }}
+  pushed:
+    description: '`true` when the fixes were committed and pushed to the branch'
+    value: ${{ steps.fix.outputs.pushed }}
+
+runs:
+  using: "composite"
+  steps:
+    # Fixing is all or nothing, so everything the push needs is settled before the fixer runs. A
+    # fixer that runs but cannot land its work would leave a working tree the checks below pass
+    # against and a branch that is still broken - a red check turned green with nothing to show
+    # for it.
+    #
+    # Nothing here depends on which leg of a matrix is asking, which is what keeps one leg from
+    # checking a fixed tree while another checks an unfixed one.
+    - name: Check whether the code style can be fixed
+      id: gate
+      shell: bash
+      env:
+        BRANCH: ${{ github.head_ref }}
+        # Empty on anything that is not a pull request, which is the comparison below failing
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        REPO: ${{ github.repository }}
+      run: |
+        reason=''
+        if [[ "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
+          reason="this is a $GITHUB_EVENT_NAME run, and the fixes are only ever committed to a pull request branch"
+        elif [[ "$HEAD_REPO" != "$REPO" ]]; then
+          reason="the pull request comes from $HEAD_REPO, and a branch on a fork is neither ours to push to nor writable with the token this run gets"
+        fi
+
+        if [[ -n "$reason" ]]; then
+          echo "::warning title=Code style not fixed automatically::The code style fixer did not run, because $reason. Whatever it would have fixed is reported by the code style check instead."
+          echo "Not fixing the code style: $reason"
+          exit 0
+        fi
+
+        {
+          echo "enabled=true"
+          echo "branch=$BRANCH"
+        } >> "$GITHUB_OUTPUT"
+
+    # Fixing and landing are one step, because landing can send us back to fixing. Every leg of a
+    # matrix fixes and tries to push, and a ref update is atomic, so one of them wins a round - the
+    # losers start over from the tip the winner just made and run the fixer again over what is there
+    # now. That is what makes a PHP version that fixes more than the others fix it: the difference
+    # is derived against the code as it stands, not merged into it.
+    - name: Fix the code style and commit it
+      id: fix
+      if: ${{ steps.gate.outputs.enabled == 'true' }}
+      shell: bash
+      env:
+        CMD: ${{ inputs.cmd }}
+        # The run's own token. It is enough to push with, given `contents: write`, and the run the
+        # push starts is held for approval rather than started outright - Github's own guard against
+        # a workflow starting itself in a loop
+        TOKEN: ${{ github.token }}
+        BRANCH: ${{ steps.gate.outputs.branch }}
+        MESSAGE: ${{ inputs.commit_message }}
+        ATTEMPTS: ${{ inputs.attempts }}
+        REPORT_DIR: ${{ inputs.report_dir }}
+      run: |
+        # Deliberately without `set -e`: everything that can go wrong below ends in the fixes being
+        # taken back out of the working tree, so that the code style check reports the branch as it
+        # really is rather than passing against a tree nobody will ever see
+        set -uo pipefail
+
+        # Anchored to the repository root, because that is what `git diff` paths are relative to and
+        # what the patch below has to apply from. The fixer itself runs where the caller put us,
+        # which is not necessarily the same directory
+        root=$(git rev-parse --show-toplevel)
+        files="$RUNNER_TEMP/cs-fix-files.txt"
+        patch="$RUNNER_TEMP/cs-fix.patch"
+        target="$RUNNER_TEMP/cs-fix-branch"
+        log="${REPORT_DIR:+$REPORT_DIR/cs-fix.log}"
+        [[ -n "$log" ]] && : > "$log"
+
+        # The credential goes on the command line of the commands that need it, rather than into
+        # .git/config where the working tree could read it back.
+        #
+        # Url-scoped, and with an empty value first, both deliberately: `actions/checkout` persists
+        # the run's own GITHUB_TOKEN under exactly this url-scoped key, git answers a url-scoped
+        # setting with the url-scoped value - so a bare `http.extraheader` is ignored outright, and
+        # a second url-scoped one without the reset sends both credentials as two `Authorization`
+        # headers. Either way the push goes out as GITHUB_TOKEN, quietly succeeds, and starts no
+        # workflow run - the one outcome this action exists to avoid.
+        #
+        # `tr` rather than `base64 -w0`, because the matrix a caller runs this under can name macOS
+        # and its `base64` has no such option
+        header="http.${GITHUB_SERVER_URL:-https://github.com}/.extraheader"
+        auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
+        authed() { git -c "$header=" -c "$header=AUTHORIZATION: basic $auth" "$@"; }
+
+        drop_worktree() {
+          git -C "$root" worktree remove --force "$target" 2> /dev/null
+          rm -rf "$target"
+          # A directory removed from under git stays in .git/worktrees, and the next `add` refuses
+          # to reuse the path it is still holding
+          git -C "$root" worktree prune
+        }
+
+        give_up() {
+          echo "::warning title=Code style fixes not committed::$1 The code style check reports what the fixer would have fixed, so it needs fixing by hand this time."
+          drop_worktree
+          tr '\n' '\0' < "$files" | xargs -0 git -C "$root" checkout --
+          exit 0
+        }
+
+        # Runs the fixer over the working tree as it stands, and leaves a patch of what it changed
+        # in $patch. Sets `fixed` when there is something worth landing.
+        fixed=0
+        run_fixer() {
+          fixed=0
+
+          # What was already modified before the fixer ran. A `setup_cmd` is free to write into the
+          # working tree, and none of that belongs in a commit about code style
+          local before="$RUNNER_TEMP/cs-fix-before.txt"
+          git -C "$root" diff --name-only > "$before"
+
+          # PHPCBF answers 0 when it found nothing to fix, 1 when it fixed everything it found and 2
+          # when some of what it found is not fixable. All three are normal here - the code style
+          # check that runs after this is what decides whether anything is still wrong. Anything
+          # higher is the fixer itself failing, on an unreadable ruleset for example, and that is
+          # worth failing the step for
+          local status=0
+          if [[ -n "$log" ]]; then
+            bash -c "$CMD" 2>&1 | tee -a "$log" || status=$?
+          else
+            bash -c "$CMD" 2>&1 || status=$?
+          fi
+
+          # Not every repository that has a code style configuration also has the fixer installed,
+          # and turning that into a failed QA run would be a poor trade for a feature meant to save
+          # people work
+          if (( status == 127 )); then
+            echo "::warning title=Code style fixer not installed::\`$CMD\` was not found, so nothing was fixed automatically."
+            return 0
+          fi
+
+          if (( status > 2 )); then
+            echo "::error title=Code style fixer failed::\`$CMD\` exited with $status"
+            exit "$status"
+          fi
+
+          # The fixer's own files and nothing else. A file `setup_cmd` had already modified stays out
+          # of the commit even when the fixer touched it as well - a style fix is not the place to
+          # find out what else the run wrote
+          git -C "$root" diff --name-only | grep -F -x -v -f "$before" > "$files" || true
+
+          if [[ ! -s "$files" ]]; then
+            return 0
+          fi
+
+          echo "The code style fixer changed:"
+          while read -r file; do
+            echo "  $file"
+          done < "$files"
+
+          tr '\n' '\0' < "$files" | xargs -0 git -C "$root" diff --binary -- > "$patch"
+          fixed=1
+        }
+
+        run_fixer
+        if (( ! fixed )); then
+          echo "There was nothing to fix."
+          exit 0
+        fi
+        echo "fixed=true" >> "$GITHUB_OUTPUT"
+
+        attempt=1
+        while true; do
+          # Depth 5 rather than 1, because the circuit breaker below has to see more than the tip
+          authed -C "$root" fetch --no-tags --depth=5 origin "refs/heads/$BRANCH" \
+            || give_up "The $BRANCH branch could not be fetched."
+
+          # A fixer whose output is not stable would otherwise push a commit, start a run, fix the
+          # same code again and keep going for as long as anybody lets it. This counts commits on the
+          # branch, not attempts within a run - the loop below is bounded separately
+          if [[ "$(git -C "$root" log -5 --format=%s FETCH_HEAD | grep -c -F -x "$MESSAGE")" -ge 5 ]]; then
+            give_up "The last five commits on $BRANCH are automatic code style fixes already, so the fixer is not settling and this one is not being pushed."
+          fi
+
+          # The fix is committed in a worktree of its own rather than here, because a `pull_request`
+          # checkout is the detached merge commit Github built for the run: committing here and
+          # pushing that would merge the base branch into somebody's pull request as a side effect
+          # of a style fix. It also leaves the tree the checks after this run against as the fixer
+          # left it
+          drop_worktree
+          git -C "$root" worktree add --detach --quiet "$target" FETCH_HEAD \
+            || give_up "A worktree for $BRANCH could not be created."
+
+          if ! git -C "$target" apply "$patch"; then
+            # Only possible when the tip holds a version of these files that the fixer has not seen -
+            # so there is nothing to merge here, and everything to gain from fixing that version
+            # instead. That is what the bottom of this loop does
+            echo "The fixes do not apply to the tip of $BRANCH as it is now."
+          elif git -C "$target" diff --quiet HEAD; then
+            echo "Every fix this job made is on $BRANCH already."
+            drop_worktree
+            exit 0
+          elif git -C "$target" \
+                 -c user.name='CI' -c user.email='service@uniques.ca' \
+                 commit --quiet --all --message "$MESSAGE" \
+               && authed -C "$target" push --quiet origin "HEAD:refs/heads/$BRANCH"; then
+            # No `[skip ci]`: this push is what starts the run whose checks the pull request ends up
+            # showing, because the commit it pushes becomes the new head of the pull request
+            drop_worktree
+            echo "Committed the code style fixes to $BRANCH."
+            # Said out loud, because it is the one thing left for a person to do: the fix commit is
+            # the head of the pull request now, and the run reporting on it is waiting to be let go
+            echo "::notice title=Code style fixed automatically::The code style was fixed and committed to $BRANCH. The run for that commit needs releasing with \"Approve workflows to run\" - Github holds a run a workflow triggered itself."
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            echo "Something else pushed to $BRANCH first."
+          fi
+
+          attempt=$(( attempt + 1 ))
+          if (( attempt > ATTEMPTS )); then
+            give_up "The fixes could not be landed in $ATTEMPTS attempts - $BRANCH is being written to faster than this can keep up with."
+          fi
+
+          # Start over from the branch as it is now. The working tree goes to the tip and the fixer
+          # runs again over what is there, so whatever is still left to fix is derived against
+          # exactly the commit it will be pushed onto - there is never a patch to merge, and a
+          # version that fixes more than the one that won lands the difference and nothing else.
+          #
+          # `--force` resets tracked files, so a `setup_cmd` that modified one loses that change for
+          # the checks that follow. That is the price of the branch having moved mid-run, and it only
+          # happens on this path.
+          echo "Starting again from the tip of $BRANCH (attempt $attempt of $ATTEMPTS)."
+          git -C "$root" checkout --force --detach --quiet FETCH_HEAD \
+            || give_up "The tip of $BRANCH could not be checked out."
+
+          run_fixer
+          if (( ! fixed )); then
+            echo "Nothing is left to fix on top of $BRANCH."
+            drop_worktree
+            exit 0
+          fi
+        done

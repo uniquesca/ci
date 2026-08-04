@@ -1,8 +1,8 @@
 # Uniques CI/CD tools
 
 This repository is Uniques CI framework. It is heavily based on Github Actions platform and contains:
-* Reusable workflows and actions:
-  * AI assisted development: 
+* Reusable workflows:
+  * AI assisted development:
     * [Plan](docs/ai/ai-plan.md)
     * [Implement](docs/ai/ai-implement.md)
     * [Review](docs/ai/ai-review.md)

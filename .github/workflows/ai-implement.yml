@@ -67,6 +67,11 @@ on:
         required: false
         default: 'ai-review'
         type: string
+      request_review:
+        description: 'Ask the person who triggered a round to review the pull request when it finishes. Submitting a review clears their pending request, so this is what puts an answered round back in their queue - including a round that changed no file, where the agent pushed back with a reason they need to read. Skipped when a bot triggered the round, and when that person opened the pull request themselves - Github rejects both as requested reviewers'
+        required: false
+        default: true
+        type: boolean
       review_check_patterns:
         description: 'Case-insensitive regular expression matching the reviewing agent own check runs. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Deliberately separate from `ignore_check_patterns`, which hides those same check runs from the feedback - the gate has to see what the feedback must not'
         required: false
@@ -1122,6 +1127,50 @@ jobs:
 
           cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$PR" --body-file "$RUNNER_TEMP/round-comment.md"
+
+      # Put the work back in a person's review queue. Submitting a review clears their pending
+      # request, so without this a round they asked for finishes with nobody assigned to look at
+      # the result. Github re-requests a review that was already submitted, which is what makes
+      # the pull request reappear in their queue.
+      #
+      # Deliberately not conditional on anything having been pushed. A round that changed no file
+      # is a round where the agent pushed back with a reason instead of complying, and that is
+      # precisely when the person who asked needs to read it and decide.
+      #
+      # Only ever a person, and never the pull request's own author - Github rejects a bot as a
+      # requested reviewer, and rejects anybody reviewing their own pull request. A round a bot
+      # triggered simply skips this: whoever was asked on an earlier round still has the request.
+      - name: Ask the person who triggered it for a review
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && inputs.request_review
+          && steps.event.outputs.actor_type == 'User' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request || steps.pr.outputs.number }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+        run: |
+          if [[ -z "$PR" ]]; then
+            echo "No pull request to request a review on"
+            exit 0
+          fi
+
+          author=$(gh pr view "$PR" --json author --jq '.author.login' 2> /dev/null || echo '')
+
+          if [[ -n "$author" && "$ACTOR" == "$author" ]]; then
+            echo "@$ACTOR opened #$PR, so there is no review to request from them"
+            exit 0
+          fi
+
+          jq -n --arg login "$ACTOR" '{reviewers: [$login]}' > "$RUNNER_TEMP/reviewer.json"
+
+          # A request that does not land costs the notification, not the work - which is already
+          # pushed and already commented on. Warn rather than turn a good round red.
+          if gh api --method POST "repos/$GH_REPO/pulls/$PR/requested_reviewers" \
+               --input "$RUNNER_TEMP/reviewer.json" > /dev/null; then
+            echo "Asked @$ACTOR to review #$PR"
+          else
+            echo "::warning title=Could not request a review::@$ACTOR was not added as a reviewer on #$PR - they may not have read access to the repository"
+          fi
 
       # Hand the work to a reviewing agent. Last, so that the round comment and the thread
       # replies are already in place - the reviewer reads both, and a review that arrived

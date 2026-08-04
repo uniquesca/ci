@@ -118,4 +118,7 @@ jobs:
           name: ai-report-npm
           path: ${{ env.AI_REPORT_DIR }}
           retention-days: 1
+          # `.ai-reports` is a dot-directory, and upload-artifact excludes hidden files by
+          # default - without this the report is written and then silently dropped
+          include-hidden-files: true
           if-no-files-found: ignore

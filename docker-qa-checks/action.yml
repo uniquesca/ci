@@ -11,6 +11,11 @@ inputs:
     required: false
     default: 'ai-report-qa-checks'
     type: string
+  auto_fix:
+    description: 'Whether to run `cs-fix` before the checks and commit what it fixed back to the pull request branch, so that a fixable problem does not become a check a developer has to act on. The job needs `permissions: contents: write` for the commit to land'
+    required: false
+    default: 'true'
+    type: string
 
 runs:
   using: "composite"
@@ -21,7 +26,29 @@ runs:
 
     - name: Prepare the report directory
       shell: bash
-      run: mkdir -p .ai-reports
+      # Anchored to the workspace, not relative: this is a composite action, so a caller that
+      # sets a working-directory would otherwise write the reports somewhere the upload below
+      # does not look
+      run: mkdir -p "$GITHUB_WORKSPACE/.ai-reports"
+
+    # Fixing comes before every check, so that a failing test cannot stop a fix that is ready from
+    # landing. What is left after it is what the code style check below reports - the problems no
+    # tool can fix.
+    - name: Check whether the code style can be fixed automatically
+      id: cs_fix_support
+      if: ${{ inputs.auto_fix == 'true' }}
+      shell: bash
+      run: |
+        if ./task.sh supports cs-fix > /dev/null; then
+          echo "supported=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Fix the code style
+      if: ${{ steps.cs_fix_support.outputs.supported == 'true' }}
+      uses: uniquesca/ci/cs-fix@main
+      with:
+        cmd: './task.sh cs-fix'
+        report_dir: ${{ github.workspace }}/.ai-reports
 
     # Every check below tees its output to a file as well as the log, and the files go up as an
     # artifact at the end - an implementing agent cannot read job logs, and a check run on its own
@@ -34,7 +61,7 @@ runs:
       run: |
         set -o pipefail
         if ./task.sh supports test > /dev/null; then
-          ./task.sh test 2>&1 | tee .ai-reports/test.log
+          ./task.sh test 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/test.log"
         fi
 
     - name: Run code quality checks
@@ -42,7 +69,7 @@ runs:
       run: |
         set -o pipefail
         if ./task.sh supports cs-check > /dev/null; then
-          ./task.sh cs-check 2>&1 | tee .ai-reports/cs-check.log
+          ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log"
         fi
 
     - name: Run Psalm
@@ -50,7 +77,7 @@ runs:
       run: |
         set -o pipefail
         if ./task.sh supports psalm > /dev/null; then
-          ./task.sh psalm 2>&1 | tee .ai-reports/psalm.log
+          ./task.sh psalm 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/psalm.log"
         fi
 
     # `always()`, because the only run anybody wants these from is the one that failed - and a
@@ -61,6 +88,9 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.report_name }}
-        path: .ai-reports
+        path: ${{ github.workspace }}/.ai-reports
         retention-days: 1
+        # `.ai-reports` is a dot-directory, and upload-artifact excludes hidden files by
+        # default - without this the report is written and then silently dropped
+        include-hidden-files: true
         if-no-files-found: ignore

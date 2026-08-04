@@ -103,11 +103,12 @@ in [Dig deeper](#dig-deeper).
 
       - name: Upload the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ai-report-e2e
           path: .ai-reports
           retention-days: 1
+          include-hidden-files: true
           if-no-files-found: ignore
 ```
 
@@ -131,12 +132,15 @@ jobs:
 
 ### Reports from other workflows
 
-Both lines at the top of that upload step are load-bearing, and getting either wrong fails quietly:
+Three lines there are load-bearing, and getting any of them wrong fails quietly:
 
 * **`if: always()`** - a failed step skips the ones after it, so without this the run you wanted the
   report from is the one that uploads nothing.
 * **`set -o pipefail`** - a `run:` step that does not name its shell does not get it, and `tee` then
   returns success for a command that failed, turning a red check green.
+* **`include-hidden-files: true`** - `.ai-reports` starts with a dot, and `upload-artifact` excludes
+  hidden files by default. Without it the report is written and then dropped, and the log says
+  `No files were found with the provided path`.
 
 Reports are found by commit, so a workflow triggered by a schedule or `workflow_dispatch` is not
 picked up. Missing reports never fail a round - the agent says what it could not see instead.
