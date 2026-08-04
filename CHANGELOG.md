@@ -1133,3 +1133,9 @@
 ## v9.4.1
 
 * Fix: fixed an ability for check workflows to trigger AI coding agent to re-do it's work (51513fa by George Shestayev)
+
+## v9.5.0
+
+* Fix: fixed uploading AI reports by QA checks (b41f535 by George Shestayev)
+* New: updating php-related QA checks to attempt fixing code style and committing instead of bothering developers (f08d5de by George Shestayev)
+* Update: AI coding agent will request a review from the initiator (3971eca by George Shestayev)
