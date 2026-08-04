@@ -10,6 +10,11 @@ on:
         description: 'Access token for authentication with the NPM registry'
         required: false
     inputs:
+      auto_fix:
+        description: 'Whether to run PHP_CodeSniffer in fixing mode before the checks and commit what it fixed back to the pull request branch, so that a fixable problem does not become a check a developer has to act on'
+        required: false
+        default: true
+        type: boolean
       setup_cmd:
         description: 'Command to run to set up environment before the QA checks execution'
         required: false
@@ -153,6 +158,28 @@ jobs:
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
           composer_cmd: ${{ steps.prep-composer-cmd.outputs.cmd }}
           composer_lock: ${{ steps.prep-composer-cmd.outputs.lock_file }}
+
+      # Before the tests rather than next to the code style check below, so that a failing test
+      # cannot stop a fix that is ready from landing. What is left after this is what the check
+      # reports - the problems no tool can fix.
+      #
+      # Every leg of the matrix does this, and they sort out between themselves which one lands its
+      # fixes: the loser of a race starts over from what the winner pushed, runs the fixer again and
+      # lands whatever its own PHP version fixes on top. A leg that still cannot land reverts, so its
+      # check reports the branch as it really is - no leg is ever green on the strength of a fix that
+      # is not on the branch
+      #
+      # The push uses the run's own token, so the calling job has to grant `contents: write` - and
+      # the run for the fix commit is held until somebody releases it with "Approve workflows to
+      # run", which is Github's guard against a workflow starting itself
+      - name: Fix the code style
+        if: ${{ inputs.auto_fix && hashFiles('phpcs.xml', 'phpcs.xml.dist') != '' }}
+        uses: uniquesca/ci/cs-fix@main
+        with:
+          report_dir: ${{ env.AI_REPORT_DIR }}
+          # One attempt per leg of the matrix: that is how many jobs can be racing to land a fix,
+          # and every one that wins costs the others the attempt they were mid-way through
+          attempts: ${{ strategy.job-total }}
 
       - name: Set up MySQL
         if: inputs.use_db == true && env.phpunit == 1
