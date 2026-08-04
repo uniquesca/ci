@@ -74,7 +74,7 @@ jobs:
       # Where each check's output is kept, and what gets uploaded as an artifact at the end.
       # An implementing agent cannot read job logs, and a check run on its own carries nothing
       # but `Process completed with exit code 1` - this is how it finds out what actually broke
-      AI_REPORT_DIR: .ai-reports
+      AI_REPORT_DIR: ${{ github.workspace }}/.ai-reports
     strategy:
       fail-fast: false
       matrix:
@@ -249,4 +249,7 @@ jobs:
           name: ai-report-qa-${{ matrix.setup.php.version }}-${{ matrix.setup.os }}
           path: ${{ env.AI_REPORT_DIR }}
           retention-days: 1
+          # `.ai-reports` is a dot-directory, and upload-artifact excludes hidden files by
+          # default - without this the report is written and then silently dropped
+          include-hidden-files: true
           if-no-files-found: ignore
