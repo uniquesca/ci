@@ -1,4 +1,4 @@
-name: Update v9 branch
+name: Update current version branch
 
 on:
   push:
@@ -20,9 +20,11 @@ jobs:
           git config --local user.email "service@uniques.ca"
           git config --local user.name "CI"
 
-      - name: Merge main into v9
+      - name: Merge main into the current version branch
+        env:
+          VERSION_BRANCH: v9
         run: |
-          git fetch origin v9:v9
-          git checkout v9
-          git merge origin/main -m "CI: merge main into v9 [skip-ci]"
-          git push origin v9
+          git fetch origin "$VERSION_BRANCH:$VERSION_BRANCH"
+          git checkout "$VERSION_BRANCH"
+          git merge origin/main -m "CI: merge main into $VERSION_BRANCH [skip-ci]"
+          git push origin "$VERSION_BRANCH"
