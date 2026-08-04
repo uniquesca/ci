@@ -106,7 +106,7 @@ jobs:
         run: cp ${{ inputs.working_directory }}/${{ inputs.dist_folder }} ../dist -Rf
 
       - name: Publish Github release
-        uses: uniquesca/ci/publish-github-release@main
+        uses: uniquesca/ci/github-release@main
         if: ${{ inputs.github_release == true }}
         with:
           release_version: ${{ inputs.release_version }}
