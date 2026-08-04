@@ -1,9 +1,6 @@
 name: Install packages (Composer/Yarn/NPM)
 
 inputs:
-  access_token:
-    description: '[DEPRECATED] Use composer_access_token and/or npm_access_token instead. Fallback token used when composer_access_token or npm_access_token are empty.'
-    required: false
   working_directory:
     description: 'Working directory to install packages in'
     required: false
@@ -58,26 +55,12 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Deprecation notice for access_token
-      shell: bash
-      if: inputs.access_token != ''
-      run: |
-        echo "::warning title=Deprecated input::The access_token input is deprecated. Please use composer_access_token and/or npm_access_token instead."
-
     - name: Resolve access tokens
       shell: bash
       id: access_tokens
       run: |
         composer_access_token="${{ inputs.composer_access_token }}"
         npm_access_token="${{ inputs.npm_access_token }}"
-
-        if [ -z "$composer_access_token" ]; then
-          composer_access_token="${{ inputs.access_token }}"
-        fi
-
-        if [ -z "$npm_access_token" ]; then
-          npm_access_token="${{ inputs.access_token }}"
-        fi
 
         {
           echo "composer_access_token<<EOF"
