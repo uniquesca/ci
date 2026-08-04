@@ -1143,3 +1143,10 @@
 ## v10.0.0
 
 * BREAKING: switching multitude of workflows to use GITHUB_TOKEN to avoid complexity of passing token as an input (c548a39 by George Shestayev)
+
+## v10.0.1
+
+* BREAKING: removed qa-checks CI job - use php-qa-checks.yml and/or npm-qa-checks.yml instead (d80edd8 by George Shestayev)
+* BREAKING: removed public-github-release job - use github-release instead (d80edd8 by George Shestayev)
+* BREAKING: removed access_token input from install-packages action - use npm_access_token and composer_access_token instead (d80edd8 by George Shestayev)
+* BREAKING: publish-npm and github-release workflows need to specify permissions now (d80edd8 by George Shestayev)
