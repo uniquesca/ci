@@ -16,6 +16,11 @@ inputs:
     required: false
     default: 'true'
     type: string
+  autofix_token:
+    description: 'Access token the automatic code style fixes are pushed with. Supply one and the fix commit starts its own checks, so a fixable problem is fixed and reported green without anybody touching it. Without it the fixes are pushed with the run''s own `GITHUB_TOKEN`, which needs `permissions: contents: write` and leaves the run for the fix commit waiting on "Approve workflows to run"'
+    required: false
+    default: ''
+    type: string
 
 runs:
   using: "composite"
@@ -48,6 +53,7 @@ runs:
       uses: uniquesca/ci/cs-fix@main
       with:
         cmd: './task.sh cs-fix'
+        token: ${{ inputs.autofix_token }}
         report_dir: ${{ github.workspace }}/.ai-reports
 
     # Every check below tees its output to a file as well as the log, and the files go up as an

@@ -69,12 +69,11 @@ on:
 
 jobs:
   php-qa:
-    # What lets the code style fixes be committed - see below
-    permissions:
-      contents: write
     uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+      # What lets the code style fixes be committed, and their checks run - see below
+      AUTOFIX_ACCESS_TOKEN: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
 ```
 
 With a database and a migration:
@@ -96,6 +95,7 @@ jobs:
 | Secret | Required | Description |
 |---|---|---|
 | `COMPOSER_ACCESS_TOKEN` | yes | Access token for cloning Uniques private repositories |
+| `AUTOFIX_ACCESS_TOKEN` | no | Access token the [automatic code style fixes](#automatic-code-style-fixes) are pushed with. Without it they are pushed with the run's own `GITHUB_TOKEN`, which needs `contents: write` on the calling job and leaves the fix commit's run waiting on *Approve workflows to run* |
 
 ### Inputs
 
@@ -194,9 +194,30 @@ reaches the code style check afterwards, and therefore a person.
 This is [`cs-fix`](../cs-fix/action.yml), used by all three QA entry points - `php-qa-checks`,
 the deprecated `qa-checks`, and the [`docker-qa-checks`](#docker-qa-checks) action.
 
-### The calling job needs `contents: write`
+### Setting it up
 
-That is the whole setup - there is no secret to wire up:
+The fix commit becomes the new head of the pull request, so the checks the pull request ends up
+showing are the ones that start on that commit - and whether they start at all comes down to which
+token pushed it. That is the whole of the setup, and it is worth getting right: a fix nobody's
+checks run against still needs a person.
+
+**Supply `AUTOFIX_ACCESS_TOKEN`, and it is done without anybody:**
+
+```yaml
+jobs:
+  php-qa:
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    secrets:
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+      AUTOFIX_ACCESS_TOKEN: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
+```
+
+Any token that can push to the branch - a personal access token, or a Github App installation
+token - pushing as its own identity. The fix commit starts a full run of its own, that run finds
+nothing left to fix, and the pull request goes green on its own. No `contents: write` is needed
+for the push, because the push does not use the run's token.
+
+**Without it, the fixes still land, but the run for them waits on a person:**
 
 ```yaml
 jobs:
@@ -208,24 +229,21 @@ jobs:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
 ```
 
-The fixes are pushed with the run's own `GITHUB_TOKEN`, and the fix commit becomes the new head of
-the pull request - so the run whose checks the pull request ends up showing is the one that push
-starts, not the one that pushed.
-
-**That run has to be released by hand.** Github holds a `pull_request` run triggered by
-`GITHUB_TOKEN` in an approval-required state, deliberately, so that a workflow cannot start itself
-in a loop; somebody with write access releases it with *Approve workflows to run*. The run says so
-as a notice when it pushes. The checks are pending rather than missing, so the pull request is not
-mergeable until then - one click instead of a developer fixing whitespace by hand.
+The fallback is the run's own `GITHUB_TOKEN`, which needs the `contents: write` above. Github holds
+any `pull_request` run that `GITHUB_TOKEN` triggered in an approval-required state, deliberately, so
+that a workflow cannot start itself in a loop; somebody with write access releases it with *Approve
+workflows to run*. The checks are pending rather than missing, so the pull request is not mergeable
+until then - one click instead of a developer fixing whitespace by hand, but still a click. The run
+says which of the two happened as a notice when it pushes.
 
 Worth knowing: the [AI implementing workflow](ai/ai-implement.md) is started by your QA workflows
-finishing, so it waits on that approval as well.
+finishing, so on the fallback it waits on that approval as well.
 
 ### When it does nothing
 
 | Situation | What happens |
 |---|---|
-| The calling job has no `contents: write` | The push is refused, so after one attempt per matrix leg the fixes are taken back out and the code style check reports them as it used to |
+| No `AUTOFIX_ACCESS_TOKEN` and no `contents: write` on the calling job | The push is refused, so after one attempt per matrix leg the fixes are taken back out and the code style check reports them as it used to |
 | A `push` run, for example to `develop` | Nothing is fixed - there is no pull request branch to iterate on, and CI does not write to your default branch. Style problems on `develop` are reported as they always were |
 | A pull request from a fork | Nothing is fixed - the branch is not ours to push to, and the token a fork's run gets is read-only |
 | No `phpcs.xml` or `phpcs.xml.dist` | The step does not run, same as the check itself |
@@ -270,19 +288,23 @@ the working tree; a commit about code style is not where that should turn up.
 
 ### docker-qa-checks
 
-This one runs `./task.sh cs-fix`, skipped when `task.sh` does not support it. The job calling it
-needs the same `contents: write`:
+This one runs `./task.sh cs-fix`, skipped when `task.sh` does not support it. It is an action rather
+than a workflow, so the token is an input rather than a secret:
 
 ```yaml
-    permissions:
-      contents: write
     steps:
       - uses: uniquesca/ci/docker-qa-checks@main
+        with:
+          autofix_token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
 ```
+
+Leave `autofix_token` out and the job needs `permissions: contents: write` instead, with the same
+approval click as above.
 
 | Input | Default | Description |
 |---|---|---|
 | `auto_fix` | `'true'` | Whether to run `cs-fix` and commit what it fixed |
+| `autofix_token` | `''` | Token the fixes are pushed with. Empty falls back to the run's own `GITHUB_TOKEN` |
 
 Everything else on this page applies unchanged.
 
