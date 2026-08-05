@@ -1155,3 +1155,7 @@
 
 * Fix: fixed cs-fix action to handle error codes properly (f838dfe by George Shestayev)
 * Update: added an ability to use a non-default base for AI coding agent (f838dfe by George Shestayev)
+
+## v10.1.1
+
+* Update: made possible to specify a different base at the point of invoking AI planning agent (015b490 by George Shestayev)
