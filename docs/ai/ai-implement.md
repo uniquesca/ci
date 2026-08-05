@@ -41,16 +41,33 @@ request, because that is where the work continues.
 
 ### Basing the work on another branch
 
-By default the branch is cut from the repository default branch and the pull request targets it.
-Name another one to work from instead:
+**Usually you do not tell this workflow anything.** The plan records the branch it was written
+against, and the work is built on that one - so
+[`/ai-plan base=develop`](ai-plan.md#planning-against-another-branch) is normally the only place
+the branch gets named:
 
 ```
-/ai-do base=develop
+/ai-plan base=develop     # planner reads develop, and the plan remembers
+/ai-do                    # branch cut from develop, pull request targets develop
 ```
 
-The branch is created from `develop` and the pull request targets `develop`. Useful when the
-repository does not develop on its default branch, or when the work has to sit on top of another
-feature branch rather than beside it.
+Say it here when it should differ from the plan - the plan was right, but the landing place moved:
+
+```
+/ai-do base=hotfix/1.2
+```
+
+The branch is created from `hotfix/1.2` and the pull request targets it. Doing this when the plan
+named a different branch gets a comment saying which one won, because a plan describing one branch
+while the code lands on another is the mismatch this whole mechanism exists to prevent - the note
+is there so it is never accidental.
+
+In full, for a new branch, most specific first:
+
+1. `base=` on the `/ai-do` command
+2. the branch the plan was written against
+3. the branch a closed pull request being revived used to target
+4. the repository default branch
 
 Only read when `base=` is the **first thing after the command**, so the rest of the comment stays
 what it has always been - instructions for the agent. `/ai-do also update the changelog` is not a
@@ -58,7 +75,9 @@ request to retarget anything, and neither is a `base=` mentioned mid-sentence. S
 backticks are stripped, so ``/ai-do base=`develop` `` works too.
 
 A branch that does not exist gets a comment and nothing else - no branch, no pull request, and a
-green run. The base is only ever read on the **first** run for an issue; see
+green run. A branch the *plan* named that has since been merged and deleted fails the run instead,
+loudly: silently building on something else is the one outcome worth being noisy about. The base is
+only ever settled on the **first** run for an issue; see
 [one branch, one pull request](#one-branch-one-pull-request) for what happens if you ask later.
 
 ## Reviewing it, and asking for changes
@@ -254,8 +273,9 @@ the two.
 The branch name is derived from the issue number rather than generated, and that is the whole
 mechanism:
 
-* **First run** - branch created from the default branch, or from
-  [whatever `base=` named](#basing-the-work-on-another-branch); work pushed, pull request opened.
+* **First run** - branch created from
+  [whatever the plan named, or `base=`, or the default branch](#basing-the-work-on-another-branch);
+  work pushed, pull request opened.
 * **Every round** - the same branch is fetched, so the agent starts from the previous round rather
   than from scratch. The push updates the open pull request. No second one appears.
 * **A closed pull request** - `/ai-do` on the issue revives it. Pushing to a closed pull request's
@@ -307,6 +327,7 @@ Cases that end without a failure and without a red run:
 | `base=` naming a branch that does not exist | A comment saying so, and nothing is started |
 | `base=` with no branch after it | A comment saying to name one |
 | `base=` when the branch already exists | A comment saying the base is settled - the run carries on regardless |
+| `base=` naming a different branch than the plan did | A comment saying which one won - the run carries on with the command's |
 | A round with no unresolved thread, nothing new said and no failing check | A comment saying exactly that |
 | Too many rounds in a row from a bot | A comment asking for a person |
 | The agent changed no files | A comment saying so |

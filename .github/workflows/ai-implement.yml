@@ -244,6 +244,10 @@ jobs:
           # Parsed here and judged later. This step runs in front of the permission gate, so
           # nothing here may answer the commenter or look anything up on their behalf - all it
           # does is say what was asked for.
+          #
+          # The code below also lives in ai-plan.yml, which takes the same argument on its own
+          # command. Keep the two identical: the test extracts both and runs them against one
+          # case list, so a change to one of them fails until the other follows.
           base_given='false'
           requested_base=''
           if [[ -n "$COMMENT_BODY" ]]; then
@@ -743,6 +747,11 @@ jobs:
           # Asked for on the command, and checked to exist before the checkout. Empty when
           # nobody asked.
           REQUESTED_BASE: ${{ steps.event.outputs.requested_base }}
+          # Which branch the plan was written against, recorded in the plan comment by the
+          # planning workflow. This is the one that matters most of the time: it means the
+          # branch gets cut from whatever the plan actually read, without anybody having to say
+          # so twice. Empty for a plan posted before that was recorded.
+          PLAN_BASE: ${{ steps.stage_issue.outputs.plan_base }}
           # What the pull request behind this branch already targets - the one a round is
           # continuing, or the closed one a first run is reviving. Empty on an ordinary first
           # run, and not separately checked to exist: it is a branch Github reported as the base
@@ -768,20 +777,27 @@ jobs:
             # The branch already carries its history, so the base is not this run's to choose -
             # the pull request in front of it is the record, and anything asked for on the
             # command is answered in the step below rather than acted on.
-            base="${PR_BASE:-${REQUESTED_BASE:-$DEFAULT_BASE}}"
+            base="${PR_BASE:-${REQUESTED_BASE:-${PLAN_BASE:-$DEFAULT_BASE}}}"
           else
-            # Nothing exists yet, so this run does decide. The command outranks everything; after
-            # that a revived pull request keeps what it used to target, because reviving one
-            # should not silently move it; and failing both, the default branch.
-            base="${REQUESTED_BASE:-${PR_BASE:-$DEFAULT_BASE}}"
+            # Nothing exists yet, so this run does decide, most specific first. The command
+            # outranks everything, because somebody typed it just now. Then the plan, which is
+            # the ordinary case: it was written against a branch and this is the work it
+            # described. Then a revived pull request keeps what it used to target, because
+            # reviving one should not silently move it. Failing all three, the default branch.
+            base="${REQUESTED_BASE:-${PLAN_BASE:-${PR_BASE:-$DEFAULT_BASE}}}"
 
             # The fetched tip of the base rather than the commit the event carried. `fetch-depth:
             # 0` above brings every remote head down, so this needs no fetch of its own - and a
             # requested base was confirmed to exist before that fetch ran, which is what makes it
-            # certain to be here. An inherited one can still be gone, if somebody deleted the
-            # branch a closed pull request used to target.
+            # certain to be here.
+            #
+            # A base that was not asked for on this command can still be gone: one recorded in a
+            # plan written weeks ago, or one a closed pull request used to target, may have been
+            # merged and deleted since. That is a stop rather than a fallback, because quietly
+            # building on a different branch than the plan was written against is the whole
+            # failure this is here to prevent.
             if ! git rev-parse --verify --quiet "refs/remotes/origin/$base" > /dev/null; then
-              echo "::error title=Base branch missing::refs/remotes/origin/$base is not in the checkout, so $BRANCH cannot be created from it. The branch may have been deleted."
+              echo "::error title=Base branch missing::refs/remotes/origin/$base is not in the checkout, so $BRANCH cannot be created from it. It may have been merged and deleted since the plan named it."
               exit 1
             fi
 
@@ -852,6 +868,39 @@ jobs:
             || echo "::warning title=Could not say the base was settled::The note about \`base=$REQUESTED\` did not post"
 
           echo "::warning title=Base already settled::'$REQUESTED' was asked for, but $BRANCH already exists${PR_BASE:+ on '$PR_BASE'}"
+
+      # The command asked for one branch and the plan was written against another, and the
+      # command won. That is a legitimate thing to want - the plan was right and the landing
+      # place moved - but it is also exactly the mismatch this whole mechanism exists to stop
+      # happening by accident, so it never passes without being said.
+      #
+      # Advisory: the work carries on either way, and whoever asked can read the note and decide
+      # whether they meant it.
+      - name: Say that the command overrode the plan
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.branch.outputs.created == 'true'
+          && steps.event.outputs.requested_base != ''
+          && steps.stage_issue.outputs.plan_base != ''
+          && steps.event.outputs.requested_base != steps.stage_issue.outputs.plan_base }}
+        env:
+          TARGET: ${{ steps.event.outputs.target }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          REQUESTED: ${{ steps.event.outputs.requested_base }}
+          PLAN_BASE: ${{ steps.stage_issue.outputs.plan_base }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          {
+            printf '@%s heads up: the plan was written against `%s`, and you asked for `%s`. I am using `%s`, because you asked for it just now.\n\n' \
+              "$ACTOR" "$PLAN_BASE" "$REQUESTED" "$REQUESTED"
+            printf 'Worth a look at the result: anything the plan said about the code was true of `%s`, and wherever the two branches differ the plan may be describing files that have moved or work that is already done. If that is a problem, run `/ai-plan base=%s` to replan against the branch this is actually landing on.\n' \
+              "$PLAN_BASE" "$REQUESTED"
+          } > "$RUNNER_TEMP/base-overridden.md"
+
+          gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/base-overridden.md" \
+            || echo "::warning title=Could not say the plan was overridden::The note about \`base=$REQUESTED\` did not post"
+
+          echo "::warning title=Command overrode the plan::The plan was written against '$PLAN_BASE', the command asked for '$REQUESTED'"
 
       # What the checks on this commit actually printed, fetched from the artifacts the QA
       # workflows upload. This is the answer to a red check: the agent cannot read job logs,
