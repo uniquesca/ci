@@ -85,9 +85,13 @@ runs:
         ATTEMPTS: ${{ inputs.attempts }}
         REPORT_DIR: ${{ inputs.report_dir }}
       run: |
-        # Deliberately without `set -e`: everything that can go wrong below ends in the fixes being
-        # taken back out of the working tree, so that the code style check reports the branch as it
-        # really is rather than passing against a tree nobody will ever see
+        # `set +e` rather than merely leaving `set -e` out: Github runs `shell: bash` as
+        # `bash --noprofile --norc -eo pipefail`, so errexit is on before this script gets a say and
+        # has to be turned back off by name. Everything that can go wrong below ends in the fixes
+        # being taken back out of the working tree instead, so that the code style check reports the
+        # branch as it really is rather than passing against a tree nobody will ever see - which
+        # errexit cannot do, because it exits where it stands
+        set +e
         set -uo pipefail
 
         # Anchored to the repository root, because that is what `git diff` paths are relative to and
@@ -116,12 +120,14 @@ runs:
         auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')
         authed() { git -c "$header=" -c "$header=AUTHORIZATION: basic $auth" "$@"; }
 
+        # Called before the worktree exists as well as after, so both commands are expected to fail
+        # some of the time and neither failure means anything
         drop_worktree() {
-          git -C "$root" worktree remove --force "$target" 2> /dev/null
+          git -C "$root" worktree remove --force "$target" 2> /dev/null || true
           rm -rf "$target"
           # A directory removed from under git stays in .git/worktrees, and the next `add` refuses
           # to reuse the path it is still holding
-          git -C "$root" worktree prune
+          git -C "$root" worktree prune || true
         }
 
         give_up() {

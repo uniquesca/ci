@@ -191,6 +191,10 @@ jobs:
           COMMENT_NUMBER: ${{ github.event.issue.number }}
           COMMENT_ACTOR: ${{ github.event.comment.user.login }}
           COMMENT_ACTOR_TYPE: ${{ github.event.comment.user.type }}
+          # Untrusted text, on the same terms as the review body below. Only the first line is
+          # looked at, and only for an argument on the command.
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMAND: ${{ inputs.command }}
           REVIEW_NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_ACTOR: ${{ github.event.review.user.login }}
           REVIEW_ACTOR_TYPE: ${{ github.event.review.user.type }}
@@ -232,6 +236,46 @@ jobs:
             actor="$COMMENT_ACTOR"; actor_type="$COMMENT_ACTOR_TYPE"
           fi
 
+          # `base=<branch>` on the command, which asks for the work to be based on something
+          # other than the default branch. Read only from the very start of the first line:
+          # everything else in the comment is instruction text for the agent, and a sentence
+          # that happens to mention `base=` is not a request to retarget anything.
+          #
+          # Parsed here and judged later. This step runs in front of the permission gate, so
+          # nothing here may answer the commenter or look anything up on their behalf - all it
+          # does is say what was asked for.
+          base_given='false'
+          requested_base=''
+          if [[ -n "$COMMENT_BODY" ]]; then
+            first_line=${COMMENT_BODY%%$'\n'*}
+            # Github stores comment bodies with CRLF line endings
+            first_line=${first_line%$'\r'}
+
+            # The job gate is a `startsWith`, so a comment opening with `/ai-doughnut` reaches
+            # this too. Requiring whitespace after the command is what stops the tail of a
+            # longer word being read as an argument.
+            rest=${first_line#"$COMMAND"}
+
+            if [[ "$rest" =~ ^[[:space:]]+base=([^[:space:]]*) ]]; then
+              base_given='true'
+              requested_base="${BASH_REMATCH[1]}"
+
+              # ``base=`develop` `` is what somebody writing markdown types, and the backticks
+              # are not part of the branch name. One wrapping pair, of one kind.
+              for quote in '`' "'" '"'; do
+                if [[ "$requested_base" == "$quote"*"$quote" ]]; then
+                  requested_base=${requested_base:1:${#requested_base}-2}
+                  break
+                fi
+              done
+
+              # An empty value stays a request rather than becoming no request at all. Falling
+              # back to the default branch here would quietly open the pull request against
+              # exactly the branch the person was trying to avoid.
+              echo "Asked to base the work on '${requested_base}'"
+            fi
+          fi
+
           # A round a person asked for is attended, and an attended round resets the cap on
           # unattended ones. This is the only thing that distinguishes the two, and it is
           # deliberately about who triggered the round rather than who wrote the feedback: a
@@ -269,6 +313,8 @@ jobs:
             printf 'actor_type=%s\n' "$actor_type"
             printf 'attended=%s\n' "$attended"
             printf 'target=%s\n' "$target"
+            printf 'base_given=%s\n' "$base_given"
+            printf 'requested_base=%s\n' "$requested_base"
           } >> "$GITHUB_OUTPUT"
 
           echo "$mode run on #$target, triggered by $trigger from @$actor ($actor_type, attended: $attended)"
@@ -424,7 +470,7 @@ jobs:
           COMMAND: ${{ inputs.command }}
           BRANCH: ${{ inputs.branch_prefix }}issue-${{ steps.event.outputs.issue }}
         run: |
-          gh pr list --head "$BRANCH" --state all --json number,state,url \
+          gh pr list --head "$BRANCH" --state all --json number,state,url,baseRefName \
             --jq 'sort_by(.number) | last // {}' > "$RUNNER_TEMP/existing.json"
 
           state=$(jq -r '.state // ""' "$RUNNER_TEMP/existing.json")
@@ -454,13 +500,70 @@ jobs:
               # Somebody abandoned the previous attempt. Starting over is reasonable, and the
               # closed pull request is reopened later rather than a second one being opened
               # alongside it.
-              echo "reopen=$(jq -r '.number' "$RUNNER_TEMP/existing.json")" >> "$GITHUB_OUTPUT"
+              #
+              # Its base comes along, because reviving it revives what it targeted. That only
+              # matters if its branch is still there - if it was deleted, a new branch gets cut
+              # and the base is an open question again.
+              {
+                printf 'reopen=%s\n' "$(jq -r '.number' "$RUNNER_TEMP/existing.json")"
+                printf 'base=%s\n' "$(jq -r '.baseRefName // ""' "$RUNNER_TEMP/existing.json")"
+              } >> "$GITHUB_OUTPUT"
               echo "Reviving the closed pull request $url for issue #$ISSUE"
               ;;
             *)
               echo "Issue #$ISSUE has no pull request yet"
               ;;
           esac
+
+      # A branch name typed into a comment, checked before anything is cut from it. Deliberately
+      # in front of the checkout: a name that does not exist costs a comment and nothing else,
+      # and the check passing is also what guarantees `refs/remotes/origin/<base>` is on disk
+      # once the checkout below has fetched.
+      #
+      # Only for a first run. A round has a pull request, and a pull request already carries its
+      # own base - the step after the branch is prepared says so rather than checking anything.
+      - name: Check the requested base branch
+        id: base
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.event.outputs.base_given == 'true' }}
+        env:
+          BASE: ${{ steps.event.outputs.requested_base }}
+          ISSUE: ${{ steps.event.outputs.issue }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          if [[ -z "$BASE" ]]; then
+            gh issue comment "$ISSUE" --body "@$ACTOR you asked for a base branch but did not name one. Run \`$COMMAND base=<branch>\`, or just \`$COMMAND\` to work from the default branch."
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            echo "::warning title=No base branch named::\`base=\` was given with no value"
+            exit 0
+          fi
+
+          # Defence in depth rather than the real test. It is narrower than git's own rules and
+          # rejects the shapes that could be read as something other than a branch name - a
+          # leading dash, a `..` traversal - before either use site sees the string. What the
+          # name actually has to be is a branch that exists, which is the check below: anything
+          # the remote reports back is a valid name by definition.
+          if [[ ! "$BASE" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ || "$BASE" == *..* ]]; then
+            gh issue comment "$ISSUE" --body "@$ACTOR \`$BASE\` is not a branch name I will work with. Letters, digits, \`.\`, \`_\`, \`-\` and \`/\` only, and not starting with \`-\`."
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            echo "::warning title=Base branch rejected::'$BASE' is not an acceptable branch name"
+            exit 0
+          fi
+
+          # `git/ref/heads/<name>` rather than `branches/<name>`: this is the endpoint documented
+          # to take a slash-bearing ref, so `base=release/1.0` resolves instead of 404ing on a
+          # path that got cut in half.
+          if ! gh api "repos/$GH_REPO/git/ref/heads/$BASE" --silent 2> /dev/null; then
+            gh issue comment "$ISSUE" --body "@$ACTOR there is no branch called \`$BASE\` in this repository, so there is nothing to base the work on. Check the name and run \`$COMMAND base=<branch>\` again."
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            echo "::warning title=Base branch not found::No branch called '$BASE' in $GH_REPO"
+            exit 0
+          fi
+
+          echo "Basing the work on $BASE"
 
       # Full history rather than a shallow clone: this pushes to a branch that may already
       # exist from an earlier round, and a shallow clone makes that awkward.
@@ -633,6 +736,19 @@ jobs:
         if: ${{ success() && env.PROCEED == 'true' }}
         env:
           BRANCH: ${{ steps.pull_request.outputs.branch || format('{0}issue-{1}', inputs.branch_prefix, steps.event.outputs.issue) }}
+          # Which branch the work is cut from, and which one the pull request will target. This
+          # is the only place either question is answered, and the three candidates are ranked
+          # differently depending on whether there is already a branch - see below.
+          #
+          # Asked for on the command, and checked to exist before the checkout. Empty when
+          # nobody asked.
+          REQUESTED_BASE: ${{ steps.event.outputs.requested_base }}
+          # What the pull request behind this branch already targets - the one a round is
+          # continuing, or the closed one a first run is reviving. Empty on an ordinary first
+          # run, and not separately checked to exist: it is a branch Github reported as the base
+          # of a real pull request.
+          PR_BASE: ${{ steps.pull_request.outputs.base || steps.existing.outputs.base }}
+          DEFAULT_BASE: ${{ github.event.repository.default_branch }}
         run: |
           # The credential goes on the command line of the one command that needs it, the
           # same header `actions/checkout` would otherwise leave in .git/config
@@ -647,10 +763,32 @@ jobs:
             # What the agent's work is measured against, so a round that changes nothing can
             # say so instead of pushing an empty commit
             compare_ref="refs/remotes/origin/$BRANCH"
+            created='false'
+
+            # The branch already carries its history, so the base is not this run's to choose -
+            # the pull request in front of it is the record, and anything asked for on the
+            # command is answered in the step below rather than acted on.
+            base="${PR_BASE:-${REQUESTED_BASE:-$DEFAULT_BASE}}"
           else
-            echo "Starting $BRANCH from $(git rev-parse --short HEAD)"
-            compare_ref=$(git rev-parse HEAD)
-            git checkout -b "$BRANCH"
+            # Nothing exists yet, so this run does decide. The command outranks everything; after
+            # that a revived pull request keeps what it used to target, because reviving one
+            # should not silently move it; and failing both, the default branch.
+            base="${REQUESTED_BASE:-${PR_BASE:-$DEFAULT_BASE}}"
+
+            # The fetched tip of the base rather than the commit the event carried. `fetch-depth:
+            # 0` above brings every remote head down, so this needs no fetch of its own - and a
+            # requested base was confirmed to exist before that fetch ran, which is what makes it
+            # certain to be here. An inherited one can still be gone, if somebody deleted the
+            # branch a closed pull request used to target.
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$base" > /dev/null; then
+              echo "::error title=Base branch missing::refs/remotes/origin/$base is not in the checkout, so $BRANCH cannot be created from it. The branch may have been deleted."
+              exit 1
+            fi
+
+            echo "Starting $BRANCH from $base at $(git rev-parse --short "refs/remotes/origin/$base")"
+            compare_ref=$(git rev-parse "refs/remotes/origin/$base")
+            git checkout -b "$BRANCH" "refs/remotes/origin/$base"
+            created='true'
           fi
 
           # Local-only and never committed, so neither the staged input nor the agent's
@@ -663,7 +801,57 @@ jobs:
           {
             printf 'compare_ref=%s\n' "$compare_ref"
             printf 'branch=%s\n' "$BRANCH"
+            printf 'base=%s\n' "$base"
+            printf 'created=%s\n' "$created"
           } >> "$GITHUB_OUTPUT"
+
+      # A base asked for on a branch that already existed, which is a request nothing can act on:
+      # the history is already sitting on top of something else. Said out loud rather than
+      # dropped, because a person who typed `base=` and got silence has no way to tell that from
+      # a broken workflow.
+      #
+      # The run still goes on. The same comment usually carries the actual work - review feedback,
+      # or instructions for the agent - and refusing all of it over one argument would throw that
+      # away.
+      - name: Say that the base was already settled
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.base_given == 'true'
+          && steps.branch.outputs.created != 'true' }}
+        env:
+          TARGET: ${{ steps.event.outputs.target }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          REQUESTED: ${{ steps.event.outputs.requested_base }}
+          # Only set when a pull request is standing behind the branch. Without one there is
+          # nothing that knows what the branch was originally cut from, and this step must not
+          # claim otherwise.
+          PR_BASE: ${{ steps.pull_request.outputs.base || steps.existing.outputs.base }}
+        run: |
+          {
+            if [[ -n "$PR_BASE" ]]; then
+              printf '@%s I am carrying on with `%s`, which already exists and is based on `%s`, so `base=%s` is not something I can act on here. A base is settled when the branch is first created.\n\n' \
+                "$ACTOR" "$BRANCH" "$PR_BASE" "$REQUESTED"
+              printf 'To move this work, retarget the pull request yourself - `gh pr edit --base %s`, or the **Edit** button next to its title - and every round after that reads the new base off the pull request. Retargeting changes what the pull request is compared against and not what is on the branch, so you probably want to rebase it as well.\n\n' \
+                "$REQUESTED"
+            else
+              # The branch is here but no pull request ever was. Whatever it was cut from is not
+              # recorded anywhere, so this says only what it can stand behind: the branch is not
+              # being recreated, and the pull request about to open does target the request.
+              printf '@%s `%s` already exists, so I have carried on with it rather than cutting it from `%s`. Its history is whatever was already on it.\n\n' \
+                "$ACTOR" "$BRANCH" "$REQUESTED"
+              printf 'The pull request will target `%s` as you asked, so check the diff it shows before reviewing - the branch and the base may have more between them than this run added.\n\n' \
+                "$REQUESTED"
+            fi
+            printf 'Everything else in your comment is being acted on as usual.\n'
+          } > "$RUNNER_TEMP/base-settled.md"
+
+          # Advisory, so a comment that will not post costs the note and not the run - the work
+          # itself is unaffected by the argument being unusable
+          gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/base-settled.md" \
+            || echo "::warning title=Could not say the base was settled::The note about \`base=$REQUESTED\` did not post"
+
+          echo "::warning title=Base already settled::'$REQUESTED' was asked for, but $BRANCH already exists${PR_BASE:+ on '$PR_BASE'}"
 
       # What the checks on this commit actually printed, fetched from the artifacts the QA
       # workflows upload. This is the answer to a red check: the agent cannot read job logs,
@@ -727,6 +915,11 @@ jobs:
             You are a senior software engineer. Implement the approved plan for issue
             #${{ steps.event.outputs.issue }} of this repository, in the working tree you
             are already in.
+
+            This branch is cut from `${{ steps.branch.outputs.base }}` and the pull request
+            will be merged back into it, so that is the state your change has to fit - not
+            the default branch, if the two are different. Something the plan asks for may
+            already be here.
 
             Everything you need has been fetched for you. Read these first:
 
@@ -958,11 +1151,16 @@ jobs:
         env:
           BRANCH: ${{ steps.branch.outputs.branch }}
           TITLE: ${{ steps.stage_issue.outputs.title }}
-          BASE: ${{ github.event.repository.default_branch }}
+          # Resolved where the branch was, so the pull request targets whatever the work was
+          # actually cut from - the default branch unless the command asked for another
+          BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
+          # What the pull request being revived used to target. Only differs from BASE when its
+          # branch was gone and a new one was cut from somewhere else.
+          OLD_BASE: ${{ steps.existing.outputs.base }}
         run: |
           url=''
 
@@ -978,6 +1176,19 @@ jobs:
               number="$REOPEN"
               echo "Reopened $url"
               echo "created=false" >> "$GITHUB_OUTPUT"
+
+              # A revived pull request whose branch had been deleted got a new branch cut for it
+              # above, and that branch may have been cut from somewhere else - the push before
+              # this step is what let the reopen succeed at all. Its old target would then
+              # describe the wrong thing, showing everything between the two bases as part of
+              # this change, so the pull request is moved to what the branch actually sits on.
+              if [[ -n "$OLD_BASE" && "$OLD_BASE" != "$BASE" ]]; then
+                if gh pr edit "$REOPEN" --base "$BASE"; then
+                  echo "Retargeted #$REOPEN from $OLD_BASE onto $BASE, which is what its branch was recreated from"
+                else
+                  echo "::warning title=Could not retarget::#$REOPEN still targets $OLD_BASE while its branch was cut from $BASE - retarget it yourself, or the diff will read wrong"
+                fi
+              fi
             else
               echo "::warning title=Could not reopen::Pull request #$REOPEN would not reopen - opening a new one instead"
             fi
@@ -1218,6 +1429,7 @@ jobs:
         if: >-
           ${{ always()
           && (steps.pull_request.outcome == 'failure'
+          || steps.base.outcome == 'failure'
           || steps.stage_issue.outcome == 'failure'
           || steps.stage_pr.outcome == 'failure'
           || steps.branch.outcome == 'failure'
