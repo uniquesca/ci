@@ -32,8 +32,9 @@ issue                                    pull request
 plan lives, though, so `/ai-plan` keeps working - see [changing direction](#changing-direction).
 
 One thing travels along that first arrow besides the plan text: **the branch the plan was written
-against**. `/ai-plan base=develop` records `develop` in the plan, and `/ai-do` builds on `develop`
-without being told again. See [planning against another branch](#planning-against-another-branch).
+against**. `/ai-plan base=develop` records `develop` in the plan; a later `/ai-plan` revises it
+against the same branch, and `/ai-do` builds on it - neither has to be told again. See
+[planning against another branch](#planning-against-another-branch).
 
 ## Integrating a repository
 
@@ -103,25 +104,36 @@ is charged for it.
 ### Planning against another branch
 
 By default the planner reads the repository default branch. Name another one and it plans against
-that instead:
+that instead - **once, on the first run.** The plan remembers the branch, and everything
+afterwards follows it:
 
 ```
-/ai-plan base=develop
+/ai-plan base=develop     # plans against develop, and records it
+...feedback...
+/ai-plan                  # replans against develop - no need to say it again
+/ai-do                    # branch cut from develop, pull request targets develop
 ```
 
-**The plan remembers this, and `/ai-do` follows it.** You name the branch once, here, and the
-implementation is cut from the same branch and its pull request targets it - see
-[basing the work on another branch](ai-implement.md#basing-the-work-on-another-branch). This is the
-point of the argument: a plan written against `main` and implemented on `develop` describes files
-that have moved and work that is already done, and nothing downstream can tell.
+A bare `/ai-plan` on an issue that already has a plan is a **revision of that plan**, so it reads
+the branch that plan was written against. Falling back to the default branch there would be the
+same mistake in a smaller form - the revision would describe files that have moved and work
+already done, and it would be arguing with feedback written about different code. The default
+branch is only right when no plan has an opinion yet.
+
+`/ai-do` inherits the same way - see
+[basing the work on another branch](ai-implement.md#basing-the-work-on-another-branch).
+
+Every plan says which branch it was written against, in its last line under
+`Requested by`. That is the thing to check when a plan looks like it read the wrong code.
 
 Only read when `base=` is the first thing after the command. A branch that does not exist gets a
 comment and no plan, which costs nothing.
 
-Replanning with a different `base=` is fine, and it is how you correct a plan written against the
-wrong branch. If a pull request is already open for the issue and the revised plan names a
-different branch than it targets, the pull request gets told - it cannot move itself, because a
-base is settled when the branch is created.
+**To change branch, say so again.** Replanning with a different `base=` overrides what the last
+plan recorded, and it is how you correct a plan written against the wrong branch - the new plan
+records the new branch, and later runs follow that one. If a pull request is already open for the
+issue and the revised plan names a different branch than it targets, the pull request gets told -
+it cannot move itself, because a base is settled when the branch is created.
 
 Only collaborators with **admin** or **write** access can run it. Github reports the `maintain`
 role as `write` and `triage` as `read`, so owners, maintainers and developers can; triage and
@@ -144,7 +156,9 @@ else needs to happen.
 **Feedback and revision — say what you want, then run `/ai-plan` again.** The agent reads the
 whole thread, takes the most recent plan as its starting point, and applies whatever was asked
 for after it was posted. Parts nobody objected to survive. Each run posts a new comment, and the
-newest one is the current plan.
+newest one is the current plan. Bare `/ai-plan` is right even when the first run named a
+`base=`: the revision reads the [same branch](#planning-against-another-branch) without being
+told again.
 
 Editing and re-running mix in one direction only: a re-run reads your edited comment as its
 starting point, so your edits survive, but the agent may reword around them. If some wording has
@@ -185,9 +199,11 @@ writing and shell tools are switched off as well, which is defence in depth and 
 spent on work that would be discarded. If you extend this workflow, keep `contents: read`: it is
 doing more work than the tool list.
 
-The checkout is always of the **default branch**. An `issue_comment` event carries no ref to
-infer one from, and planning an issue is a question about the mainline rather than about whichever
-branch happens to be open.
+The checkout is of the **default branch unless a branch was named**, and nothing about it is
+inferred from the event. An `issue_comment` carries no ref worth checking out, and planning an
+issue is a question about the mainline rather than about whichever branch happens to be open -
+[`base=`](#planning-against-another-branch), on this run or on the one that produced the plan
+being revised, is the only way to point it elsewhere.
 
 ### Revising a plan safely
 
@@ -203,7 +219,9 @@ balance, a hit turn limit and a genuine bug look identical otherwise.
 
 Not every stop is a failure. An empty issue body, or a `base=` naming a branch that does not exist
 or is not a usable branch name, gets a comment and a green run - the command was asked too early or
-typed wrong, which is not a CI error and should not read like one.
+typed wrong, which is not a CI error and should not read like one. A replan whose *previous* plan
+named a branch that has since been merged and deleted stops the same way, and asks you to name a
+branch: continuing against the default branch would silently replan against different code.
 
 Three places to look afterwards:
 
