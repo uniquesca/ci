@@ -30,6 +30,9 @@ outputs:
   plan_url:
     description: 'Link to the comment the staged plan came from, empty when the issue has no plan yet'
     value: ${{ steps.stage.outputs.plan_url }}
+  plan_base:
+    description: 'Branch the staged plan was written against, from the metadata line the planning workflow records under the marker. Empty for a plan posted before that line existed, or for no plan at all - a caller falls back to its own default'
+    value: ${{ steps.stage.outputs.plan_base }}
 
 runs:
   using: composite
@@ -77,12 +80,31 @@ runs:
             jq -r 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->"))))
                    | last | .url // ""' "$DIR/comments.json"
           )
-          plan_state='a plan'
+
+          # Which branch the plan was written against, from the metadata line the planning
+          # workflow writes directly under the marker. Read off the staged plan rather than
+          # the comment list, because that file is already the one plan that won.
+          #
+          # Everything here degrades to empty rather than failing: a plan posted before the
+          # metadata line existed has prose on its second line, which is not JSON, and a
+          # caller that gets nothing falls back to its own default. That is what keeps plans
+          # written before this action understood them working.
+          plan_base=$(
+            jq -Rs 'split("\n")
+                    | (.[1] // "")
+                    | ltrimstr("<!-- ") | rtrimstr(" -->")
+                    | (try fromjson catch {})
+                    | if type == "object" then (.base // "") else "" end
+                    | tostring
+                    | gsub("[\r\n]"; "")' "$DIR/plan.md" | jq -r .
+          )
+          plan_state="a plan${plan_base:+ for $plan_base}"
         else
           rm -f "$DIR/plan.md"
           has_plan='false'
           plan_file=''
           plan_url=''
+          plan_base=''
           plan_state='no plan'
         fi
 
@@ -92,6 +114,7 @@ runs:
           printf 'has_plan=%s\n' "$has_plan"
           printf 'plan_file=%s\n' "$plan_file"
           printf 'plan_url=%s\n' "$plan_url"
+          printf 'plan_base=%s\n' "$plan_base"
         } >> "$GITHUB_OUTPUT"
 
         echo "Staged issue #$ISSUE with $(jq length "$DIR/comments.json") comment(s) and $plan_state"

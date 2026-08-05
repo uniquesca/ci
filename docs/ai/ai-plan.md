@@ -31,6 +31,10 @@ issue                                    pull request
 `/ai-do` on the issue stops doing anything except pointing at it. The issue stays the place the
 plan lives, though, so `/ai-plan` keeps working - see [changing direction](#changing-direction).
 
+One thing travels along that first arrow besides the plan text: **the branch the plan was written
+against**. `/ai-plan base=develop` records `develop` in the plan, and `/ai-do` builds on `develop`
+without being told again. See [planning against another branch](#planning-against-another-branch).
+
 ## Integrating a repository
 
 Add one workflow file to the repository that should get the commands. The planner and the
@@ -92,9 +96,32 @@ only go stale. The ones worth knowing about are called out where they matter.
 
 Comment `/ai-plan` on an issue. The command has to be at the very beginning of the comment.
 
-**The issue body is what gets planned.** Anything you type after the command is ignored, so put
-the task in the issue, not in the comment. An empty issue body gets a comment saying so, and
-nothing is charged for it.
+**The issue body is what gets planned.** Prose you type after the command is ignored, so put the
+task in the issue, not in the comment. An empty issue body gets a comment saying so, and nothing
+is charged for it.
+
+### Planning against another branch
+
+By default the planner reads the repository default branch. Name another one and it plans against
+that instead:
+
+```
+/ai-plan base=develop
+```
+
+**The plan remembers this, and `/ai-do` follows it.** You name the branch once, here, and the
+implementation is cut from the same branch and its pull request targets it - see
+[basing the work on another branch](ai-implement.md#basing-the-work-on-another-branch). This is the
+point of the argument: a plan written against `main` and implemented on `develop` describes files
+that have moved and work that is already done, and nothing downstream can tell.
+
+Only read when `base=` is the first thing after the command. A branch that does not exist gets a
+comment and no plan, which costs nothing.
+
+Replanning with a different `base=` is fine, and it is how you correct a plan written against the
+wrong branch. If a pull request is already open for the issue and the revised plan names a
+different branch than it targets, the pull request gets told - it cannot move itself, because a
+base is settled when the branch is created.
 
 Only collaborators with **admin** or **write** access can run it. Github reports the `maintain`
 role as `write` and `triage` as `read`, so owners, maintainers and developers can; triage and
@@ -173,6 +200,10 @@ could paste a marker and have the next run "revise" a plan they wrote themselves
 A failed run comments on the issue rather than going red where nobody looking at the issue can
 see it, and it says why the agent stopped where the log recorded a reason - an exhausted credit
 balance, a hit turn limit and a genuine bug look identical otherwise.
+
+Not every stop is a failure. An empty issue body, or a `base=` naming a branch that does not exist
+or is not a usable branch name, gets a comment and a green run - the command was asked too early or
+typed wrong, which is not a CI error and should not read like one.
 
 Three places to look afterwards:
 

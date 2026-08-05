@@ -117,29 +117,110 @@ jobs:
           echo "::error title=Permission denied::@$COMMENTER ($PERMISSION) is not allowed to run $COMMAND"
           exit 1
 
-      - name: Make sure there is something to plan
+      # Two questions, answered together because they gate the same thing: is there anything
+      # to plan, and which branch should it be planned against. Either one coming out wrong
+      # stands the run down through `has_task`, which is what every step below already keys
+      # off - so neither needs a gate of its own.
+      #
+      # Safely after the permission gate above, which exits rather than falls through, so the
+      # comments here only ever answer somebody allowed to run the command.
+      - name: Work out what to plan, and where
         id: task
         env:
           BODY: ${{ github.event.issue.body }}
+          # Untrusted text, read here and never interpolated into a script. Only its first
+          # line is looked at, and only for an argument on the command.
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMAND: ${{ inputs.command }}
         run: |
-          if [[ -n "${BODY//[[:space:]]/}" ]]; then
-            echo "has_task=true" >> "$GITHUB_OUTPUT"
+          if [[ -z "${BODY//[[:space:]]/}" ]]; then
+            # Nothing to plan is not a failure - say so on the issue and stop quietly
+            echo "has_task=false" >> "$GITHUB_OUTPUT"
+            gh issue comment "$ISSUE" --body "Cannot trigger AI planner - issue body is empty"
+            echo "Issue #$ISSUE has an empty body, nothing to plan"
             exit 0
           fi
 
-          # Nothing to plan is not a failure - say so on the issue and stop quietly
-          echo "has_task=false" >> "$GITHUB_OUTPUT"
-          gh issue comment "$ISSUE" --body "Cannot trigger AI planner - issue body is empty"
-          echo "Issue #$ISSUE has an empty body, nothing to plan"
+          # `base=<branch>` on the command, which asks for the work to be based on something
+          # other than the default branch. Read only from the very start of the first line:
+          # everything else in the comment is instruction text for the agent, and a sentence
+          # that happens to mention `base=` is not a request to retarget anything.
+          #
+          # The code below also lives in ai-implement.yml, which takes the same argument on its
+          # own command. Keep the two identical: the test extracts both and runs them against
+          # one case list, so a change to one of them fails until the other follows.
+          base_given='false'
+          requested_base=''
+          if [[ -n "$COMMENT_BODY" ]]; then
+            first_line=${COMMENT_BODY%%$'\n'*}
+            # Github stores comment bodies with CRLF line endings
+            first_line=${first_line%$'\r'}
+
+            # The job gate is a `startsWith`, so a comment opening with `/ai-doughnut` reaches
+            # this too. Requiring whitespace after the command is what stops the tail of a
+            # longer word being read as an argument.
+            rest=${first_line#"$COMMAND"}
+
+            if [[ "$rest" =~ ^[[:space:]]+base=([^[:space:]]*) ]]; then
+              base_given='true'
+              requested_base="${BASH_REMATCH[1]}"
+
+              # ``base=`develop` `` is what somebody writing markdown types, and the backticks
+              # are not part of the branch name. One wrapping pair, of one kind.
+              for quote in '`' "'" '"'; do
+                if [[ "$requested_base" == "$quote"*"$quote" ]]; then
+                  requested_base=${requested_base:1:${#requested_base}-2}
+                  break
+                fi
+              done
+
+              # An empty value stays a request rather than becoming no request at all. Falling
+              # back to the default branch here would quietly open the pull request against
+              # exactly the branch the person was trying to avoid.
+              echo "Asked to base the work on '${requested_base}'"
+            fi
+          fi
+
+          # Judged straight away, unlike in the implementing workflow - this step is already
+          # past the permission gate, so it can answer for itself. Same three tests, and the
+          # same reasoning behind each: see the matching step in ai-implement.yml.
+          if [[ "$base_given" == 'true' ]]; then
+            stand_down=''
+
+            if [[ -z "$requested_base" ]]; then
+              stand_down="@$COMMENTER you asked for a base branch but did not name one. Run \`$COMMAND base=<branch>\`, or just \`$COMMAND\` to plan against the default branch."
+            elif [[ ! "$requested_base" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ || "$requested_base" == *..* ]]; then
+              stand_down="@$COMMENTER \`$requested_base\` is not a branch name I will work with. Letters, digits, \`.\`, \`_\`, \`-\` and \`/\` only, and not starting with \`-\`."
+            elif ! gh api "repos/$GH_REPO/git/ref/heads/$requested_base" --silent 2> /dev/null; then
+              stand_down="@$COMMENTER there is no branch called \`$requested_base\` in this repository, so there is nothing to plan against. Check the name and run \`$COMMAND base=<branch>\` again."
+            fi
+
+            if [[ -n "$stand_down" ]]; then
+              echo "has_task=false" >> "$GITHUB_OUTPUT"
+              gh issue comment "$ISSUE" --body "$stand_down"
+              echo "::warning title=Base branch unusable::'$requested_base' cannot be planned against"
+              exit 0
+            fi
+          fi
+
+          # Written once each - a key repeated in $GITHUB_OUTPUT has no defined winner
+          {
+            printf 'has_task=true\n'
+            printf 'base=%s\n' "$requested_base"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Planning issue #$ISSUE against ${requested_base:-the default branch}"
 
       # The agent plans against the real code, so the repository has to be on disk.
-      # An issue comment always resolves to the default branch - there is no ref to
-      # infer from the event, and planning an issue is a question about the
-      # mainline, not about whatever branch happens to be open.
+      # Nothing is ever inferred from the event: an issue comment carries no ref worth
+      # checking out, and planning an issue is a question about the mainline rather
+      # than about whatever branch happens to be open. `base=` on the command is the
+      # one way to point it elsewhere, and an empty `ref` is the default branch.
       - name: Check out the repository
         if: ${{ steps.task.outputs.has_task == 'true' }}
         uses: actions/checkout@v7
         with:
+          ref: ${{ steps.task.outputs.base }}
           # Nothing here pushes, and the agent can read the whole working tree - without
           # this, checkout leaves a live `x-access-token:ghs_...` in .git/config for it
           # to find
@@ -179,6 +260,11 @@ jobs:
           prompt: |
             You are a senior software architect. Plan the work described in issue
             #${{ github.event.issue.number }} of this repository.
+
+            The working tree you are reading is
+            `${{ steps.task.outputs.base || 'the default branch' }}`, and that is the branch
+            the work will be built on. Plan against what you actually see here, and say so if
+            the issue seems to assume some other state of the code.
 
             Your final message is the plan. It is posted verbatim as a comment on the
             issue, so it is the plan and nothing else - no preamble about what you are
@@ -236,9 +322,10 @@ jobs:
               gap with a guess.
             - Concrete checks that would prove the task is complete.
 
-            Do not write the `<!-- ai-plan -->` marker or a `Requested by` line yourself -
-            the workflow adds both. Name real files throughout: the plan is executed later
-            by another agent that has only this comment to work from.
+            Do not write the `<!-- ai-plan -->` marker, the `<!-- {...} -->` metadata line
+            under it, or a `Requested by` line yourself - the workflow adds all three. Name
+            real files throughout: the plan is executed later by another agent that has only
+            this comment to work from.
 
             Keep it to the length the task actually warrants - most plans should come in
             well under 10000 characters. Length is not thoroughness: the investigation is
@@ -271,6 +358,11 @@ jobs:
         env:
           PLAN_FILE: ${{ steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          # The branch this plan was written against, recorded so the implementing workflow can
+          # build on the same one without being told again. Resolved rather than passed through
+          # empty: a plan that says which branch it read is useful even when that is the default
+          # one, and it stays right if the default branch later changes.
+          BASE: ${{ steps.task.outputs.base || github.event.repository.default_branch }}
         run: |
           if [[ -z "$PLAN_FILE" || ! -f "$PLAN_FILE" ]]; then
             echo "::error title=No plan produced::The agent returned no plan - see the run log"
@@ -279,8 +371,15 @@ jobs:
 
           # The marker and the footer are added here rather than asked of the model, so
           # they are always present and always exactly right
+          #
+          # The second line carries this plan's metadata, in the same shape the implementing
+          # workflow uses for its round comments: a marker line, then one HTML comment holding
+          # JSON. Built with `jq` rather than formatted by hand, so a branch name with anything
+          # awkward in it cannot produce a line that will not parse. It reads as nothing at all
+          # in the rendered comment.
           {
-            printf '<!-- ai-plan -->\n\n'
+            printf '<!-- ai-plan -->\n'
+            printf '<!-- %s -->\n\n' "$(jq -nc --arg base "$BASE" '{base: $base}')"
             cat "$PLAN_FILE"
             printf '\n\n'
             printf -- '---\n\n'
@@ -318,21 +417,41 @@ jobs:
         env:
           BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
           PLAN_URL: ${{ steps.post.outputs.url }}
+          # What this plan was just written against, to compare with what the open pull request
+          # is actually targeting
+          BASE: ${{ steps.task.outputs.base || github.event.repository.default_branch }}
         run: |
-          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // ""')
+          gh pr list --head "$BRANCH" --state open --json number,baseRefName \
+            --jq '.[0] // {}' > pull-request.json
+
+          number=$(jq -r '.number // ""' pull-request.json)
 
           if [[ -z "$number" ]]; then
             echo "No open pull request is implementing issue #$ISSUE yet"
             exit 0
           fi
 
+          pr_base=$(jq -r '.baseRefName // ""' pull-request.json)
+
           {
             printf 'The plan for #%s has been revised: %s\n\n' "$ISSUE" "$PLAN_URL"
             printf 'Requested by @%s. This pull request was built from the previous version, so read the revision before reviewing further - the next round works to the new one.\n' "$COMMENTER"
+
+            # The one way the two ends can still drift apart. A round cannot move a pull request
+            # under a review in progress, and it should not try - so this is a person's call, and
+            # all the workflow can usefully do is point at it.
+            if [[ -n "$pr_base" && "$pr_base" != "$BASE" ]]; then
+              printf '\n**The revised plan was written against `%s`, and this pull request targets `%s`.** The next round will not move it - a base is settled when the branch is created, and moving it under a review in progress is not something to do automatically. If the plan is right about where this belongs, retarget this pull request with `gh pr edit --base %s` and rebase it; if it is not, replan against `%s`.\n' \
+                "$BASE" "$pr_base" "$BASE" "$pr_base"
+            fi
           } > replan-comment.md
 
           gh issue comment "$number" --body-file replan-comment.md
           echo "Told pull request #$number that the plan changed"
+
+          if [[ -n "$pr_base" && "$pr_base" != "$BASE" ]]; then
+            echo "::warning title=Plan and pull request disagree on the base::The plan is written against '$BASE', #$number targets '$pr_base'"
+          fi
 
       # A failed run is otherwise invisible from the issue - whoever ran the command is
       # left waiting for a comment that never comes. Scoped to the agent step's own
@@ -341,7 +460,8 @@ jobs:
       - name: Report a failed plan
         if: >-
           ${{ always()
-          && (steps.plan.outcome == 'failure'
+          && (steps.task.outcome == 'failure'
+          || steps.plan.outcome == 'failure'
           || steps.report.outcome == 'failure'
           || steps.post.outcome == 'failure') }}
         env:
