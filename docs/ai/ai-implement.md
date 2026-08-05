@@ -39,6 +39,28 @@ comment is the hand-off** - from then on the issue is only for the plan.
 Running `/ai-do` on the issue again does not implement anything. It replies pointing at the pull
 request, because that is where the work continues.
 
+### Basing the work on another branch
+
+By default the branch is cut from the repository default branch and the pull request targets it.
+Name another one to work from instead:
+
+```
+/ai-do base=develop
+```
+
+The branch is created from `develop` and the pull request targets `develop`. Useful when the
+repository does not develop on its default branch, or when the work has to sit on top of another
+feature branch rather than beside it.
+
+Only read when `base=` is the **first thing after the command**, so the rest of the comment stays
+what it has always been - instructions for the agent. `/ai-do also update the changelog` is not a
+request to retarget anything, and neither is a `base=` mentioned mid-sentence. Surrounding
+backticks are stripped, so ``/ai-do base=`develop` `` works too.
+
+A branch that does not exist gets a comment and nothing else - no branch, no pull request, and a
+green run. The base is only ever read on the **first** run for an issue; see
+[one branch, one pull request](#one-branch-one-pull-request) for what happens if you ask later.
+
 ## Reviewing it, and asking for changes
 
 Two ways to start another round. Both need admin or write access.
@@ -232,7 +254,8 @@ the two.
 The branch name is derived from the issue number rather than generated, and that is the whole
 mechanism:
 
-* **First run** - branch created from the default branch, work pushed, pull request opened.
+* **First run** - branch created from the default branch, or from
+  [whatever `base=` named](#basing-the-work-on-another-branch); work pushed, pull request opened.
 * **Every round** - the same branch is fetched, so the agent starts from the previous round rather
   than from scratch. The push updates the open pull request. No second one appears.
 * **A closed pull request** - `/ai-do` on the issue revives it. Pushing to a closed pull request's
@@ -243,6 +266,21 @@ mechanism:
 The pull request body says `Implements #<number>`, deliberately not `Closes`. Review here is the
 point, and auto-closing the issue on the first merge cuts that short. Close the issue yourself
 when the work is actually done.
+
+**The base is settled when the branch is created**, and after that the pull request is the record
+of it. So `base=` on a round, or on an issue whose branch is still lying around from an abandoned
+attempt, gets a comment saying so and is otherwise ignored - the history is already sitting on top
+of something else, and quietly retargeting it would misrepresent the diff. Retarget the pull
+request yourself if you need to move it, with `gh pr edit --base` or the **Edit** button by its
+title: later rounds read the base off the pull request, so they follow along. Retargeting changes
+what the pull request is compared against and not what is on the branch, so a rebase is usually
+wanted too.
+
+The one apparent exception follows the same rule. Reviving a closed pull request whose branch was
+deleted does honour `base=`, because there is no branch left and one has to be created - and the
+pull request is retargeted to match, so its diff still describes only this work. Revive one
+without saying anything and it keeps the base it had rather than snapping back to the default
+branch.
 
 Two rounds on one pull request never run at once. They queue rather than cancel, so the second
 starts from what the first pushed.
@@ -266,6 +304,9 @@ Cases that end without a failure and without a red run:
 | `/ai-do` on an issue whose pull request is open | A comment pointing at it |
 | `/ai-do` on an issue whose pull request was merged | A comment saying the work shipped |
 | `/ai-do` on an issue with no plan | A comment saying to run `/ai-plan` first |
+| `base=` naming a branch that does not exist | A comment saying so, and nothing is started |
+| `base=` with no branch after it | A comment saying to name one |
+| `base=` when the branch already exists | A comment saying the base is settled - the run carries on regardless |
 | A round with no unresolved thread, nothing new said and no failing check | A comment saying exactly that |
 | Too many rounds in a row from a bot | A comment asking for a person |
 | The agent changed no files | A comment saying so |
