@@ -6,6 +6,9 @@ on:
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories'
         required: true
+      AUTOFIX_ACCESS_TOKEN:
+        description: 'Access token the automatic code style fixes are pushed with. Supply one and the fix commit starts its own checks, so a fixable problem is fixed and reported green without anybody touching it. Without it the fixes are pushed with the run''s own `GITHUB_TOKEN` - which works, but needs `permissions: contents: write` on the calling job and leaves the run for the fix commit waiting on "Approve workflows to run"'
+        required: false
     inputs:
       auto_fix:
         description: 'Whether to run PHP_CodeSniffer in fixing mode before the checks and commit what it fixed back to the pull request branch, so that a fixable problem does not become a check a developer has to act on'
@@ -149,13 +152,15 @@ jobs:
       # check reports the branch as it really is - no leg is ever green on the strength of a fix that
       # is not on the branch
       #
-      # The push uses the run's own token, so the calling job has to grant `contents: write` - and
-      # the run for the fix commit is held until somebody releases it with "Approve workflows to
-      # run", which is Github's guard against a workflow starting itself
+      # `AUTOFIX_ACCESS_TOKEN` is what makes this fix and report green on its own: a `pull_request`
+      # run that the run's own `GITHUB_TOKEN` triggered is held until somebody presses "Approve
+      # workflows to run", so falling back to it fixes the code but still asks for a person. Without
+      # the secret the calling job needs `contents: write` for even that much
       - name: Fix the code style
         if: ${{ inputs.auto_fix && hashFiles('phpcs.xml', 'phpcs.xml.dist') != '' }}
         uses: uniquesca/ci/cs-fix@main
         with:
+          token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
           report_dir: ${{ env.AI_REPORT_DIR }}
           # One attempt per leg of the matrix: that is how many jobs can be racing to land a fix,
           # and every one that wins costs the others the attempt they were mid-way through

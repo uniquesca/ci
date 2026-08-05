@@ -1159,3 +1159,7 @@
 ## v10.1.1
 
 * Update: made possible to specify a different base at the point of invoking AI planning agent (015b490 by George Shestayev)
+
+## v10.1.2
+
+* Update: added an ability to use AUTOFIX_ACCESS_TOKEN for QA checks to allow self-heal without human intervention (3d54d98 by George Shestayev)

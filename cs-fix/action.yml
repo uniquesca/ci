@@ -7,6 +7,10 @@ inputs:
     description: 'Command that fixes the code style in place. Whatever it leaves in the working tree is what gets committed'
     required: false
     default: './vendor/bin/phpcbf'
+  token:
+    description: 'Access token the fixes are pushed with. Supply one - a personal access token, or a Github App token - and the fix commit starts its checks by itself, which is the point of fixing automatically at all. Left empty it falls back to the run''s own `GITHUB_TOKEN`, which needs `contents: write` on the calling job and leaves the run for the fix commit waiting on somebody to press "Approve workflows to run": Github holds any `pull_request` run that `GITHUB_TOKEN` triggered, so that a workflow cannot start itself in a loop'
+    required: false
+    default: ''
   attempts:
     description: 'How many times to try landing the fixes. Every attempt after the first starts over from the tip of the branch as it is by then, so **set this to the size of the matrix** (`strategy.job-total`): that is how many jobs can be racing to land a fix of their own, and each one that wins costs the others an attempt'
     required: false
@@ -76,10 +80,10 @@ runs:
       shell: bash
       env:
         CMD: ${{ inputs.cmd }}
-        # The run's own token. It is enough to push with, given `contents: write`, and the run the
-        # push starts is held for approval rather than started outright - Github's own guard against
-        # a workflow starting itself in a loop
-        TOKEN: ${{ github.token }}
+        # A token of the caller's own if there is one, and the run's own otherwise. Which one it is
+        # decides what happens after the push, so the step says which at the end
+        TOKEN: ${{ inputs.token != '' && inputs.token || github.token }}
+        OWN_TOKEN: ${{ inputs.token == '' }}
         BRANCH: ${{ steps.gate.outputs.branch }}
         MESSAGE: ${{ inputs.commit_message }}
         ATTEMPTS: ${{ inputs.attempts }}
@@ -237,9 +241,14 @@ runs:
             # showing, because the commit it pushes becomes the new head of the pull request
             drop_worktree
             echo "Committed the code style fixes to $BRANCH."
-            # Said out loud, because it is the one thing left for a person to do: the fix commit is
-            # the head of the pull request now, and the run reporting on it is waiting to be let go
-            echo "::notice title=Code style fixed automatically::The code style was fixed and committed to $BRANCH. The run for that commit needs releasing with \"Approve workflows to run\" - Github holds a run a workflow triggered itself."
+            # The fix commit is the head of the pull request now, so the checks it ends up showing
+            # are the ones starting on that commit - and whether they start at all is the one thing
+            # the token decides, which makes it worth saying out loud either way
+            if [[ "$OWN_TOKEN" == 'true' ]]; then
+              echo "::notice title=Code style fixed automatically::The code style was fixed and committed to $BRANCH. The run for that commit needs releasing with \"Approve workflows to run\" - Github holds a run a workflow triggered with its own GITHUB_TOKEN. Pass an access token to this workflow as AUTOFIX_ACCESS_TOKEN and the checks start by themselves instead."
+            else
+              echo "::notice title=Code style fixed automatically::The code style was fixed and committed to $BRANCH, and the checks for that commit are starting now."
+            fi
             echo "pushed=true" >> "$GITHUB_OUTPUT"
             exit 0
           else
