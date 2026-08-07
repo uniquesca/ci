@@ -807,6 +807,17 @@ jobs:
             created='true'
           fi
 
+          # Where the base stood at the moment this run read it, recorded so the push step can
+          # say what the base did during the hour the agent was working. Nothing decides
+          # anything on it - it is only ever printed.
+          #
+          # Empty when the base is not in the checkout, which is a branch merged and deleted
+          # since the pull request was opened.
+          base_tip=''
+          if git rev-parse --verify --quiet "refs/remotes/origin/$base" > /dev/null; then
+            base_tip=$(git rev-parse "refs/remotes/origin/$base")
+          fi
+
           # Local-only and never committed, so neither the staged input nor the agent's
           # replies can end up in the branch however it leaves the working tree
           printf '/.ai-plan/\n/.ai-review/\n/.ai-reports/\n' >> .git/info/exclude
@@ -818,6 +829,7 @@ jobs:
             printf 'compare_ref=%s\n' "$compare_ref"
             printf 'branch=%s\n' "$BRANCH"
             printf 'base=%s\n' "$base"
+            printf 'base_tip=%s\n' "$base_tip"
             printf 'created=%s\n' "$created"
           } >> "$GITHUB_OUTPUT"
 
@@ -1151,6 +1163,10 @@ jobs:
         env:
           COMPARE_REF: ${{ steps.branch.outputs.compare_ref }}
           BRANCH: ${{ steps.branch.outputs.branch }}
+          # Read only to describe what is being pushed. The base is not consulted for any
+          # decision here - a branch's base is settled where the branch is prepared.
+          BASE: ${{ steps.branch.outputs.base }}
+          BASE_TIP: ${{ steps.branch.outputs.base_tip }}
           MODE: ${{ steps.event.outputs.mode }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
           TITLE: ${{ steps.stage_issue.outputs.title }}
@@ -1184,8 +1200,100 @@ jobs:
           fi
 
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          git -c http.extraheader="AUTHORIZATION: basic $auth" \
-            push origin "HEAD:refs/heads/$BRANCH"
+
+          # Everything a post-mortem needs, gathered whether or not the push works, because
+          # afterwards none of it can be recovered: a refused push leaves no branch, and the
+          # working tree goes with the runner.
+          #
+          # The last refusal left the run log holding a one-line git error naming one file.
+          # Which files the agent had actually touched, and what the base had been doing for
+          # the hour it was thinking, were both needed to tell three different causes apart,
+          # and both were gone. Nothing below changes what gets pushed - it only reads.
+          from="${BASE_TIP:-$COMPARE_REF}"
+          {
+            printf 'branch:            %s\n' "$BRANCH"
+            printf 'base:              %s\n' "$BASE"
+            printf 'head:              %s\n' "$(git rev-parse HEAD)"
+
+            if [[ -z "$BASE_TIP" ]]; then
+              printf 'base at checkout:  not recorded\n'
+            else
+              printf 'base at checkout:  %s\n' "$BASE_TIP"
+
+              # A read, not a catch-up. It updates a remote-tracking ref and nothing else -
+              # `push` below sends HEAD, which this cannot reach.
+              #
+              # Forced, and that matters: without the `+` a rewritten base is not a
+              # fast-forward, the fetch fails, and the one case worth detecting reports itself
+              # as a branch that was deleted.
+              if git -c http.extraheader="AUTHORIZATION: basic $auth" \
+                   fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2> /dev/null; then
+                base_now=$(git rev-parse "refs/remotes/origin/$BASE")
+                printf 'base now:          %s\n' "$base_now"
+
+                if [[ "$base_now" == "$BASE_TIP" ]]; then
+                  printf 'base moved:        no\n'
+                elif git merge-base --is-ancestor "$BASE_TIP" "$base_now"; then
+                  printf 'base moved:        yes, forward by %s commit(s)\n' \
+                    "$(git rev-list --count "$BASE_TIP..$base_now")"
+                else
+                  # The commit this branch was cut from is not on the base any more, so every
+                  # commit under it is new to the push. Github reads a workflow file in any of
+                  # them as one this push is creating, which is one way a rejection happens
+                  # without the agent having touched a workflow file at all.
+                  printf 'base moved:        yes, REWRITTEN - the commit this branch was cut from is no longer on %s\n' "$BASE"
+                fi
+              else
+                printf 'base now:          could not be read - %s may have been deleted\n' "$BASE"
+              fi
+            fi
+
+            printf 'commits to push:\n'
+            git log --format='  %h %s' "$from..HEAD" 2> /dev/null || printf '  (could not list)\n'
+
+            printf 'files against the base:\n'
+            git diff --name-status "$from...HEAD" 2> /dev/null | sed 's/^/  /' \
+              || printf '  (could not diff)\n'
+          } > "$RUNNER_TEMP/push-facts.txt"
+
+          echo "::group::What is being pushed"
+          cat "$RUNNER_TEMP/push-facts.txt"
+          echo "::endgroup::"
+
+          # Called out before the attempt rather than after it. Github refuses a push from
+          # `GITHUB_TOKEN` that creates or updates anything under .github/workflows, and names
+          # only the first file it objects to - so the full list is worth having whether the
+          # push then succeeds or not.
+          git diff --name-only "$from...HEAD" -- .github/workflows/ \
+            > "$RUNNER_TEMP/workflow-files.txt" 2> /dev/null || true
+
+          if [[ -s "$RUNNER_TEMP/workflow-files.txt" ]]; then
+            # `paste -sd', '` would cycle the two characters as alternating delimiters and
+            # join three files as `a,b c`. One delimiter, then space it out.
+            workflow_files=$(paste -sd, "$RUNNER_TEMP/workflow-files.txt" | sed 's/,/, /g')
+            echo "::warning title=This push touches workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN"
+          fi
+
+          if ! git -c http.extraheader="AUTHORIZATION: basic $auth" \
+                 push origin "HEAD:refs/heads/$BRANCH" 2>&1 | tee "$RUNNER_TEMP/push-output.txt"; then
+            # The run summary outlives nothing here, but it is the one place somebody reading
+            # the failure comment can get to in a click, and it does not require scrolling a
+            # job log to find
+            {
+              printf '## The push was refused\n\n```\n'
+              cat "$RUNNER_TEMP/push-output.txt"
+              printf '```\n\n```\n'
+              cat "$RUNNER_TEMP/push-facts.txt"
+              printf '```\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            if [[ -n "${workflow_files:-}" ]]; then
+              printf 'reason=%s\n' "this branch changes $workflow_files, and Github does not let this workflow's token create or update anything under .github/workflows/" >> "$GITHUB_OUTPUT"
+              echo "::error title=Push refused, and it touches workflow files::$workflow_files"
+            fi
+
+            exit 1
+          fi
 
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
@@ -1497,6 +1605,10 @@ jobs:
           # something actionable - an exhausted credit balance and a genuine bug look
           # identical otherwise.
           REASON: ${{ steps.report.outputs.reason }}
+          # Why the push was refused, where the refusal had a nameable cause. A rejected push
+          # is the failure that loses finished work outright, so "the run log has the detail"
+          # is not enough on its own - the detail belongs where somebody will read it.
+          PUSH_REASON: ${{ steps.push.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
@@ -1504,6 +1616,9 @@ jobs:
               printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$ACTOR"
             else
               printf '@%s this round did not finish, so the feedback on this pull request has not been acted on.\n\n' "$ACTOR"
+            fi
+            if [[ -n "$PUSH_REASON" ]]; then
+              printf 'The work was written but could not be pushed: %s\n\n' "$PUSH_REASON"
             fi
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"

@@ -1,5 +1,9 @@
+import core from '@actions/core';
 import fs from 'fs';
 import path from 'path';
+
+/** Matches a value that consists of nothing but a single "$(name)" reference. */
+const WHOLE_REFERENCE_PATTERN = /^\$\(([^)]+)\)$/;
 
 /**
  * Converts dot-notation keys to nested objects.
@@ -74,8 +78,37 @@ export function getTokenFallbacks(envFilePath) {
 }
 
 /**
+ * Rewrites the deprecated whole-value "$name" reference syntax to "$(name)".
+ * Any other value is returned untouched.
+ *
+ * @param {string} key - Name of the fallback the value belongs to, used for the warning.
+ * @param {any} fallback - The fallback value.
+ * @returns {any}
+ */
+function normalizeLegacyReference(key, fallback) {
+    if (typeof fallback !== 'string' || fallback.length < 2) {
+        return fallback;
+    }
+
+    // "$(name)" is the current syntax and "$$(" is an escaped literal, neither is legacy
+    if (!fallback.startsWith('$') || fallback.startsWith('$(') || fallback.startsWith('$$')) {
+        return fallback;
+    }
+
+    const reference = fallback.slice(1);
+    core.warning(
+        `Token fallback "${key}" uses the deprecated "$name" reference syntax. `
+        + `Use "$(${reference})" instead — the old syntax will be removed in v11.`
+    );
+
+    return `$(${reference})`;
+}
+
+/**
  * Applies token fallbacks to a variables object.
- * Mutates a copy of variables and returns it.
+ * Fallbacks are only used for tokens the variables do not already define. Fallback values
+ * written in the deprecated "$name" syntax are rewritten to "$(name)" so that a single
+ * reference syntax reaches resolveReferences().
  *
  * @param {Record<string, string>} variables
  * @param {Record<string, string>} fallbacks
@@ -84,25 +117,79 @@ export function getTokenFallbacks(envFilePath) {
 export function applyFallbacks(variables, fallbacks) {
     const result = {...variables};
 
-    const references = {};
     for (const [key, fallback] of Object.entries(fallbacks)) {
-        if (key in result) {
+        if (Object.hasOwn(result, key)) {
             continue;
         }
 
-        if (typeof fallback === 'string' && fallback.startsWith('$')) {
-            references[key] = fallback;
-        } else {
-            result[key] = fallback;
-        }
+        result[key] = normalizeLegacyReference(key, fallback);
     }
 
-    for (const [refKey, reference] of Object.entries(references)) {
-        const referenceVal = reference.slice(1);
-        if (!(referenceVal in result)) {
-            throw new Error(`Referenced variable "${referenceVal}" is not found.`);
+    return result;
+}
+
+/**
+ * Resolves a single value, replacing every "$(name)" reference in it.
+ *
+ * A value that is nothing but one reference yields the referenced value as-is, so its type is
+ * preserved. A reference embedded in a larger string is stringified. "$$(" produces a literal "$(".
+ *
+ * @param {any} value - The value to resolve.
+ * @param {(key: string) => any} resolveKey - Resolves another token by name.
+ * @returns {any}
+ */
+function resolveValue(value, resolveKey) {
+    if (typeof value !== 'string') {
+        return value;
+    }
+
+    const whole = value.match(WHOLE_REFERENCE_PATTERN);
+    if (whole) {
+        return resolveKey(whole[1]);
+    }
+
+    const pattern = /\$\$\(|\$\(([^)]+)\)/g;
+
+    return value.replace(pattern, (match, key) => key === undefined ? '$(' : String(resolveKey(key)));
+}
+
+/**
+ * Resolves "$(name)" references across all variables.
+ *
+ * References may point at any other token regardless of declaration order, may be chained, and may
+ * appear anywhere inside a value. An unknown target or a circular chain throws.
+ *
+ * @param {Record<string, any>} variables
+ * @returns {Record<string, any>}
+ */
+export function resolveReferences(variables) {
+    const resolved = {};
+    const visiting = new Set();
+
+    const resolveKey = (key) => {
+        if (Object.hasOwn(resolved, key)) {
+            return resolved[key];
         }
-        result[refKey] = result[referenceVal];
+
+        if (visiting.has(key)) {
+            throw new Error(`Circular token reference detected: ${[...visiting, key].join(' -> ')}`);
+        }
+
+        // hasOwn rather than "in", so that a reference cannot reach Object.prototype members
+        if (!Object.hasOwn(variables, key)) {
+            throw new Error(`Referenced variable "${key}" is not found.`);
+        }
+
+        visiting.add(key);
+        resolved[key] = resolveValue(variables[key], resolveKey);
+        visiting.delete(key);
+
+        return resolved[key];
+    };
+
+    const result = {};
+    for (const key of Object.keys(variables)) {
+        result[key] = resolveKey(key);
     }
 
     return result;
@@ -127,8 +214,11 @@ export async function prepareEnvironment(workingDirectory, envFilePath, variable
     // Prepare variables by merging provided variables with fallbacks
     const preparedVariables = applyFallbacks(variables, fallbacks);
 
+    // Resolve "$(name)" references, in both the provided variables and the fallbacks
+    const resolvedVariables = resolveReferences(preparedVariables);
+
     // Convert dot-notation keys to nested objects for nunjucks
-    const nested = dotToNested(preparedVariables);
+    const nested = dotToNested(resolvedVariables);
 
     // Process all configs
     for (const config of configs) {

@@ -1163,3 +1163,10 @@
 ## v10.1.2
 
 * Update: added an ability to use AUTOFIX_ACCESS_TOKEN for QA checks to allow self-heal without human intervention (3d54d98 by George Shestayev)
+
+## v10.2.0
+
+* Update: improved logging for ai coding status (1e1c4c8 by George Shestayev)
+* Update: added an ability to have partial token references (d6f8236 by George Shestayev)
+* Update: added an ability to use token references for actual token substituion and not just for the fallbacks (d6f8236 by George Shestayev)
+* Update: improved ai-plan to avoid forgetting previously specified base branch when providing feedback without specifying the base again (d6f8236 by George Shestayev)

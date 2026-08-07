@@ -181,24 +181,76 @@ jobs:
             fi
           fi
 
+          # Nothing named this time, so the last plan says where. A replan is a revision of
+          # the plan already under discussion, and revising it against a different branch is
+          # never what was meant - it is how a plan comes back describing files that moved
+          # and work already done. Naming the branch once, on the first run, is the whole
+          # point of the argument, and the default branch is only right when no plan has an
+          # opinion yet.
+          inherited_base=''
+          if [[ "$base_given" != 'true' ]]; then
+            # The same two reads ai-stage-issue does - newest bot-authored comment carrying
+            # the marker, then the metadata line under it - because the checkout below needs
+            # the answer and staging cannot run until there is a checkout to stage into.
+            # Bot-authored matters here for the same reason it does there: anyone able to
+            # comment can paste a marker, and this one picks the branch.
+            gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
+              | jq -r 'flatten
+                       | map(select((.user.type == "Bot") and (.body | startswith("<!-- ai-plan -->"))))
+                       | last | .body // empty' > "$RUNNER_TEMP/previous-plan.md"
+
+            inherited_base=$(
+              jq -Rs 'split("\n")
+                      | (.[1] // "")
+                      | ltrimstr("<!-- ") | rtrimstr(" -->")
+                      | (try fromjson catch {})
+                      | if type == "object" then (.base // "") else "" end
+                      | tostring
+                      | gsub("[\r\n]"; "")' "$RUNNER_TEMP/previous-plan.md" | jq -r .
+            )
+
+            if [[ -n "$inherited_base" ]]; then
+              echo "The last plan was written against '$inherited_base', keeping it"
+            fi
+          fi
+
+          base="$requested_base"
+          [[ "$base_given" == 'true' ]] || base="$inherited_base"
+
           # Judged straight away, unlike in the implementing workflow - this step is already
           # past the permission gate, so it can answer for itself. Same three tests, and the
           # same reasoning behind each: see the matching step in ai-implement.yml.
-          if [[ "$base_given" == 'true' ]]; then
+          #
+          # An inherited base is judged too, and is in fact the likelier one to fail: it was
+          # named in a comment written days ago, and a release branch that has since been
+          # merged and deleted is exactly the case. Only the wording differs - nobody typed
+          # it this time, so the answer is to name one now rather than to check the spelling.
+          if [[ "$base_given" == 'true' || -n "$base" ]]; then
             stand_down=''
 
-            if [[ -z "$requested_base" ]]; then
-              stand_down="@$COMMENTER you asked for a base branch but did not name one. Run \`$COMMAND base=<branch>\`, or just \`$COMMAND\` to plan against the default branch."
-            elif [[ ! "$requested_base" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ || "$requested_base" == *..* ]]; then
-              stand_down="@$COMMENTER \`$requested_base\` is not a branch name I will work with. Letters, digits, \`.\`, \`_\`, \`-\` and \`/\` only, and not starting with \`-\`."
-            elif ! gh api "repos/$GH_REPO/git/ref/heads/$requested_base" --silent 2> /dev/null; then
-              stand_down="@$COMMENTER there is no branch called \`$requested_base\` in this repository, so there is nothing to plan against. Check the name and run \`$COMMAND base=<branch>\` again."
+            if [[ "$base_given" == 'true' ]]; then
+              named="you asked to plan against"
+              gone=''
+              fix="Run \`$COMMAND base=<branch>\`, or just \`$COMMAND\` to plan against the default branch."
+            else
+              named="the last plan on this issue was written against"
+              gone=' any more - it may have been merged and deleted since'
+              # `$COMMAND` on its own is what arrived here, so it is not the advice to give
+              fix="Run \`$COMMAND base=<branch>\` to say where this should be planned now."
+            fi
+
+            if [[ -z "$base" ]]; then
+              stand_down="@$COMMENTER you asked for a base branch but did not name one. $fix"
+            elif [[ ! "$base" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ || "$base" == *..* ]]; then
+              stand_down="@$COMMENTER $named \`$base\`, which is not a branch name I will work with. Letters, digits, \`.\`, \`_\`, \`-\` and \`/\` only, and not starting with \`-\`. $fix"
+            elif ! gh api "repos/$GH_REPO/git/ref/heads/$base" --silent 2> /dev/null; then
+              stand_down="@$COMMENTER $named \`$base\`, and there is no branch by that name in this repository${gone}. $fix"
             fi
 
             if [[ -n "$stand_down" ]]; then
               echo "has_task=false" >> "$GITHUB_OUTPUT"
               gh issue comment "$ISSUE" --body "$stand_down"
-              echo "::warning title=Base branch unusable::'$requested_base' cannot be planned against"
+              echo "::warning title=Base branch unusable::'$base' cannot be planned against"
               exit 0
             fi
           fi
@@ -206,16 +258,17 @@ jobs:
           # Written once each - a key repeated in $GITHUB_OUTPUT has no defined winner
           {
             printf 'has_task=true\n'
-            printf 'base=%s\n' "$requested_base"
+            printf 'base=%s\n' "$base"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Planning issue #$ISSUE against ${requested_base:-the default branch}"
+          echo "Planning issue #$ISSUE against ${base:-the default branch}"
 
       # The agent plans against the real code, so the repository has to be on disk.
       # Nothing is ever inferred from the event: an issue comment carries no ref worth
-      # checking out, and planning an issue is a question about the mainline rather
-      # than about whatever branch happens to be open. `base=` on the command is the
-      # one way to point it elsewhere, and an empty `ref` is the default branch.
+      # checking out, and planning an issue is a question about the mainline rather than
+      # about whatever branch happens to be open. `base=` on the command, or the same
+      # argument on the run that produced the plan being revised, is the one way to point
+      # it elsewhere - and an empty `ref` is the default branch.
       - name: Check out the repository
         if: ${{ steps.task.outputs.has_task == 'true' }}
         uses: actions/checkout@v7
@@ -265,6 +318,13 @@ jobs:
             `${{ steps.task.outputs.base || 'the default branch' }}`, and that is the branch
             the work will be built on. Plan against what you actually see here, and say so if
             the issue seems to assume some other state of the code.
+
+            A `base=` argument in any comment has already been dealt with before you were
+            started: the workflow read it, checked that branch out, and a later request that
+            names no branch keeps the one the previous plan used. So the working tree is the
+            answer, and there is nothing to reconcile. Do not compare it against a `base=` you
+            can see in the thread, do not report the two as disagreeing, and do not caveat the
+            plan over it.
 
             Your final message is the plan. It is posted verbatim as a comment on the
             issue, so it is the plan and nothing else - no preamble about what you are
@@ -384,6 +444,10 @@ jobs:
             printf '\n\n'
             printf -- '---\n\n'
             printf 'Requested by @%s.' "$COMMENTER"
+            # Said out loud, not only in the metadata line above, because a plan can inherit
+            # its branch from the one before it without anybody naming it on this run - and a
+            # decision nobody can see is one nobody can correct
+            printf ' Written against `%s`.' "$BASE"
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
             printf '\n'
           } > plan-comment.md
