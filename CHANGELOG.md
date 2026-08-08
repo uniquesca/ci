@@ -1170,3 +1170,7 @@
 * Update: added an ability to have partial token references (d6f8236 by George Shestayev)
 * Update: added an ability to use token references for actual token substituion and not just for the fallbacks (d6f8236 by George Shestayev)
 * Update: improved ai-plan to avoid forgetting previously specified base branch when providing feedback without specifying the base again (d6f8236 by George Shestayev)
+
+## v10.2.1
+
+* Fix: fixed checks for AI implement workflow triggers to avoid misfires (1db351b by George Shestayev)

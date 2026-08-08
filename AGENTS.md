@@ -1,0 +1,30 @@
+# Working in this repository
+
+## Documentation
+
+Everything under `docs/` is laid out the same way: task-oriented sections first, then a single
+`## Dig deeper` heading, then the detail.
+
+**Keep the sections above `## Dig deeper` terse.** They exist to get somebody running, and every
+sentence added to them costs the reader something. Caveats, rationale, failure modes, "why it is
+built this way" and anything a reader can safely not know on their first pass belong under
+`## Dig deeper`, in the subsection that already covers that topic.
+
+When adding something to a section above `## Dig deeper`:
+
+* Prefer a comment inside the YAML or code example over any prose at all.
+* One paragraph is the ceiling. Two is too many - move it down.
+* If it does not fit in one paragraph, it was always a `## Dig deeper` note.
+
+Match the surrounding density. These docs use short declarative sentences, bold lead-ins for
+things that fail silently, and tables for enumerable outcomes.
+
+## Workflows
+
+`.github/workflows/ai-*.yml` explain themselves in comments, and those comments carry the
+reasoning rather than restating the YAML. Match that when editing them, and update the comment
+when the code under it changes.
+
+`ai-implement.yml` and `ai-review.yml` both use a `PROCEED` environment variable to stand down
+without failing. The contract is documented where it is declared in each file - read it before
+adding a step to either.

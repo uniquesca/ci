@@ -107,16 +107,32 @@ jobs:
     # Requesting changes is a decision, and it batches every inline comment in that review into
     # one round. A `commented` review still reaches the agent - the next round to run for any
     # reason stages it out of the feedback like anything else.
+    #
+    # Both of those broad triggers are narrowed to branches this workflow could have pushed,
+    # because both fire on pull requests that have nothing to do with it - every review in the
+    # repository, and every QA run on every branch. This is a job-level `if`, so a run that does
+    # not match is reported as *skipped* and never takes a runner. Nothing else can produce that
+    # conclusion: a job that has started can only end up success, failure, cancelled or timed
+    # out, so a job that works out it has nothing to do after starting is green at best.
+    #
+    # A pre-filter and not the real test. `startsWith` in a Github expression is case-insensitive
+    # while git branch names are not, and neither branch here proves the pull request is open or
+    # that its head is what the event claimed. `Resolve the pull request` below re-checks all of
+    # it against what the API says, and that check is the one that decides.
     if: >-
       ${{ (github.event_name == 'issue_comment'
            && github.event.action == 'created'
            && startsWith(github.event.comment.body, inputs.command))
           || (github.event_name == 'pull_request_review'
               && github.event.action == 'submitted'
-              && github.event.review.state == 'changes_requested')
+              && github.event.review.state == 'changes_requested'
+              && github.event.pull_request.head.repo.full_name == github.repository
+              && startsWith(github.event.pull_request.head.ref, inputs.branch_prefix))
           || (github.event_name == 'workflow_run'
               && github.event.workflow_run.conclusion != 'cancelled'
-              && github.event.workflow_run.conclusion != 'skipped') }}
+              && github.event.workflow_run.conclusion != 'skipped'
+              && github.event.workflow_run.head_repository.full_name == github.repository
+              && startsWith(github.event.workflow_run.head_branch, inputs.branch_prefix)) }}
     runs-on: ubuntu-latest
     # Github expressions have no arithmetic, so this cannot be derived from the agent's
     # budget - the two are separate inputs, and the defaults leave five minutes between
@@ -164,7 +180,17 @@ jobs:
       # Any guard below can set this to false in $GITHUB_ENV, and every step after it stands
       # down. A job cannot stop itself early without failing, and failing is wrong for most
       # of what the guards catch - running the command too early, or on the wrong pull
-      # request, is not a CI error.
+      # request, is not a CI error. Nor can a running job report itself as *skipped*: that
+      # conclusion only comes from the job-level `if`, which is why the branch check above is
+      # duplicated there for the triggers whose payload can answer it.
+      #
+      # **Every step that does work must test `env.PROCEED == 'true'` in its `if`.** The three
+      # that deliberately do not are the two `always()` reporters at the end and the step that
+      # answers a stood-down command - and that one fires precisely *because* PROCEED is false.
+      # Missing this test does not fail loudly: the step simply runs after the job has given up,
+      # against half-set outputs. That is how `Resolve the pull request` came to run with an
+      # empty pull request number and take the whole job down with `gh pr view ""` on every
+      # push to a branch with no open pull request.
       PROCEED: 'true'
       # Shared with the staging and reply actions, which look for exactly these. The round
       # marker is how a later round finds the previous one; the reply marker is how it tells
@@ -323,6 +349,79 @@ jobs:
 
           echo "$mode run on #$target, triggered by $trigger from @$actor ($actor_type, attended: $attended)"
 
+      # A round works on a branch this workflow pushed, and on no other. Both broad triggers
+      # fire on pull requests nobody here created - including pull requests from forks, which
+      # `issue_comment` and `pull_request_review` run with a write token and full access to
+      # secrets. Checking out fork code and handing it a shell with ANTHROPIC_API_KEY in the
+      # environment is exactly what this step exists to prevent.
+      #
+      # Deliberately in front of the permission gate, and read-only because of it. "Is this even
+      # our pull request" has to be settled before "may this person run the command", or the
+      # refusal below gets posted on pull requests this workflow has nothing to do with - which
+      # is a stranger's review thread telling them off for a command they never typed. Nothing
+      # here answers anybody; the one reply this step used to post is now its own step, after the
+      # gate. The gate itself still stands in front of everything that checks out code, stages
+      # anything or starts an agent, which is what it is actually for.
+      - name: Resolve the pull request
+        id: pull_request
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request }}
+          PREFIX: ${{ inputs.branch_prefix }}
+        run: |
+          gh pr view "$PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
+            > "$RUNNER_TEMP/pull-request.json"
+
+          state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
+          head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pull-request.json")
+          head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
+
+          reason=''
+          if [[ "$head_repo" != "$GH_REPO" ]]; then
+            reason="its branch lives in \`$head_repo\` rather than in this repository"
+          elif [[ "$head_ref" != "$PREFIX"* ]]; then
+            reason="its branch \`$head_ref\` was not created by this workflow"
+          elif [[ "$state" != 'OPEN' ]]; then
+            reason="it is $(echo "$state" | tr '[:upper:]' '[:lower:]')"
+          fi
+
+          if [[ -n "$reason" ]]; then
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+
+            # Read by the step that answers a typed command, which is the only trigger this is
+            # ever said out loud for
+            printf 'stand_down=%s\n' "$reason" >> "$GITHUB_OUTPUT"
+
+            echo "Standing down on #$PR: $reason"
+            exit 0
+          fi
+
+          # The branch name carries the issue number, which is what lets a round read the
+          # plan it is still working to. Derived rather than looked up in the pull request
+          # body, because the branch is this workflow's own construction and the body is
+          # editable prose.
+          issue="${head_ref##*issue-}"
+          if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
+            exit 1
+          fi
+
+          {
+            printf 'issue=%s\n' "$issue"
+            printf 'branch=%s\n' "$head_ref"
+            printf 'head_sha=%s\n' "$(jq -r '.headRefOid' "$RUNNER_TEMP/pull-request.json")"
+            printf 'base=%s\n' "$(jq -r '.baseRefName' "$RUNNER_TEMP/pull-request.json")"
+            printf 'title=%s\n' "$(jq -r '.title' "$RUNNER_TEMP/pull-request.json" | tr -d '\r\n')"
+            printf 'url=%s\n' "$(jq -r '.url' "$RUNNER_TEMP/pull-request.json")"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Round on #$PR, branch $head_ref, implementing issue #$issue"
+
+      # Deliberately not gated on PROCEED. A run that has already stood down still needs an
+      # answer here, because the step below it only speaks to somebody the gate approved - and
+      # working out whether it approved them is this step's whole job.
       - name: Check the actor is allowed to run this
         id: permissions
         env:
@@ -383,84 +482,56 @@ jobs:
       # Refusals stop the job, so the steps below only ever run for an allowed actor. This
       # gate is what keeps an agent with a shell and write access out of the hands of anyone
       # who can merely comment on an issue or leave a review.
+      #
+      # Only ever on something this workflow owns. A run that has already stood down has no
+      # business telling anybody off: the pull request is not ours, nobody asked for anything,
+      # and on the `workflow_run` path there is not even a number to comment on. Standing down
+      # silently is the whole point - so this refuses nothing and the job ends green.
       - name: Refuse the request
-        if: ${{ steps.permissions.outputs.allowed != 'true' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.permissions.outputs.allowed != 'true' }}
         env:
           COMMAND: ${{ inputs.command }}
           PERMISSION: ${{ steps.permissions.outputs.permission }}
           ACTOR: ${{ steps.event.outputs.actor }}
           TARGET: ${{ steps.event.outputs.target }}
         run: |
-          gh issue comment "$TARGET" --body "@$ACTOR you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you."
+          # PROCEED is true, so there is a pull request or an issue behind this - but a refusal
+          # that cannot be posted must still fail the job rather than die on an empty argument
+          if [[ -n "$TARGET" ]]; then
+            gh issue comment "$TARGET" --body "@$ACTOR you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you." \
+              || echo "::warning title=Could not post the refusal::@$ACTOR was refused, but nothing could be said on #$TARGET"
+          else
+            echo "::warning title=Nowhere to post the refusal::@$ACTOR was refused with no issue or pull request to say so on"
+          fi
+
           echo "::error title=Permission denied::@$ACTOR ($PERMISSION) is not allowed to run $COMMAND"
           exit 1
 
-      # A round works on a branch this workflow pushed, and on no other. Both new triggers
-      # fire on pull requests nobody here created - including pull requests from forks, which
-      # `issue_comment` and `pull_request_review` run with a write token and full access to
-      # secrets. Checking out fork code and handing it a shell with ANTHROPIC_API_KEY in the
-      # environment is exactly what this step exists to prevent.
-      - name: Resolve the pull request
-        id: pull_request
-        if: ${{ success() && steps.event.outputs.mode == 'round' }}
+      # The other half of the step above. A review and a finished QA workflow are broad triggers
+      # that fire on pull requests this workflow never touched, and saying so on each one would
+      # be noise on somebody else's thread - the job-level `if` now skips most of them outright,
+      # and the rest stand down without a word. A typed command is different: a person asked,
+      # and deserves an answer.
+      #
+      # Behind the permission gate, so a command from somebody who could not have run it anyway
+      # gets silence rather than an explanation of what this workflow does.
+      - name: Say the command does not apply here
+        if: >-
+          ${{ success()
+          && steps.pull_request.outputs.stand_down != ''
+          && steps.event.outputs.trigger == 'pr-command'
+          && steps.permissions.outputs.allowed == 'true' }}
         env:
           PR: ${{ steps.event.outputs.pull_request }}
-          PREFIX: ${{ inputs.branch_prefix }}
-          TRIGGER: ${{ steps.event.outputs.trigger }}
           ACTOR: ${{ steps.event.outputs.actor }}
           COMMAND: ${{ inputs.command }}
+          PREFIX: ${{ inputs.branch_prefix }}
+          REASON: ${{ steps.pull_request.outputs.stand_down }}
         run: |
-          gh pr view "$PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
-            > "$RUNNER_TEMP/pull-request.json"
-
-          state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
-          head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pull-request.json")
-          head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
-
-          reason=''
-          if [[ "$head_repo" != "$GH_REPO" ]]; then
-            reason="its branch lives in \`$head_repo\` rather than in this repository"
-          elif [[ "$head_ref" != "$PREFIX"* ]]; then
-            reason="its branch \`$head_ref\` was not created by this workflow"
-          elif [[ "$state" != 'OPEN' ]]; then
-            reason="it is $(echo "$state" | tr '[:upper:]' '[:lower:]')"
-          fi
-
-          if [[ -n "$reason" ]]; then
-            echo "PROCEED=false" >> "$GITHUB_ENV"
-
-            # A review is a broad trigger: it fires on every pull request in the repository,
-            # most of which have nothing to do with this workflow. Saying so on each one
-            # would be noise on somebody else's review. An explicit command is different -
-            # a person asked, and deserves an answer.
-            if [[ "$TRIGGER" == 'pr-command' ]]; then
-              gh issue comment "$PR" --body "@$ACTOR I cannot run \`$COMMAND\` on this pull request - $reason. This command only continues work this workflow started, on a \`$PREFIX\` branch of this repository."
-            fi
-
-            echo "Standing down on #$PR: $reason"
-            exit 0
-          fi
-
-          # The branch name carries the issue number, which is what lets a round read the
-          # plan it is still working to. Derived rather than looked up in the pull request
-          # body, because the branch is this workflow's own construction and the body is
-          # editable prose.
-          issue="${head_ref##*issue-}"
-          if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
-            echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
-            exit 1
-          fi
-
-          {
-            printf 'issue=%s\n' "$issue"
-            printf 'branch=%s\n' "$head_ref"
-            printf 'head_sha=%s\n' "$(jq -r '.headRefOid' "$RUNNER_TEMP/pull-request.json")"
-            printf 'base=%s\n' "$(jq -r '.baseRefName' "$RUNNER_TEMP/pull-request.json")"
-            printf 'title=%s\n' "$(jq -r '.title' "$RUNNER_TEMP/pull-request.json" | tr -d '\r\n')"
-            printf 'url=%s\n' "$(jq -r '.url' "$RUNNER_TEMP/pull-request.json")"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "Round on #$PR, branch $head_ref, implementing issue #$issue"
+          gh issue comment "$PR" --body "@$ACTOR I cannot run \`$COMMAND\` on this pull request - $REASON. This command only continues work this workflow started, on a \`$PREFIX\` branch of this repository." \
+            || echo "::warning title=Could not say the command does not apply::Nothing was posted on #$PR"
 
       # Once there is a pull request, that is where the work continues. Running the command
       # on the issue again would push a round nobody can review in place, and split the
@@ -1627,4 +1698,16 @@ jobs:
           } > "$RUNNER_TEMP/failure-comment.md"
 
           cat "$RUNNER_TEMP/failure-comment.md" >> "$GITHUB_STEP_SUMMARY"
-          gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md"
+
+          # A `workflow_run` round whose branch has no open pull request has nowhere to post -
+          # both numbers are empty, and `gh issue comment ""` resolves the current branch, finds
+          # no checkout and fails. This step exists to explain a failure, so failing inside it
+          # buries the thing it was reporting. The summary above has already been written either
+          # way, which is the part somebody clicking through from the run will actually read.
+          if [[ -z "$TARGET" ]]; then
+            echo "::warning title=Nowhere to report the failure::This run has no issue or pull request to comment on - the run summary has the detail"
+            exit 0
+          fi
+
+          gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md" \
+            || echo "::warning title=Could not report the failure::Nothing was posted on #$TARGET - the run summary has the detail"
