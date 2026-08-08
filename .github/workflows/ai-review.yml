@@ -98,6 +98,17 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
+      # Same contract as the implementing workflow: the step below can set this to false, and
+      # **every step after it must test `env.PROCEED == 'true'` in its `if`**. A step that
+      # forgets runs after the job has given up, against outputs that were never written - which
+      # in ai-implement.yml meant `gh pr view ""` failing a job that had correctly decided it had
+      # nothing to do.
+      #
+      # Cheaper to hold to here than there. This job has one entry point rather than four, and
+      # the resolve step is first and unconditional, so there is exactly one place PROCEED is
+      # ever set and everything below it is downstream of that one place. There is no job-level
+      # branch filter for the same reason: `repository_dispatch` carries a pull request number
+      # and nothing else, so the payload cannot answer the question without an API call.
       PROCEED: 'true'
       REVIEW_MARKER: '<!-- ai-review -->'
     steps:

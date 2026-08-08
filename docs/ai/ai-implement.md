@@ -162,6 +162,7 @@ on:
   workflow_run:
     workflows: [ 'PHP QA Checks' ]   # the QA workflow's `name:`, not its filename
     types: [ completed ]
+    branches: [ 'ai-feature/**' ]    # optional, must match `branch_prefix`
 
 jobs:
   ai-implement:
@@ -214,6 +215,12 @@ Two consequences worth expecting:
 * **A green pull request produces no comment.** The round starts, finds nothing to act on and exits
   silently, because this fires on every push and saying so each time would be noise.
 
+The optional `branches:` filter narrows this to branches the workflow could have pushed. Without it
+every QA run in the repository creates a run that immediately works out it has nothing to do - the
+job `if` skips those, so they cost nothing and say nothing, but they still appear in the Actions
+tab. It matches on the head branch and nothing checks it against `branch_prefix`, so a pattern
+narrower than the prefix stops rounds starting with no error to say why.
+
 ### The round cap
 
 A person asking for another round is bounded by their own patience and their willingness to spend
@@ -249,10 +256,25 @@ context with a write token and **full access to secrets**. Without the branch ch
 fork's pull request would check out that fork's code and hand it a shell with
 `ANTHROPIC_API_KEY` in the environment.
 
-The two triggers behave differently when a pull request is out of scope, deliberately. A review
-says nothing at all - reviews land on every pull request in the repository and commenting on each
-would be noise on somebody else's work. An explicit `/ai-do` gets an answer, because a person
-asked.
+The check happens twice, at two different costs:
+
+* **In the job's `if`**, for `pull_request_review` and `workflow_run`. Both payloads carry the head
+  branch and the head repository, so a pull request that is out of scope is filtered out before a
+  runner is allocated - the job reports as **skipped** and costs nothing. This is a pre-filter
+  only: `startsWith` in a GitHub expression is case-insensitive while branch names are not.
+* **In `Resolve the pull request`**, against what the API says, for every trigger. This is the one
+  that decides, and it is the only one available to `issue_comment` - that payload carries no head
+  branch at all, so a typed `/ai-do` always costs a runner.
+
+The triggers behave differently when a pull request is out of scope, deliberately. A review or a
+finished QA run says nothing at all - both land on work that has nothing to do with this workflow,
+and commenting on each would be noise on somebody else's thread. An explicit `/ai-do` gets an
+answer, because a person asked.
+
+That answer is behind the permission gate, and the gate is behind the branch check. Ordering
+matters in both directions: somebody who could not have run the command anyway gets silence rather
+than an explanation, and a refusal is only ever posted on something this workflow owns - otherwise
+a stranger's pull request collects a comment telling them off for a command they never typed.
 
 Running this on human-authored pull requests would be a different feature, and the branch check
 is what currently stands between the two.
@@ -332,7 +354,10 @@ Cases that end without a failure and without a red run:
 | Too many rounds in a row from a bot | A comment asking for a person |
 | The agent changed no files | A comment saying so |
 | `/ai-do` on a pull request this workflow did not open | A comment saying why not |
-| A review on a pull request this workflow did not open | Nothing at all, by design |
+| `/ai-do` from somebody without permission, on a pull request this workflow did not open | Nothing at all - the run is green |
+| A review on a pull request this workflow did not open | No job at all - it reports as skipped |
+| A QA run finishing on a branch this workflow did not push | No job at all - it reports as skipped |
+| A QA run finishing on a prefixed branch with no open pull request | Nothing at all - the run is green |
 
 Anything else that goes wrong comments on the issue or the pull request with the reason the agent
 stopped, the same way [a failed plan does](ai-plan.md#when-a-run-goes-wrong).
