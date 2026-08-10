@@ -1174,3 +1174,8 @@
 ## v10.2.1
 
 * Fix: fixed checks for AI implement workflow triggers to avoid misfires (1db351b by George Shestayev)
+
+## v10.3.0
+
+* New: running init command when spinning up docker if it's supported (2746be9 by George Shestayev)
+* New: running init command when deploying a docker up if it's supported (2746be9 by George Shestayev)
