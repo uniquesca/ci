@@ -1179,3 +1179,7 @@
 
 * New: running init command when spinning up docker if it's supported (2746be9 by George Shestayev)
 * New: running init command when deploying a docker up if it's supported (2746be9 by George Shestayev)
+
+## v10.3.1
+
+* Update: removing init command from docker-spin-up as dependencies are not installed yet (e988d91 by George Shestayev)
