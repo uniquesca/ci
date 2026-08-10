@@ -172,5 +172,13 @@ runs:
           done
           echo "✅ MySQL is ready!"
         fi
+
+    - name: Run init command (if supported)
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        if ./task.sh supports init > /dev/null; then
+          ./task.sh init
+        fi
       
         

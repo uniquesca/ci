@@ -358,3 +358,7 @@ jobs:
             
             echo "Executing post-deployment command"
             ${{ inputs.post_cmd }}
+            
+            if ./task.sh supports init > /dev/null; then
+              ./task.sh init
+            fi
