@@ -25,7 +25,9 @@ A code style problem a tool can fix is not worth a developer's time, so on a pul
 PHP checks fix it and commit the fix instead of reporting it - see
 [Automatic code style fixes](#automatic-code-style-fixes).
 
-> The older combined [`qa-checks.yml`](#deprecated-qa-checks) workflow is deprecated. See
+> The older combined [`qa-checks.yml`](#removed-qa-checks) workflow **has been removed**. Call
+> [PHP QA Checks](#php-qa-checks-workflow), [NPM QA Checks](#npm-qa-checks-workflow) or
+> [both](#repositories-with-php-and-javascript) instead - see
 > [Migrating from qa-checks](#migrating-from-qa-checks).
 
 ## PHP QA Checks workflow
@@ -33,7 +35,7 @@ PHP checks fix it and commit the fix instead of reporting it - see
 What happens on each run:
 
 1. The job matrix is read from `_ci_environment.json` by
-   [`qa-ci-matrix`](../qa-ci-matrix/action.yml). Every entry gets its own parallel job, with
+   [`qa-ci-matrix`](actions/qa-ci-matrix.md). Every entry gets its own parallel job, with
    its own OS and PHP version, and `xdebug` is added to the extensions so coverage works.
    A repository without that file gets one job on PHP 8.2.
 2. PHP is set up for that matrix entry, the repository is checked out, and `setup_cmd` runs
@@ -117,7 +119,7 @@ What happens on each run:
 1. Node is set up, the repository is checked out, and `setup_cmd` runs if given.
 2. The package manager is detected in `working_directory`. A `.yarnrc` file selects Yarn, and
    its absence selects NPM - the same rule
-   [`install-packages`](../install-packages/action.yml) uses, so the tool that installed the
+   [`install-packages`](actions/install-packages.md) uses, so the tool that installed the
    dependencies is the tool that runs the scripts. **A missing `package.json` fails the run
    here**, since there is nothing for this workflow to check; point it at the right
    `working_directory`, or don't call it for that repository.
@@ -191,8 +193,8 @@ On a pull request, PHP_CodeSniffer runs as `phpcbf` before anything else, and wh
 is committed back to the branch as `CI: automatic code style fixes`. Only what no tool can fix
 reaches the code style check afterwards, and therefore a person.
 
-This is [`cs-fix`](../cs-fix/action.yml), used by all three QA entry points - `php-qa-checks`,
-the deprecated `qa-checks`, and the [`docker-qa-checks`](#docker-qa-checks) action.
+This is [`cs-fix`](actions/cs-fix.md), used by both QA entry points - `php-qa-checks` and the
+[`docker-qa-checks`](#docker-qa-checks) action.
 
 ### Setting it up
 
@@ -272,8 +274,8 @@ fixer again over the code as it now stands, and tries again.**
   instance: the stale fixes are dropped, the fixer runs against what is there now, and that is
   what lands.
 
-It tries this **once per leg of the matrix** (`attempts: ${{ strategy.job-total }}` in both
-workflows), because that is how many jobs can be racing to land a fix of their own. Only after
+It tries this **once per leg of the matrix** (`attempts: ${{ strategy.job-total }}` in
+`php-qa-checks`), because that is how many jobs can be racing to land a fix of their own. Only after
 running out of attempts does a leg revert and let its code style check go red.
 
 So a matrix settles within one run, and every version's fixes end up on the branch whichever one
@@ -288,8 +290,9 @@ the working tree; a commit about code style is not where that should turn up.
 
 ### docker-qa-checks
 
-This one runs `./task.sh cs-fix`, skipped when `task.sh` does not support it. It is an action rather
-than a workflow, so the token is an input rather than a secret:
+[`docker-qa-checks`](actions/docker-qa-checks.md) runs `./task.sh cs-fix`, skipped when `task.sh`
+does not support it. It is an action rather than a workflow, so the token is an input rather than a
+secret:
 
 ```yaml
     steps:
@@ -308,12 +311,30 @@ approval click as above.
 
 Everything else on this page applies unchanged.
 
-## Deprecated: qa-checks
+## Removed: qa-checks
 
-`qa-checks.yml` did all of the above in one job. It still works, still runs the same checks and
-does fix the code style like the others do, but it emits a deprecation warning and no further
-work goes into it. Every consumer had to supply the union of both ecosystems' secrets and
-inputs, and a pure-JavaScript repository paid for a PHP version matrix it never used.
+`qa-checks.yml` did all of the above in one job. **It no longer exists.** It was deprecated, and then
+removed in v10, so a repository still calling it fails before it runs a single check:
+
+```
+error parsing called workflow
+"uniquesca/ci/.github/workflows/qa-checks.yml@main": workflow was not found.
+```
+
+**Use these instead:**
+
+| Instead of `qa-checks` | Call |
+|---|---|
+| A PHP repository | [PHP QA Checks](#php-qa-checks-workflow) - `.github/workflows/php-qa-checks.yml` |
+| A JavaScript repository | [NPM QA Checks](#npm-qa-checks-workflow) - `.github/workflows/npm-qa-checks.yml` |
+| A repository with both | [Both, as two jobs](#repositories-with-php-and-javascript) |
+
+They run the same checks, and [Migrating from qa-checks](#migrating-from-qa-checks) below is a
+per-input mapping - most repositories change three lines. Pinning to a tag from before v10 keeps the
+old workflow working in the meantime, but nothing further goes into it.
+
+Why it was split: every consumer had to supply the union of both ecosystems' secrets and inputs, and
+a pure-JavaScript repository paid for a PHP version matrix it never used.
 
 ### Migrating from qa-checks
 

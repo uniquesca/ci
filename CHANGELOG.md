@@ -1183,3 +1183,8 @@
 ## v10.3.1
 
 * Update: removing init command from docker-spin-up as dependencies are not installed yet (e988d91 by George Shestayev)
+
+## v10.4.0
+
+* Update: improved handling of agent overrun - keeping the result even if it went too many turns (7072100 by George Shestayev)
+* Update: default amount of turns increased to 50 (7072100 by George Shestayev)

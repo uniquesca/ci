@@ -19,6 +19,15 @@ When adding something to a section above `## Dig deeper`:
 Match the surrounding density. These docs use short declarative sentences, bold lead-ins for
 things that fail silently, and tables for enumerable outcomes.
 
+One page per reusable workflow under `docs/workflows/` and per action under `docs/actions/`, each
+title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper`.
+Both are listed in `docs/workflows-and-actions.md` - **add a new workflow or action to that page**,
+or it exists without anybody being able to find it. `docs/qa-checks.md` and `docs/ai/*.md` cover
+several workflows at once and are the exception; leave them that way.
+
+Every input, output and secret the YAML declares belongs in its table, with the same default. A
+table that has quietly fallen behind the YAML is worse than no table.
+
 ## Workflows
 
 `.github/workflows/ai-*.yml` explain themselves in comments, and those comments carry the

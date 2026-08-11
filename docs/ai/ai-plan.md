@@ -176,6 +176,29 @@ request gets a comment linking to the revision.
 
 What it does not do is undo the code already pushed. Expect the next round to be a large one.
 
+## Secrets
+
+| Secret | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI planning agent |
+
+## Inputs
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `command` | string | `/ai-plan` | Comment command that triggers the planning. Has to be at the very beginning of the comment |
+| `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
+| `model` | string | `claude-opus-4-8` | Model used to produce the plan |
+| `max_turns` | number | `50` | How many turns the agent may spend reading the repository before it has to plan with what it found |
+| `agent_timeout_minutes` | number | `30` | How long the planning agent itself may run before it is given up on |
+| `timeout_minutes` | number | `35` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes` |
+| `branch_prefix` | string | `ai-feature/` | Prefix of the branch [`ai-implement`](ai-implement.md) pushes to, used to find the pull request already implementing this issue. Keep the two the same |
+| `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
+
+## Outputs
+
+None. The plan is posted as a comment on the issue.
+
 ## Dig deeper
 
 ### Getting better plans
@@ -217,6 +240,14 @@ A failed run comments on the issue rather than going red where nobody looking at
 see it, and it says why the agent stopped where the log recorded a reason - an exhausted credit
 balance, a hit turn limit and a genuine bug look identical otherwise.
 
+**A run that overran `max_turns` is not a failed run, whatever its step says.** `claude-code-action`
+checks the turn count after the agent has already stopped and fails its own step when the count came
+out over the limit - which happens because the limit is not enforced on a long run, so the agent
+finishes of its own accord and the check only notices afterwards
+([#1577](https://github.com/anthropics/claude-code-action/issues/1577)). The plan is complete, so the
+workflow posts it and puts a warning on the run instead of failing. A run genuinely cut off part-way
+reports `error_max_turns`, and that one still fails with nothing posted.
+
 Not every stop is a failure. An empty issue body, or a `base=` naming a branch that does not exist
 or is not a usable branch name, gets a comment and a green run - the command was asked too early or
 typed wrong, which is not a CI error and should not read like one. A replan whose *previous* plan
@@ -240,6 +271,10 @@ Every run costs Anthropic API tokens against your key, and planning reads the re
 is a model call per turn rather than a single prompt. The cost line on the plan is the agent's own
 estimate from its token counts, not a billed figure - treat it as an order of magnitude. Keep the
 command gated to the people who should be spending it.
+
+**`max_turns` is not a spending cap.** The SDK holds a short run to it exactly and lets a long one
+run past it, so treat it as the size of run you are budgeting for rather than a limit that will stop
+one. `agent_timeout_minutes` is the bound that actually holds.
 
 Github caps a comment at 65536 characters. The agent is told to stay well under that; a plan that
 would exceed it is a sign the issue should be split.

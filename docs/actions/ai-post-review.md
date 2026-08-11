@@ -1,0 +1,86 @@
+# AI post review
+
+Submits the review a reviewing agent wrote as a real Github review, with its inline comments
+validated against the lines the diff actually has.
+
+Used by [`ai-review`](../ai/ai-review.md).
+
+```yaml
+- uses: uniquesca/ci/ai-post-review@main
+  id: review
+  with:
+    pull_request: ${{ steps.pr.outputs.number }}
+    repository: ${{ github.repository }}
+    token: ${{ secrets.AI_REVIEW_TOKEN }}
+    head_sha: ${{ steps.pr.outputs.head_sha }}
+```
+
+## Inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `pull_request` | yes | | Number of the pull request to review |
+| `repository` | yes | | Repository the pull request belongs to, in `owner/name` form |
+| `token` | yes | | Github token the review is submitted with. **Usually not `GITHUB_TOKEN`** - see below |
+| `head_sha` | yes | | Commit the review is submitted against |
+| `review_file` | no | `.ai-review/review.json` | File the agent wrote: an object with `verdict`, `summary` and `comments` |
+| `diff_file` | no | `.ai-review/diff.patch` | The unified diff the agent reviewed. Every inline comment is checked against it |
+| `marker` | no | `<!-- ai-review -->` | Hidden first line of the review body |
+| `max_comments` | no | `30` | How many inline comments one review may carry |
+| `max_length` | no | `4000` | Longest inline comment body, in characters. Anything over is truncated rather than dropped |
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `submitted` | Whether a review was submitted - `true` or `false` |
+| `event` | What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Empty when nothing was |
+| `verdict` | The verdict the agent asked for - `changes_requested` or `comment` |
+| `comments_posted` | How many inline comments the submitted review carries |
+| `comments_dropped` | How many inline comments were rejected before submitting |
+
+## Dig deeper
+
+### The token, and why `GITHUB_TOKEN` is the wrong choice here
+
+Github **rejects `REQUEST_CHANGES` from the identity that opened the pull request**, and
+[`ai-implement`](../ai/ai-implement.md) opens its pull requests as `github-actions[bot]`. So a review
+submitted with the run's own token can never request changes, and therefore never starts another
+implementing round. Supply a machine user PAT with `repo` scope, or a Github App installation token.
+
+When that happens anyway the verdict is downgraded to a comment rather than lost, with a warning
+saying so - the inline comments are the most useful half of the review and they survive a comment
+review perfectly well.
+
+### Approving is not an option
+
+Only `changes_requested` and `comment` are meaningful verdicts. Merging is a person's decision, and
+an agent approving its own pipeline's work is not a signal anybody should be acting on. An unknown
+verdict is submitted as a comment, with a warning.
+
+### Inline comments, and why some go missing
+
+**Github rejects the entire review - summary, every comment, the lot - if one inline comment names a
+line the diff does not contain.** So the acceptable positions are worked out here from `diff_file`
+and the bad comments are dropped, rather than finding out on submit and losing the review.
+
+A comment may sit on any line of a hunk on the `RIGHT` side - added lines and context lines,
+numbered in the new file. Comments are also dropped for an empty body, a non-numeric line, or being
+over `max_comments`. Every dropped one is named in the log, because "the reviewer said something
+about a line and it vanished" is worth being able to see.
+
+With no `diff_file` at all, the summary is submitted on its own.
+
+### It does not fail the run
+
+A review that could not be submitted is a warning and an output the caller acts on. Going red adds
+nothing - the caller still has the agent's summary to post as a plain comment. The fallbacks, in
+order: as asked; downgraded to a comment if Github said "your own pull request"; without the inline
+comments; as a comment without them.
+
+`head_sha` is pinned explicitly so that a push which landed since the diff was taken makes the review
+outdated rather than silently misplaced.
+
+`marker` is how [`ai-implement`](../ai/ai-implement.md) tells a review an agent wrote from one a
+person wrote, which is what keeps its unattended round cap honest when the review token belongs to a
+machine user account. Change it in one place and you have to change it in both.

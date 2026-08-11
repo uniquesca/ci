@@ -21,6 +21,10 @@ If `_ci_environment.json` is not present the action exits successfully without d
     env_variables: '{"db.host":"127.0.0.1","db.port":"3306"}'
 ```
 
+## Outputs
+
+This action produces no outputs - it writes the rendered config files into the working directory.
+
 ## The environment file
 
 ```json
@@ -52,7 +56,9 @@ DB_HOST={{ db.host }}
 DB_PORT={{ db.port }}
 ```
 
-## Token references
+## Dig deeper
+
+### Token references
 
 A token can take its value from another token by referencing it as `$(name)`. References work in
 `env_variables` and in `token_fallbacks` alike, and either may reference the other.
@@ -77,13 +83,13 @@ declared later:
 
 They can also be chained — a referenced token may itself contain references — to any depth.
 
-### Value types
+#### Value types
 
 A value that is *nothing but* a single reference keeps the referenced value's type, so
 `"cache.port": "$(db.port)"` stays a number if `db.port` is one. A reference embedded in a longer
 string is always converted to text.
 
-### Escaping
+#### Escaping
 
 Write `$$(` to produce a literal `$(` — useful for config values that carry shell syntax:
 
@@ -97,14 +103,14 @@ renders as `echo $(pwd)`.
 
 A lone `$` needs no escaping; only `$(` starts a reference.
 
-### Errors
+#### Errors
 
 Both of these fail the workflow rather than rendering something surprising:
 
 * **Unknown target** — `Referenced variable "api.host" is not found.`
 * **Circular reference** — `Circular token reference detected: a -> b -> a`
 
-### Deprecated `$name` syntax
+#### Deprecated `$name` syntax
 
 Before partial references existed, a fallback could reference another token by taking the whole
 value form `$name`:
