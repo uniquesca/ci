@@ -28,9 +28,9 @@ on:
         default: 30
         type: number
       max_turns:
-        description: 'How many turns the agent may spend reading the repository before it has to plan with what it found'
+        description: 'How many turns the agent may spend reading the repository before it has to plan with what it found. A ceiling to plan under rather than one the agent is held to - the SDK enforces it exactly on a short run and lets a long one past it, so leave room above what a plan here actually costs'
         required: false
-        default: 30
+        default: 50
         type: number
       model:
         description: 'Model used to produce the plan'
@@ -298,9 +298,12 @@ jobs:
       - name: Generate the plan
         id: plan
         if: ${{ steps.task.outputs.has_task == 'true' }}
-        # The agent's own budget, below the job's, so running over fails this step and
-        # leaves the steps after it to explain that on the issue
+        # The agent's own budget, below the job's, so running over fails this step rather
+        # than the whole job
         timeout-minutes: ${{ inputs.agent_timeout_minutes }}
+        # This step failing does not settle anything - `Judge the agent's own result` below
+        # reads the transcript and decides what the failure meant. See the note there
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -412,6 +415,42 @@ jobs:
           execution_file: ${{ steps.plan.outputs.execution_file }}
           verb: 'Planned'
 
+      # A workaround for `claude-code-action`, which fails the agent step when a run used more
+      # turns than `--max-turns` allowed even though the agent stopped of its own accord and
+      # the plan is finished.
+      #
+      # Two upstream problems stacked. `--max-turns` does not enforce anything on a long run:
+      # the SDK stops a short run exactly on time and lets a long one straight past the limit
+      # (anthropics/claude-code-action#1577). Their answer is a check that runs after the agent
+      # has already stopped and reports the run as failed if the turns overran - one finished
+      # plan here arrived at 38 turns against a limit of 30 and the step went red for it. Nothing
+      # is saved by that: the run is billed either way, and the whole point of a turn limit is
+      # to not spend the money. All it does is take the finished plan down with it, because
+      # every step after the agent is skipped once one has failed.
+      #
+      # So that step is allowed to fail without stopping the job, and this one works out what
+      # its failure meant from the agent's own closing record. Work the agent finished is
+      # published, with the overrun reported as a warning. Anything else fails here, which
+      # takes `success()` false and skips the publishing steps exactly as before - a run that
+      # was genuinely cut off part-way has no plan worth posting.
+      #
+      # `!cancelled()` rather than `always()`: this step decides whether the run is red, and a
+      # job somebody cancelled is neither finished nor broken.
+      - name: Judge the agent's own result
+        id: verdict
+        if: ${{ !cancelled() && steps.plan.outcome == 'failure' }}
+        env:
+          COMPLETED: ${{ steps.report.outputs.completed }}
+          TURNS: ${{ steps.report.outputs.turns }}
+          MAX_TURNS: ${{ inputs.max_turns }}
+        run: |
+          if [[ "$COMPLETED" != 'true' ]]; then
+            echo "::error title=The planning agent did not finish::Its own closing record does not report a completed run - the step's log has what went wrong"
+            exit 1
+          fi
+
+          echo "::warning title=The planning agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The plan is complete, so it was published anyway - raise max_turns if this keeps happening."
+
       - name: Post the plan
         id: post
         if: ${{ steps.task.outputs.has_task == 'true' }}
@@ -518,14 +557,17 @@ jobs:
           fi
 
       # A failed run is otherwise invisible from the issue - whoever ran the command is
-      # left waiting for a comment that never comes. Scoped to the agent step's own
-      # outcome rather than `failure()`, which would also fire for the permission
+      # left waiting for a comment that never comes. Scoped to these steps' own
+      # outcomes rather than `failure()`, which would also fire for the permission
       # refusal above, and that already comments for itself.
+      #
+      # `verdict` and not `plan`: the agent step goes red for an overrun that cost the plan
+      # nothing, and a run whose plan was posted must not also be reported as unfinished.
       - name: Report a failed plan
         if: >-
           ${{ always()
           && (steps.task.outcome == 'failure'
-          || steps.plan.outcome == 'failure'
+          || steps.verdict.outcome == 'failure'
           || steps.report.outcome == 'failure'
           || steps.post.outcome == 'failure') }}
         env:

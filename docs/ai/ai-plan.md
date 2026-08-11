@@ -217,6 +217,14 @@ A failed run comments on the issue rather than going red where nobody looking at
 see it, and it says why the agent stopped where the log recorded a reason - an exhausted credit
 balance, a hit turn limit and a genuine bug look identical otherwise.
 
+**A run that overran `max_turns` is not a failed run, whatever its step says.** `claude-code-action`
+checks the turn count after the agent has already stopped and fails its own step when the count came
+out over the limit - which happens because the limit is not enforced on a long run, so the agent
+finishes of its own accord and the check only notices afterwards
+([#1577](https://github.com/anthropics/claude-code-action/issues/1577)). The plan is complete, so the
+workflow posts it and puts a warning on the run instead of failing. A run genuinely cut off part-way
+reports `error_max_turns`, and that one still fails with nothing posted.
+
 Not every stop is a failure. An empty issue body, or a `base=` naming a branch that does not exist
 or is not a usable branch name, gets a comment and a green run - the command was asked too early or
 typed wrong, which is not a CI error and should not read like one. A replan whose *previous* plan
@@ -240,6 +248,10 @@ Every run costs Anthropic API tokens against your key, and planning reads the re
 is a model call per turn rather than a single prompt. The cost line on the plan is the agent's own
 estimate from its token counts, not a billed figure - treat it as an order of magnitude. Keep the
 command gated to the people who should be spending it.
+
+**`max_turns` is not a spending cap.** The SDK holds a short run to it exactly and lets a long one
+run past it, so treat it as the size of run you are budgeting for rather than a limit that will stop
+one. `agent_timeout_minutes` is the bound that actually holds.
 
 Github caps a comment at 65536 characters. The agent is told to stay well under that; a plan that
 would exceed it is a sign the issue should be split.

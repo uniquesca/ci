@@ -25,6 +25,12 @@ outputs:
   reason:
     description: 'Why the run stopped, truncated to 200 characters, for a failure comment'
     value: ${{ steps.report.outputs.reason }}
+  completed:
+    description: 'Whether the agent finished of its own accord, from its own closing record - "true" or "false". False when it was cut off, when it died, and when it wrote no closing record at all. This is not the same thing as the agent step going green: claude-code-action fails a step whose run overran `--max-turns`, and a run it fails that way is still `completed`'
+    value: ${{ steps.report.outputs.completed }}
+  turns:
+    description: 'How many turns the run took, for a caller that has to compare it with the budget it set. Empty when the log recorded none'
+    value: ${{ steps.report.outputs.turns }}
 
 runs:
   using: composite
@@ -71,9 +77,24 @@ runs:
         out="$RUNNER_TEMP/ai-run-report"
         mkdir -p "$out"
 
-        has_result='false'; result_file=''; summary=''; reason=''
+        has_result='false'; result_file=''; summary=''; reason=''; completed='false'; turns=''
 
         if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
+          # Whether the agent stopped because it had nothing left to do, which is the one
+          # thing the step's own outcome does not tell a caller. `claude-code-action` fails
+          # the step when a finished run overran `--max-turns` - see the note where each
+          # workflow acts on this - so red does not mean unfinished. A run genuinely cut off
+          # at its limit says `error_max_turns` here, an API failure says its own subtype,
+          # and a killed step never writes this record at all: all false.
+          completed=$(
+            jq -rs 'flatten | (map(select(.type == "result")) | last) as $r
+                    | if ($r.subtype // "") == "success" and ($r.is_error != true)
+                      then "true" else "false" end' "$EXECUTION_FILE" 2>/dev/null || true
+          )
+          # Anything but a clear yes is a no - a log this cannot be read out of is not
+          # evidence that the work is finished
+          [[ "$completed" == 'true' ]] || completed='false'
+
           # Why the run stopped. Surfacing this turns "the run went red" into something
           # actionable - an exhausted credit balance and a genuine bug look identical
           # otherwise.
@@ -124,6 +145,10 @@ runs:
                     | .[] | tostring' "$EXECUTION_FILE" 2>/dev/null || true
           )
           cost=${stats[0]:-}; duration=${stats[1]:-}; turns=${stats[2]:-}; tokens=${stats[3]:-}
+          # The summary line below reads these for prose and can leave a missing one out.
+          # `turns` also goes back to the caller as a number to compare with its own budget,
+          # so a missing one has to come back empty rather than as the string `null`.
+          [[ "$turns" == null ]] && turns=''
 
           if [[ -n "$duration" && "$duration" != null ]]; then
             secs=$(( duration / 1000 ))
@@ -149,6 +174,8 @@ runs:
           printf 'result_file=%s\n' "$result_file"
           printf 'summary=%s\n' "$summary"
           printf 'reason=%s\n' "$reason"
+          printf 'completed=%s\n' "$completed"
+          printf 'turns=%s\n' "$turns"
         } >> "$GITHUB_OUTPUT"
 
         echo "$summary"

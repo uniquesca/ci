@@ -360,7 +360,10 @@ Cases that end without a failure and without a red run:
 | A QA run finishing on a prefixed branch with no open pull request | Nothing at all - the run is green |
 
 Anything else that goes wrong comments on the issue or the pull request with the reason the agent
-stopped, the same way [a failed plan does](ai-plan.md#when-a-run-goes-wrong).
+stopped, the same way [a failed plan does](ai-plan.md#when-a-run-goes-wrong) - including the same
+exception: a round the agent finished a few turns over `max_turns` is pushed with a warning on the
+run rather than thrown away, because the alternative is losing a whole working tree of edits to a
+turn count.
 
 ### What the agent can and cannot do
 

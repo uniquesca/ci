@@ -196,3 +196,7 @@ One review per push, on top of one implementing run per round. With the loop run
 that is up to `max_unattended_rounds` of both before anybody looks, so the cap is a spending
 control as much as a correctness one. Lower it if that is more than you want to risk on a single
 pull request.
+
+`max_turns` is not the other half of that control: the SDK holds a short run to it exactly and lets
+a long one run past it. A review the agent finished over the limit is submitted with a warning on the
+run rather than discarded - see [when a run goes wrong](ai-plan.md#when-a-run-goes-wrong).
