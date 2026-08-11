@@ -150,14 +150,29 @@ jobs:
 
       - name: Prepare upload paths
         id: upload_paths
+        # Same condition as the checkout above: without one there is no environment file to read
+        # here, and a deployment that only wanted the code updated must not fail over a config
+        # step it turned off
+        if: ${{ inputs.prepare_environment }}
         run: |
-          # We upload configs + _ci_environment.json file to cover the case 
+          if [ ! -f "_ci_environment.json" ]; then
+            echo "⚠️ _ci_environment.json not found — no configs to upload"
+            echo "paths=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # We upload configs + _ci_environment.json file to cover the case
           # when it  was just introduced
-          PATHS=$(jq -r '[.configs[].path] | join(",")' _ci_environment.json)
-          echo "paths=$PATHS,_ci_environment.json" >> $GITHUB_OUTPUT
+          #
+          # `.configs[]?` rather than `.configs[]`: an environment file that declares only
+          # token_fallbacks has no configs to iterate, and that is a repository to deploy rather
+          # than an error
+          PATHS=$(jq -r '[.configs[]?.path] + ["_ci_environment.json"] | join(",")' _ci_environment.json)
+          echo "paths=$PATHS" >> $GITHUB_OUTPUT
 
       - name: Upload configs
-        if: ${{ inputs.prepare_environment }}
+        # An empty source uploads the whole working directory, so the paths have to be there
+        if: ${{ inputs.prepare_environment && steps.upload_paths.outputs.paths != '' }}
         uses: appleboy/scp-action@v1
         with:
           host: ${{ inputs.host }}
@@ -194,10 +209,16 @@ jobs:
             # Check if the repo was previously initialized
             INITALIZED="${{ steps.previously_initialized.outputs.result }}"
 
-            # Always parse init_script from JSON
-            INIT_SCRIPT=$(jq -r '.init_script // empty' _ci_environment.json)
+            # Always parse init_script from JSON (if the file exists). A repository without one has
+            # no init script either, and `set -e` above would otherwise end the deployment here
+            if [ -f "_ci_environment.json" ]; then
+              INIT_SCRIPT="$(jq -r '.init_script // empty' _ci_environment.json)"
+            else
+              echo "⚠️ _ci_environment.json not found — skipping init_script"
+              INIT_SCRIPT=""
+            fi
 
-            # Run init script if it's provided and it's a freshly initialized repo 
+            # Run init script if it's provided and it's a freshly initialized repo
             if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
               # Create a secure temporary file
               VARIABLES_FILE=$(mktemp)

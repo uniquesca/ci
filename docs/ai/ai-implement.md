@@ -170,6 +170,36 @@ jobs:
       actions: read
 ```
 
+## Secrets
+
+| Secret | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
+
+## Inputs
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `command` | string | `/ai-do` | Comment command that triggers a round. Has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round |
+| `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
+| `allowed_bots` | string | `github-actions[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back |
+| `model` | string | `claude-opus-4-8` | Model used to implement the plan and to act on review feedback |
+| `max_turns` | number | `60` | How many turns the agent may spend before it has to stop with what it has |
+| `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
+| `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |
+| `branch_prefix` | string | `ai-feature/` | Prefix of the branch the work is pushed to - the branch is this plus `issue-<number>`. Only branches carrying it are ever worked on |
+| `max_unattended_rounds` | number | `5` | How many rounds in a row a bot may trigger before a person has to look. A round a person asked for resets this to zero |
+| `ignore_check_patterns` | string | `(ai.implement\|ai.plan\|ai.review)` | Case-insensitive regular expression matching check runs to leave out of the feedback, so a run does not read its own red status back as a code defect |
+| `dispatch_review` | boolean | `false` | Ask [`ai-review`](ai-review.md) to look at the work as soon as it is pushed, with a `repository_dispatch` event. Turn it on only once a workflow is subscribed to that event |
+| `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
+| `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
+| `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#how-the-wait-works). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
+| `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
+
+## Outputs
+
+None. The result is a branch, a pull request and a round comment.
+
 ## Dig deeper
 
 ### Reports from other workflows

@@ -176,6 +176,29 @@ request gets a comment linking to the revision.
 
 What it does not do is undo the code already pushed. Expect the next round to be a large one.
 
+## Secrets
+
+| Secret | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI planning agent |
+
+## Inputs
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `command` | string | `/ai-plan` | Comment command that triggers the planning. Has to be at the very beginning of the comment |
+| `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
+| `model` | string | `claude-opus-4-8` | Model used to produce the plan |
+| `max_turns` | number | `50` | How many turns the agent may spend reading the repository before it has to plan with what it found |
+| `agent_timeout_minutes` | number | `30` | How long the planning agent itself may run before it is given up on |
+| `timeout_minutes` | number | `35` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes` |
+| `branch_prefix` | string | `ai-feature/` | Prefix of the branch [`ai-implement`](ai-implement.md) pushes to, used to find the pull request already implementing this issue. Keep the two the same |
+| `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
+
+## Outputs
+
+None. The plan is posted as a comment on the issue.
+
 ## Dig deeper
 
 ### Getting better plans

@@ -105,6 +105,33 @@ with a lot of activity and little diff, the reviewer and the implementer are tal
 other, and the fastest fix is a sentence from you. If the *plan* turns out to be wrong rather than
 the code, go back to [`/ai-plan` on the issue](ai-plan.md#changing-direction).
 
+## Secrets
+
+| Secret | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI reviewing agent |
+| `AI_REVIEW_TOKEN` | no | Token the review is submitted with. **Without it the review cannot request changes and cannot start another round** - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and [`ai-implement`](ai-implement.md) opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the loop turn |
+
+## Inputs
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `dispatch_type` | string | `ai-review` | The `repository_dispatch` event type this reacts to. [`ai-implement`](ai-implement.md) sends it after it pushes |
+| `branch_prefix` | string | `ai-feature/` | Only pull requests whose branch lives in this repository and starts with this prefix are reviewed. Keep it the same as the implementing workflow's |
+| `model` | string | `claude-opus-4-8` | Model used to review |
+| `max_turns` | number | `40` | How many turns the agent may spend reading the code before it has to review with what it found |
+| `agent_timeout_minutes` | number | `25` | How long the reviewing agent itself may run before it is given up on |
+| `timeout_minutes` | number | `30` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes` |
+| `max_comments` | number | `30` | How many inline comments one review may carry |
+| `max_diff_bytes` | number | `400000` | Longest diff to stage. A bigger change is truncated and the agent is told so - it has the repository on disk |
+| `max_unattended_rounds` | number | `5` | Only used to tell the agent how close the loop is to needing a person. The limit itself is enforced by [`ai-implement`](ai-implement.md), so keep the two the same |
+| `ignore_check_patterns` | string | `(ai.implement\|ai.plan\|ai.review)` | Case-insensitive regular expression matching check runs to leave out of the context. The default covers the AI workflows' own check runs |
+| `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
+
+## Outputs
+
+None. The result is a Github review on the pull request.
+
 ## Dig deeper
 
 ### Why `repository_dispatch` and not a `pull_request` trigger
