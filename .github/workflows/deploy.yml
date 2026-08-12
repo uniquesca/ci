@@ -71,22 +71,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Connect and deploy
-        uses: appleboy/ssh-action@v0.1.8
+        # v1 rather than the v0.1.8 this used to pin: the exit code of the remote script is what
+        # decides this step, and that pin predates the plugin's exit-code handling being reworked.
+        # `script_stop` went with it - the script sets `-e` itself, which is what replaced it
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ inputs.host }}
           username: ${{ inputs.username }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ inputs.port }}
-          script_stop: false
           timeout: ${{ inputs.timeout }}
           command_timeout: ${{ inputs.timeout }}
           script: |
-            # Making it more strict for the script to fail in case of an error
-            set -eux;
-            
+            # Making it more strict for the script to fail in case of an error.
+            # `pipefail` because without it only the last command of a pipeline is allowed to fail
+            # the script, and the failure of anything upstream of a `|` is discarded - `curl ... |
+            # bash` installing nvm reported success on a download that never happened
+            set -euxo pipefail;
+
+            # Where this script records its verdict for the verification step below. The run and
+            # attempt number make it this deployment's alone, so no previous run's file can be
+            # mistaken for this one's
+            DEPLOYMENT_STATUS_FILE="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
+
+            # Whatever stops this script names itself, writes that down and carries its status out,
+            # so a failure ten commands deep is not reported as "the last thing I ran was fine"
+            trap 'status=$?; set +x; echo "❌ Deployment failed at line $LINENO: $BASH_COMMAND (exit $status)"; echo "failed at line $LINENO: $BASH_COMMAND (exit $status)" > "$DEPLOYMENT_STATUS_FILE"; exit $status' ERR
+
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
-            
+
             echo "Cleaning git"
             git clean -fd
             
@@ -118,9 +132,11 @@ jobs:
               echo "Pull request not detected"
               echo "Checking if remote branch exists"
               # This is just regular branch
-              branch_exists="$(git ls-remote --heads origin $ref | wc -l)"
+              branch_exists="$(git ls-remote --heads origin "$ref" | wc -l)"
 
-              if [[ branch_exists > 0 ]]; then
+              # `[[ branch_exists > 0 ]]` - without the `$` and with `>` comparing strings - was
+              # always true, so a tag or a sha took the branch path and reset to `origin/<tag>`
+              if [[ "$branch_exists" -gt 0 ]]; then
                 echo "Remote branch ${{ inputs.ref }} exists, performing hard reset to it"
                 git reset --hard origin/${{ inputs.ref }}
               else
@@ -199,7 +215,6 @@ jobs:
                 chmod +x ./vendor/bin/phinx
                 chmod +x ./vendor/robmorgan/phinx/bin/phinx
                 ./vendor/bin/phinx migrate -c phinx.php
-                break
               fi
             fi
             
@@ -211,3 +226,40 @@ jobs:
             
             echo "Executing post-deployment command"
             ${{ inputs.post_cmd }}
+
+            # Reached only if every command above succeeded - this is what the step below looks for
+            echo "complete" > "$DEPLOYMENT_STATUS_FILE"
+
+      # A deployment is called successful on two conditions, not one: the step above did not fail,
+      # AND the script itself says it reached its last line. The second is what makes the verdict
+      # independent of an exit code surviving the trip back through the remote shell, the SSH
+      # session and the action - if the script stopped early it wrote why, and if it never got to
+      # write anything at all the file is missing. Either way this step fails, whatever the step
+      # above concluded. It catches a dropped session and a killed shell for the same reason
+      - name: Verify the deployment ran to completion
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          command_timeout: 1m
+          script: |
+            set -eu
+
+            status_file="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
+
+            if [ ! -f "$status_file" ]; then
+              echo "❌ The deployment left no status behind - it did not reach its last line, so the server is in an unknown state. The deployment output above ends where it stopped"
+              exit 1
+            fi
+
+            status="$(cat "$status_file")"
+            rm -f "$status_file"
+
+            if [ "$status" != "complete" ]; then
+              echo "❌ The deployment reported: $status"
+              exit 1
+            fi
+
+            echo "✅ The deployment script ran to completion"

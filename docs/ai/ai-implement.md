@@ -357,6 +357,31 @@ branch.
 Two rounds on one pull request never run at once. They queue rather than cancel, so the second
 starts from what the first pushed.
 
+### When the base moves under the work
+
+A run takes as long as the agent takes, and the base rarely stands still for it. So a first run
+replays its work on top of the base as it stands at the moment of the push, rather than pushing a
+branch cut from wherever the base was an hour earlier. The run log says which it did, under
+`work replayed:`.
+
+This matters for one refusal in particular. A branch being created has no previous tip for Github
+to compare it against, so it compares the workflow files it carries against the default branch -
+and a branch cut before somebody edited `.github/workflows/something.yml` still carries the older
+copy, which reads as this push updating a workflow file. `GITHUB_TOKEN` is never allowed to do
+that, whatever `permissions:` says, and the push is refused with a message naming a file the agent
+never opened. Replaying the work first is what stops that: the branch then carries the same copy
+the default branch has, and there is nothing for Github to object to.
+
+Rounds are not replayed. They push to a branch that already exists, which Github compares against
+its own previous tip - a file the branch has been carrying all along is not a change - and moving
+one would mean force pushing over work somebody may be part way through reviewing.
+
+If the replay hits a conflict, nothing is force-fixed: the work is pushed as it was cut, with a
+warning on the run, and the pull request arrives wanting a rebase. That is the ordinary state for
+a pull request to be in. The exception is a conflict that leaves a stale workflow file on the
+branch, which is the case above and gets refused - the run then comments with the file's name and
+what to do, which is to run the command again now the base has settled.
+
 ### The round comment
 
 Every round ends with one comment, whatever else happened, and its first two lines are hidden
@@ -409,6 +434,11 @@ It **may not**, and cannot:
   `persist-credentials: false`, so there is no git credential on disk while the agent is working.
   The workflow supplies one per command, before the agent starts and after it finishes. An agent
   talked into `git push` finds it fails.
+* **Change a workflow file.** Not a rule this workflow enforces - Github refuses a push from
+  `GITHUB_TOKEN` that creates or updates anything under `.github/workflows/`, and there is no
+  permission that can be granted to allow it. An agent that edits one costs the run its whole
+  working tree, so the push warns about the files by name before it tries. Ask for CI changes
+  yourself rather than through the agent.
 * **Change the plan or the feedback it was given.** Both are excluded from git, so nothing under
   them can reach a commit however the agent leaves the working tree. Its replies to your threads
   are the one thing it writes back, and they are validated rather than trusted - a reply to a

@@ -126,6 +126,37 @@ on the server.
 **`task.sh` is required.** Everything above goes through it, so a repository without one cannot use
 this workflow - which is the practical difference between this and [`deploy`](deploy.md).
 
+### How a failure is detected
+
+The remote scripts run under `set -euxo pipefail` with an `ERR` trap, so the first command that
+fails stops the deployment and names itself:
+
+```
+❌ Deployment failed at line 190: ./task.sh migrate (exit 1)
+```
+
+**`pipefail` is why a pipeline no longer hides a failure.** Without it only the last command of a
+pipeline can fail the script, so `git ls-remote ... | wc -l` returning `0` because git errored read
+as "the branch does not exist". Anything upstream of a `|` now counts, including a command failing
+inside a `cmd | while read` loop.
+
+The deployment is then called successful on two conditions, not one: the SSH step did not fail,
+**and** the script recorded that it reached its last line. It writes that verdict to
+`/tmp/ci-deployment-<run id>-<attempt>.status` on the server, and a second SSH step reads the file,
+removes it, and fails if it says anything other than `complete` or is not there at all.
+
+That second condition is the point. A verdict that rests only on an exit code rests on that code
+surviving the remote shell, the SSH session and the action - and on the session living long enough
+to return one. The file does not care: a script that stopped early wrote why, and a script that was
+killed wrote nothing. Both fail, whatever the SSH step reported.
+
+**What this cannot catch is a command that fails and exits 0**, because there is nothing left to
+detect it with. That is not hypothetical - a `phinx.php` that cannot reach the database prints
+`Connect Error: SQLSTATE[HY000] ...` and calls `die($message)`, and `die()` with a string exits
+**0**, as does a bare `exit;`. Phinx is then a command that succeeded, the deployment carries on and
+finishes, and the run is green with no migrations applied. Fix that where it belongs, in the
+application: `exit(1)`.
+
 ### Downtime
 
 `./task.sh down` before `up` means the containers are stopped for the length of the rebuild. With

@@ -1279,10 +1279,18 @@ jobs:
         env:
           COMPARE_REF: ${{ steps.branch.outputs.compare_ref }}
           BRANCH: ${{ steps.branch.outputs.branch }}
-          # Read only to describe what is being pushed. The base is not consulted for any
-          # decision here - a branch's base is settled where the branch is prepared.
+          # Which branch the work sits on, and where that branch stood when this run read it.
+          # Which branch it is stays settled where the branch is prepared - this step only
+          # reads it, to describe the push and to replay the work on top of it.
           BASE: ${{ steps.branch.outputs.base }}
           BASE_TIP: ${{ steps.branch.outputs.base_tip }}
+          # Whether this push creates the ref or adds to one that already exists. Github
+          # compares the two against different things, and only the first is replayed.
+          CREATED: ${{ steps.branch.outputs.created }}
+          # What a new ref is compared against, which is not necessarily the branch the work
+          # was cut from. Empty on an event carrying no repository, in which case that
+          # comparison is simply not made.
+          DEFAULT_BASE: ${{ github.event.repository.default_branch }}
           MODE: ${{ steps.event.outputs.mode }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
           TITLE: ${{ steps.stage_issue.outputs.title }}
@@ -1317,6 +1325,66 @@ jobs:
 
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
 
+          # Where the base stands now, read before anything decides what to do about it.
+          #
+          # A read, not a catch-up. It updates a remote-tracking ref and nothing else - the
+          # push below sends HEAD, which this cannot reach.
+          #
+          # Forced, and that matters: without the `+` a rewritten base is not a fast-forward,
+          # the fetch fails, and the one case worth detecting reports itself as a branch that
+          # was deleted.
+          base_now=''
+          base_moved='unread'
+          if [[ -n "$BASE_TIP" ]]; then
+            if git -c http.extraheader="AUTHORIZATION: basic $auth" \
+                 fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2> /dev/null; then
+              base_now=$(git rev-parse "refs/remotes/origin/$BASE")
+
+              if [[ "$base_now" == "$BASE_TIP" ]]; then
+                base_moved='no'
+              elif git merge-base --is-ancestor "$BASE_TIP" "$base_now"; then
+                base_moved='forward'
+              else
+                # The commit this branch was cut from is not on the base any more, so every
+                # commit under it is new to the push. Github reads a workflow file in any of
+                # them as one this push is creating, which is one way a rejection happens
+                # without the agent having touched a workflow file at all.
+                base_moved='rewritten'
+              fi
+            fi
+          fi
+
+          # The work replayed on top of the base as it stands now, so the branch offers the
+          # base's current files rather than the ones it was cut from an hour ago.
+          #
+          # This is here for one refusal in particular. A new ref has no previous tip to be
+          # compared against, so Github compares the workflow files it carries against the
+          # default branch - and a branch cut before somebody else edited a workflow file
+          # still carries the older copy, which reads as this push updating it. `GITHUB_TOKEN`
+          # is never allowed to do that, whatever this workflow's permissions say, and an
+          # hour of finished work is lost over a file the agent never opened.
+          #
+          # Only a branch this run created. A round pushes to a ref that already exists and is
+          # compared against its own previous tip, where a file the branch has been carrying
+          # all along is not a change at all - and replaying one would mean force pushing over
+          # work somebody may be reviewing.
+          replayed='not needed'
+          if [[ "$CREATED" == 'true' && ( "$base_moved" == 'forward' || "$base_moved" == 'rewritten' ) ]]; then
+            if git rebase --quiet --onto "$base_now" "$BASE_TIP"; then
+              replayed="yes, onto $base_now"
+            else
+              # Left as it was cut rather than fixed up here: the conflict is between the
+              # agent's work and whatever landed on the base while it was working, and nothing
+              # in this step is in a position to settle that. The push is still attempted -
+              # it is refused only if a workflow file is one of the files left behind - and a
+              # branch that needs a rebase is an ordinary thing for a pull request to arrive
+              # as.
+              git rebase --abort 2> /dev/null || true
+              replayed='no, it does not replay cleanly onto the base as it stands now'
+              echo "::warning title=Could not replay the work on the current base::$BASE moved while the agent was working and this branch does not rebase onto it cleanly - pushing it as it was cut, which will need a rebase before it can be merged"
+            fi
+          fi
+
           # Everything a post-mortem needs, gathered whether or not the push works, because
           # afterwards none of it can be recovered: a refused push leaves no branch, and the
           # working tree goes with the runner.
@@ -1326,6 +1394,12 @@ jobs:
           # the hour it was thinking, were both needed to tell three different causes apart,
           # and both were gone. Nothing below changes what gets pushed - it only reads.
           from="${BASE_TIP:-$COMPARE_REF}"
+          if [[ "$replayed" == yes,* ]]; then
+            # The commit the branch was cut from is no longer on it. What the push carries is
+            # measured from where the work now sits.
+            from="$base_now"
+          fi
+
           {
             printf 'branch:            %s\n' "$BRANCH"
             printf 'base:              %s\n' "$BASE"
@@ -1336,32 +1410,26 @@ jobs:
             else
               printf 'base at checkout:  %s\n' "$BASE_TIP"
 
-              # A read, not a catch-up. It updates a remote-tracking ref and nothing else -
-              # `push` below sends HEAD, which this cannot reach.
-              #
-              # Forced, and that matters: without the `+` a rewritten base is not a
-              # fast-forward, the fetch fails, and the one case worth detecting reports itself
-              # as a branch that was deleted.
-              if git -c http.extraheader="AUTHORIZATION: basic $auth" \
-                   fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2> /dev/null; then
-                base_now=$(git rev-parse "refs/remotes/origin/$BASE")
-                printf 'base now:          %s\n' "$base_now"
-
-                if [[ "$base_now" == "$BASE_TIP" ]]; then
+              case "$base_moved" in
+                no)
+                  printf 'base now:          %s\n' "$base_now"
                   printf 'base moved:        no\n'
-                elif git merge-base --is-ancestor "$BASE_TIP" "$base_now"; then
+                  ;;
+                forward)
+                  printf 'base now:          %s\n' "$base_now"
                   printf 'base moved:        yes, forward by %s commit(s)\n' \
                     "$(git rev-list --count "$BASE_TIP..$base_now")"
-                else
-                  # The commit this branch was cut from is not on the base any more, so every
-                  # commit under it is new to the push. Github reads a workflow file in any of
-                  # them as one this push is creating, which is one way a rejection happens
-                  # without the agent having touched a workflow file at all.
+                  ;;
+                rewritten)
+                  printf 'base now:          %s\n' "$base_now"
                   printf 'base moved:        yes, REWRITTEN - the commit this branch was cut from is no longer on %s\n' "$BASE"
-                fi
-              else
-                printf 'base now:          could not be read - %s may have been deleted\n' "$BASE"
-              fi
+                  ;;
+                *)
+                  printf 'base now:          could not be read - %s may have been deleted\n' "$BASE"
+                  ;;
+              esac
+
+              printf 'work replayed:     %s\n' "$replayed"
             fi
 
             printf 'commits to push:\n'
@@ -1380,14 +1448,62 @@ jobs:
           # `GITHUB_TOKEN` that creates or updates anything under .github/workflows, and names
           # only the first file it objects to - so the full list is worth having whether the
           # push then succeeds or not.
-          git diff --name-only "$from...HEAD" -- .github/workflows/ \
+          #
+          # Two lists, because they are two different problems with two different answers.
+          # First, what the commits themselves changed: the agent's own doing, and no token
+          # this workflow can be given will push it.
+          #
+          # Measured from what this push adds to the ref, which is not what the pull request
+          # shows. A round's branch already carries the base commits an earlier round replayed
+          # it onto, and reading a workflow file out of one of those would report the agent for
+          # somebody else's change - one that is on the remote branch already.
+          pushed_from="$from"
+          if [[ "$CREATED" != 'true' ]]; then
+            pushed_from="$COMPARE_REF"
+          fi
+
+          : > "$RUNNER_TEMP/workflow-files.txt"
+          git diff --name-only "$pushed_from...HEAD" -- .github/workflows/ \
             > "$RUNNER_TEMP/workflow-files.txt" 2> /dev/null || true
 
+          # Second, what the branch merely holds a different copy of, which Github reads in
+          # exactly the same way. The comparison is not the branch the work was cut from: a
+          # ref that already exists is compared against its own previous tip, and a new one -
+          # having no previous tip - against the default branch, whatever it was based on.
+          : > "$RUNNER_TEMP/workflow-stale.txt"
+          against=''
+          if [[ "$CREATED" == 'true' ]]; then
+            if [[ -n "$DEFAULT_BASE" ]] \
+               && git -c http.extraheader="AUTHORIZATION: basic $auth" \
+                    fetch --no-tags origin "+refs/heads/$DEFAULT_BASE:refs/remotes/origin/$DEFAULT_BASE" 2> /dev/null; then
+              against="refs/remotes/origin/$DEFAULT_BASE"
+            fi
+          else
+            against="$COMPARE_REF"
+          fi
+
+          if [[ -n "$against" ]]; then
+            # Two endpoints and not a merge base: what Github compares is the files the ref
+            # ends up holding, not the changes that got it there. Anything the commits already
+            # account for is dropped - it is on the first list, and belongs to the first
+            # problem.
+            git diff --name-only "$against" HEAD -- .github/workflows/ 2> /dev/null \
+              | grep -vxF -f "$RUNNER_TEMP/workflow-files.txt" \
+              > "$RUNNER_TEMP/workflow-stale.txt" || true
+          fi
+
+          # `paste -sd', '` would cycle the two characters as alternating delimiters and
+          # join three files as `a,b c`. One delimiter, then space it out.
+          workflow_files=''
           if [[ -s "$RUNNER_TEMP/workflow-files.txt" ]]; then
-            # `paste -sd', '` would cycle the two characters as alternating delimiters and
-            # join three files as `a,b c`. One delimiter, then space it out.
             workflow_files=$(paste -sd, "$RUNNER_TEMP/workflow-files.txt" | sed 's/,/, /g')
-            echo "::warning title=This push touches workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN"
+            echo "::warning title=This push changes workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN, whatever this workflow's permissions say"
+          fi
+
+          stale_files=''
+          if [[ -s "$RUNNER_TEMP/workflow-stale.txt" ]]; then
+            stale_files=$(paste -sd, "$RUNNER_TEMP/workflow-stale.txt" | sed 's/,/, /g')
+            echo "::warning title=This push carries older copies of workflow files::$stale_files - the agent did not touch them, but they differ from the copy on ${against#refs/remotes/origin/}, and Github reads that as this push updating them"
           fi
 
           if ! git -c http.extraheader="AUTHORIZATION: basic $auth" \
@@ -1403,9 +1519,12 @@ jobs:
               printf '```\n'
             } >> "$GITHUB_STEP_SUMMARY"
 
-            if [[ -n "${workflow_files:-}" ]]; then
+            if [[ -n "$workflow_files" ]]; then
               printf 'reason=%s\n' "this branch changes $workflow_files, and Github does not let this workflow's token create or update anything under .github/workflows/" >> "$GITHUB_OUTPUT"
-              echo "::error title=Push refused, and it touches workflow files::$workflow_files"
+              echo "::error title=Push refused, and it changes workflow files::$workflow_files"
+            elif [[ -n "$stale_files" ]]; then
+              printf 'reason=%s\n' "the branch is still carrying an older copy of $stale_files, which Github reads as this push updating a workflow file - something this workflow's token is never allowed to do. The base moved on while the agent was working and the work would not replay on top of it. Running the command again starts from the base as it stands now." >> "$GITHUB_OUTPUT"
+              echo "::error title=Push refused over workflow files the branch is behind on::$stale_files"
             fi
 
             exit 1
