@@ -126,9 +126,14 @@ jobs:
           command_timeout: 5m
           capture_stdout: true
           script: |
-            # Making it more strict for the script to fail in case of an error
-            set -eux;
-            
+            # Making it more strict for the script to fail in case of an error.
+            # `pipefail` because without it only the last command of a pipeline is allowed to fail
+            # the script, and the failure of anything upstream of a `|` is discarded
+            set -euxo pipefail;
+
+            # Whatever stops this script names itself and carries its status out
+            trap 'status=$?; set +x; echo "❌ Initialization failed at line $LINENO: $BASH_COMMAND (exit $status)"; exit $status' ERR
+
             # TODO might wanna log into ghcr.io
             
             # Check if it's already a git repo
@@ -185,9 +190,21 @@ jobs:
 
       - name: Checking if the repo was just initialized
         id: previously_initialized
+        # Read through the environment rather than interpolated into the script: this is output
+        # from the server, and `${{ }}` would paste it into the shell as code
+        env:
+          INITIALIZE_STDOUT: ${{ steps.initialize.outputs.stdout }}
         run: |
-          RAW=$(printf %s "${{ steps.initialize.outputs.stdout }}")
-          RESULT=$(echo "$RAW" | grep -o '<<<OUTPUT::[01]>>>' | tail -n1 | sed -E 's/<<<OUTPUT::([01])>>>/\1/')
+          RESULT=$(printf %s "$INITIALIZE_STDOUT" | grep -o '<<<OUTPUT::[01]>>>' | tail -n1 | sed -E 's/<<<OUTPUT::([01])>>>/\1/' || true)
+
+          # The initialize script prints one of the two markers on every path it can exit through,
+          # so its absence means it never got there. Left empty this would read as "not a fresh
+          # clone" and quietly skip the one-time init script
+          if [ -z "$RESULT" ]; then
+            echo "::error::The initialization step did not report whether the repository was just cloned"
+            exit 1
+          fi
+
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
 
       - name: Connect and deploy
@@ -200,12 +217,27 @@ jobs:
           timeout: ${{ inputs.timeout }}
           command_timeout: ${{ inputs.timeout }}
           script: |
-            # Making it more strict for the script to fail in case of an error
-            set -eux;
-            
+            # Making it more strict for the script to fail in case of an error.
+            # `pipefail` because without it only the last command of a pipeline is allowed to fail
+            # the script, and the failure of anything upstream of a `|` is discarded - a deployment
+            # that carries on because `git ... | wc -l` reported zero lines is exactly the kind of
+            # green run this guards against
+            set -euxo pipefail;
+
+            # Where this script records its verdict for the verification step below. The run and
+            # attempt number make it this deployment's alone, so no previous run's file can be
+            # mistaken for this one's
+            DEPLOYMENT_STATUS_FILE="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
+
+            # Whatever stops this script names itself, writes that down and carries its status out,
+            # so a failure ten commands deep is not reported as "the last thing I ran was fine".
+            # Not `-E`: an ERR trap inherited by the subshell of a `cmd | while read` would report
+            # the failure twice, once from inside and once from the pipeline itself
+            trap 'status=$?; set +x; echo "❌ Deployment failed at line $LINENO: $BASH_COMMAND (exit $status)"; echo "failed at line $LINENO: $BASH_COMMAND (exit $status)" > "$DEPLOYMENT_STATUS_FILE"; exit $status' ERR
+
             # Change into the directory
             cd ${{ inputs.deployment_path }}
-            
+
             # Check if the repo was previously initialized
             INITALIZED="${{ steps.previously_initialized.outputs.result }}"
 
@@ -383,3 +415,40 @@ jobs:
             if ./task.sh supports init > /dev/null; then
               ./task.sh init
             fi
+
+            # Reached only if every command above succeeded - this is what the step below looks for
+            echo "complete" > "$DEPLOYMENT_STATUS_FILE"
+
+      # A deployment is called successful on two conditions, not one: the step above did not fail,
+      # AND the script itself says it reached its last line. The second is what makes the verdict
+      # independent of an exit code surviving the trip back through the remote shell, the SSH
+      # session and the action - if the script stopped early it wrote why, and if it never got to
+      # write anything at all the file is missing. Either way this step fails, whatever the step
+      # above concluded. It catches a dropped session and a killed shell for the same reason
+      - name: Verify the deployment ran to completion
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          command_timeout: 1m
+          script: |
+            set -eu
+
+            status_file="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
+
+            if [ ! -f "$status_file" ]; then
+              echo "❌ The deployment left no status behind - it did not reach its last line, so the server is in an unknown state. The deployment output above ends where it stopped"
+              exit 1
+            fi
+
+            status="$(cat "$status_file")"
+            rm -f "$status_file"
+
+            if [ "$status" != "complete" ]; then
+              echo "❌ The deployment reported: $status"
+              exit 1
+            fi
+
+            echo "✅ The deployment script ran to completion"

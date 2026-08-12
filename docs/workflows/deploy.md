@@ -98,10 +98,40 @@ Phinx runs by itself when the server has both `vendor/bin/phinx` and `phinx.php`
 runs after that, for a repository whose migrations are something else - or for one whose Phinx
 configuration is not called `phinx.php`.
 
+### How a failure is detected
+
+The remote script runs under `set -euxo pipefail` with an `ERR` trap, so the first command that
+fails stops the deployment and names itself:
+
+```
+❌ Deployment failed at line 138: ./vendor/bin/phinx migrate -c phinx.php (exit 1)
+```
+
+**`pipefail` is why a pipeline no longer hides a failure.** Without it only the last command of a
+pipeline can fail the script, so `curl -o- https://...nvm/install.sh | bash` reported success on a
+download that never happened, and `git ls-remote ... | wc -l` returning `0` because git errored read
+as "the branch does not exist".
+
+The deployment is then called successful on two conditions, not one: the SSH step did not fail,
+**and** the script recorded that it reached its last line. It writes that verdict to
+`/tmp/ci-deployment-<run id>-<attempt>.status` on the server, and a second SSH step reads the file,
+removes it, and fails if it says anything other than `complete` or is not there at all. A verdict
+that rests only on an exit code rests on that code surviving the remote shell, the SSH session and
+the action, and on the session living long enough to return one; the file does not.
+
+Two things this cannot catch:
+
+* **A command that fails and exits 0**, because there is nothing left to detect it with. A
+  `phinx.php` that cannot reach the database prints `Connect Error: SQLSTATE[HY000] ...` and calls
+  `die($message)` - and `die()` with a string exits **0**, as does a bare `exit;`. Phinx is then a
+  command that succeeded, and the run is green with no migrations applied. Fix that in the
+  application: `exit(1)`.
+* **The Yarn install**, deliberately. It runs as `yarn install 2>&1 || true` so that its output can
+  be searched for the `401 Unauthorized` retry, which means any other Yarn failure is discarded.
+
 ### Timeouts, and partial deployments
 
 `timeout` bounds the connection and the whole remote script. A script that runs past it is cut off
-mid-deployment, so a slow `composer install` on a large repository is worth raising it for. The
-remote script runs under `set -eux`, so the first failing command stops it - which also means a
-failed deployment can leave the server updated but not fully installed. Re-running is the fix; every
-step is written to be repeatable.
+mid-deployment, so a slow `composer install` on a large repository is worth raising it for. A
+deployment that stops part way leaves the server updated but not fully installed. Re-running is the
+fix; every step is written to be repeatable.

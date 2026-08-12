@@ -1188,3 +1188,8 @@
 
 * Update: improved handling of agent overrun - keeping the result even if it went too many turns (7072100 by George Shestayev)
 * Update: default amount of turns increased to 50 (7072100 by George Shestayev)
+
+## v10.5.0
+
+* Update: deployment workflows made more robust to check for failures better (2a77d5e by George Shestayev)
+* Update: improved ai-implement workflow to handle base changes (2a77d5e by George Shestayev)
