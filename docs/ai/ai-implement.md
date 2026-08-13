@@ -126,6 +126,10 @@ start a round and it will be there.
 Where a check is red, expect it to be fixed rather than explained. A failing check has no thread
 to answer, so what the agent did about it is in the round summary comment instead.
 
+Each round also re-reads **the plan on the issue**, so [revising
+it](#when-the-plan-is-revised-under-the-work) with `/ai-plan` is how you change the approach rather
+than the code.
+
 ## Wiring CI into the loop
 
 Two opt-in additions, both useful, both independent of each other. Details and traps for each are
@@ -392,6 +396,17 @@ unattended streak, and reads the timestamp to know where to draw its watermark. 
 failed to post one would have the next round act on the same feedback all over again - which is
 why it is posted even when nothing changed.
 
+### When the plan is revised under the work
+
+**Revising a plan never starts a round** - ask for one with `/ai-do` or a review when the branch
+should be brought in line. Each round compares the plan comment against its watermark, and a newer
+one is reconciled against the whole branch: what the plan now asks for is added, what it no longer
+asks for comes back out, and the round says so above its summary. Feedback still wins where the two
+disagree. That reconciling happens on any round that runs, including one CI started, so a revision
+can be picked up before you are finished with it - revise again rather than leaving one you are
+unhappy with. Editing a plan comment in place is not a revision, because the comparison is on when
+it was posted, which is what makes polishing safe.
+
 ### When nothing happens
 
 Cases that end without a failure and without a red run:
@@ -405,7 +420,7 @@ Cases that end without a failure and without a red run:
 | `base=` with no branch after it | A comment saying to name one |
 | `base=` when the branch already exists | A comment saying the base is settled - the run carries on regardless |
 | `base=` naming a different branch than the plan did | A comment saying which one won - the run carries on with the command's |
-| A round with no unresolved thread, nothing new said and no failing check | A comment saying exactly that |
+| A round with no unresolved thread, nothing new said and no failing check | A comment saying exactly that - unless [the plan was revised](#when-the-plan-is-revised-under-the-work), which is work in itself |
 | Too many rounds in a row from a bot | A comment asking for a person |
 | The agent changed no files | A comment saying so |
 | `/ai-do` on a pull request this workflow did not open | A comment saying why not |

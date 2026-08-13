@@ -22,6 +22,8 @@ issue                                    pull request
                                           | Request changes   ->  another round
                                           | /ai-do            ->  another round
                                           |
+/ai-plan   -> plan revised ------------>  /ai-do             ->  branch reconciled
+                                          |                      with the revision
                                           v
                                           AI Review can drive that loop by itself,
                                           for a bounded number of rounds
@@ -174,7 +176,11 @@ is wrong" rather than "this line is wrong". Every implementing round re-reads th
 issue, so a revision reaches the code without anybody copying it anywhere, and the open pull
 request gets a comment linking to the revision.
 
-What it does not do is undo the code already pushed. Expect the next round to be a large one.
+**Nothing rebuilds on its own.** Ask for an
+[implementing round](ai-implement.md#when-the-plan-is-revised-under-the-work) when the branch should
+be brought in line, and expect a large one - it takes out the code for a step the revision dropped
+as well as adding what it now asks for. Any round that runs before then does the same, so revise
+again rather than leaving a revision you are unhappy with. Editing the comment in place is free.
 
 ## Secrets
 

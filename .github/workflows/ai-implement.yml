@@ -698,6 +698,61 @@ jobs:
           reply_marker: ${{ env.REPLY_MARKER }}
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
 
+      # A plan revised since the last round is work in its own right, and nothing in the feedback
+      # amounts to saying so. The planner does leave a note on an open pull request when it revises
+      # the plan under it, and that note is staged like any other comment - but a pointer sitting
+      # in the feedback list is not the same as knowing the specification underneath the branch has
+      # moved, and there is no note at all when the plan moved while the first run was still
+      # working. So the timestamps are compared here instead of anything being inferred from what
+      # was said.
+      #
+      # Two things go wrong without it. A round somebody asked for stands down as having nothing to
+      # act on while the branch no longer implements what the issue asks for - and a round that runs
+      # for some other reason treats the revised plan as background reading, when reconciling the
+      # branch against it is the largest thing in front of it.
+      #
+      # Both timestamps are UTC `%Y-%m-%dT%H:%M:%SZ` - one a Github comment's `created_at`, the
+      # other `date -u` in the staging action - and that fixed width is what makes comparing them
+      # as strings the same as comparing them as times. Every position that can differ holds a
+      # digit, so no collation rule reaches it. `ai-stage-pull-request` compares the same values
+      # the same way in jq.
+      #
+      # The instruction for the agent is built here rather than in the prompt below, where making
+      # it conditional would mean one expression several hundred characters wide.
+      - name: Notice a plan revised since the last round
+        id: revision
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.stage_issue.outputs.plan_created_at != ''
+          && steps.stage_pr.outputs.since != '' }}
+        env:
+          PLAN_AT: ${{ steps.stage_issue.outputs.plan_created_at }}
+          SINCE: ${{ steps.stage_pr.outputs.since }}
+        run: |
+          if [[ ! "$PLAN_AT" > "$SINCE" ]]; then
+            echo "revised=false" >> "$GITHUB_OUTPUT"
+            echo "The plan has not moved since the last round drew its watermark at $SINCE"
+            exit 0
+          fi
+
+          echo "revised=true" >> "$GITHUB_OUTPUT"
+          echo "The plan was revised at $PLAN_AT, after the last round's watermark of $SINCE"
+
+          # A paragraph rather than a value, so it goes in as a heredoc - $GITHUB_OUTPUT takes one
+          # line per value otherwise. The delimiter is deliberately something no prompt text
+          # could contain.
+          {
+            printf 'instruction<<AI_IMPLEMENT_REVISION\n'
+            printf '%s\n' \
+              '**The plan was revised after the last round, so the branch you are in was not built to the plan you are reading.**' \
+              'Reconcile the whole branch against `.ai-plan/plan.md`, not only the feedback items.' \
+              'Work the plan now asks for that the branch does not have is yours to add, and work it no longer asks for is yours to take back out - a dropped step whose code stayed behind is exactly what a revision is meant to correct.' \
+              'Read the plan end to end before you start, and say in your final message what you changed for the revision and what you deliberately left alone.' \
+              'Where the revision and the feedback disagree, the feedback still wins on anything about code somebody has read.'
+            printf 'AI_IMPLEMENT_REVISION\n'
+          } >> "$GITHUB_OUTPUT"
+
       # A push starts two things at once - the QA checks and the reviewing agent - and they
       # finish in either order. Whichever finishes first arrives here, sees the other still
       # working, and stands down. Whichever finishes second finds nothing pending and runs one
@@ -746,6 +801,12 @@ jobs:
       # A round nobody asked for, on a commit where everything passed and the reviewer had
       # nothing to say. Silent on purpose: this fires on every green pull request, and a comment
       # each time would be noise rather than news.
+      #
+      # A revised plan deliberately does *not* hold this open, though it does hold the asked-for
+      # gate below. Rework is a person's decision: they revise the plan, get it right, and then run
+      # the command. A round that started because some CI job finished is nobody asking for
+      # anything, and rebuilding a branch to a specification still being worked on is worse than
+      # waiting to be told. Any round that does run reads the newest plan either way.
       - name: Nothing to act on
         if: >-
           ${{ success() && env.PROCEED == 'true'
@@ -759,12 +820,22 @@ jobs:
       # An empty review, or a command run when everything has already been dealt with. Not a
       # failure, and worth saying rather than starting an agent with nothing to give it. Only
       # for a round somebody asked for - the automatic ones stand down silently above.
+      #
+      # A revised plan is enough on its own here, and only here: somebody typed the command or
+      # submitted a review, so this is the rework being asked for. The automatic gate above
+      # deliberately does not do the same - see the note there.
+      #
+      # Belt and braces for a command, which by the time the staging action reads the conversation
+      # has its own comment in the feedback. What it does catch is a review submitted with no body
+      # whose threads have all been answered, which otherwise stands down while the specification
+      # has moved underneath it.
       - name: Make sure there is feedback to act on
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
           && steps.event.outputs.trigger != 'checks'
-          && steps.stage_pr.outputs.has_feedback != 'true' }}
+          && steps.stage_pr.outputs.has_feedback != 'true'
+          && steps.revision.outputs.revised != 'true' }}
         env:
           PR: ${{ steps.event.outputs.pull_request }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -1158,8 +1229,9 @@ jobs:
             - `.ai-review/pull-request.json` - the pull request itself.
             - `.ai-plan/plan.md` - the approved plan this branch implements, if the issue
               still has one. It is the specification, and it may have been revised since the
-              last round. Where it and the feedback disagree, the feedback wins: it is newer,
-              and somebody wrote it after seeing the code.
+              last round - the workflow says so below when it has been. Where it and the
+              feedback disagree, the feedback wins: it is newer, and somebody wrote it after
+              seeing the code.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
             - `.ai-reports/` - what the checks on this commit actually printed, one directory
               per CI job. A failing `check` in the feedback almost certainly has its output in
@@ -1180,6 +1252,8 @@ jobs:
             not be made. Both are legitimate. A round that does what it was told against its
             own better judgement is worse than one that pushes back with a reason - you have
             read the code and the reviewer may not have.
+
+            ${{ steps.revision.outputs.instruction }}
 
             Then answer the review. Write `.ai-review/replies.json`: a JSON array of
             `{"reply_target": <number>, "body": "<markdown>"}`, with one entry for every
@@ -1549,6 +1623,7 @@ jobs:
           ISSUE: ${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          COMMAND: ${{ inputs.command }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
           # What the pull request being revived used to target. Only differs from BASE when its
           # branch was gone and a new one was cut from somewhere else.
@@ -1601,7 +1676,12 @@ jobs:
                 printf '\n'
               fi
               printf -- '---\n\n'
-              printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n'
+              printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n\n'
+              # This workflow's own command, said on the pull request rather than only in the
+              # hand-off comment back on the issue. It is the answer to "how do I ask for a round"
+              # wherever that comes up later - including a revised plan, which the planning
+              # workflow announces here without naming a command it does not own.
+              printf '`%s` here runs a round too, for when you would rather say what you want in prose than in review comments.\n' "$COMMAND"
             } > "$RUNNER_TEMP/pr-body.md"
 
             url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
@@ -1692,6 +1772,8 @@ jobs:
           POSTED: ${{ steps.replies.outputs.posted }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          REVISED: ${{ steps.revision.outputs.revised }}
+          PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
         run: |
           # Built with jq rather than printf, so a timestamp or a flag can never break the
           # line the next round parses
@@ -1706,6 +1788,17 @@ jobs:
             printf '%s\n' "$ROUND_MARKER"
             printf '<!-- %s -->\n\n' "$meta"
 
+            # Above the agent's own summary, not in the footer with the counts. A round that
+            # reconciled the branch with a new specification did something nobody may have asked
+            # for on this pull request - a round the checks started reads the newest plan like any
+            # other - and the largest thing it did is the last thing to leave for the small print.
+            if [[ "$REVISED" == 'true' ]]; then
+              printf '> **A revised plan was found on the issue, so this round worked to it.**'
+              printf ' The whole branch was reconciled against the revision, not only the feedback below'
+              [[ -n "$PLAN_URL" ]] && printf ' - [read it](%s)' "$PLAN_URL"
+              printf '.\n\n'
+            fi
+
             if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
               cat "$SUMMARY_FILE"
             else
@@ -1717,6 +1810,9 @@ jobs:
             printf 'Round %s, on %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
             [[ "$CHECK_COUNT" != '0' ]] && printf ' including %s failing check(s)' "$CHECK_COUNT"
             printf '.'
+            # The revised plan is not a feedback item, so the count above does not account for it.
+            # Said once here for the record - the reader was already told at the top.
+            [[ "$REVISED" == 'true' ]] && printf ' Worked to a revised plan.'
             if [[ "$TRIGGER" == 'review' ]]; then
               printf ' Started by @%s requesting changes.' "$ACTOR"
             else
