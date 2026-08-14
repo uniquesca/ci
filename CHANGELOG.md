@@ -1193,3 +1193,9 @@
 
 * Update: deployment workflows made more robust to check for failures better (2a77d5e by George Shestayev)
 * Update: improved ai-implement workflow to handle base changes (2a77d5e by George Shestayev)
+
+## v10.6.0
+
+* Update: introduced better structure to the AI plan - using proper indexes, that can be referred to in feedback (edf0084 by George Shestayev)
+* Update: introduced an attempt for an AI agent to generate acceptance criteria for QA (edf0084 by George Shestayev)
+* Update: introduced an ability to revise the plan and re-do the AI implementation using it (e11446f by George Shestayev)
