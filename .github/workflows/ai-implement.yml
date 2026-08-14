@@ -748,7 +748,8 @@ jobs:
               '**The plan was revised after the last round, so the branch you are in was not built to the plan you are reading.**' \
               'Reconcile the whole branch against `.ai-plan/plan.md`, not only the feedback items.' \
               'Work the plan now asks for that the branch does not have is yours to add, and work it no longer asks for is yours to take back out - a dropped step whose code stayed behind is exactly what a revision is meant to correct.' \
-              'Read the plan end to end before you start, and say in your final message what you changed for the revision and what you deliberately left alone.' \
+              'Read the plan end to end before you start, and say in your final message what you changed for the revision and what you deliberately left alone, citing the ids after each point.' \
+              "A revised plan opens by saying what moved in those ids - which steps were dropped, which are new - so that sentence is the shortest route to what this round owes. Ids are stable across a revision, so an item that kept its number is the same item, and a retired one is listed struck through rather than renumbered." \
               'Where the revision and the feedback disagree, the feedback still wins on anything about code somebody has read.'
             printf 'AI_IMPLEMENT_REVISION\n'
           } >> "$GITHUB_OUTPUT"
@@ -1130,7 +1131,11 @@ jobs:
             Everything you need has been fetched for you. Read these first:
 
             - `.ai-plan/plan.md` - the approved plan. This is the specification. Implement
-              it.
+              it. Its items are numbered `S1` for a step, `R1` for a risk, `U1` for an
+              unknown or an assumption, `C1` for a check that proves the work is done and
+              `QA1` for an acceptance criterion a tester will verify by hand. Use those ids
+              when you refer to it, as described below. An older plan may not have them, in
+              which case refer to its steps by their titles.
             - `.ai-plan/issue.json` - the issue number, title and body, for context on why
               the work is wanted.
             - `.ai-plan/comments.json` - every comment on the issue, oldest first, each
@@ -1151,9 +1156,14 @@ jobs:
             `dist` and `build` unless the plan is specifically about one of them.
 
             You have a shell. Use it to verify your own work: find how this project runs
-            its tests and linters, run them, and fix what you broke. The plan's checks are
-            yours to execute, not to list. If you cannot get something passing, say so in
+            its tests and linters, run them, and fix what you broke. The plan's `C` checks
+            are yours to execute, not to list. If you cannot get one passing, say so in
             your final message rather than leaving it quietly broken.
+
+            The `QA` criteria are not yours. They are for a person testing this after it
+            merges, and you have no way to discharge them - so never report one as met.
+            What you can do is make them possible: if the change cannot satisfy one as
+            written, that is worth saying.
 
             Do the work yourself, in this run. You have no helpers to delegate to and
             nothing is arriving later, so never end a turn saying you are waiting on
@@ -1178,6 +1188,14 @@ jobs:
             that needs a human decision. Markdown, no preamble, no sign-off, well under
             10000 characters. Do not add a title, a link to the issue, or a footer - the
             workflow adds those.
+
+            Cite the plan's ids in it, in brackets after what you are already saying -
+            "moved the retry loop into the client (S3)", "the changelog suite passes (C2)".
+            Never an id on its own: the plan lives on the issue, and somebody reading this
+            pull request has your words and nothing else. `C2` alone tells them nothing,
+            while the sentence with `C2` after it tells them everything and lets them go
+            and find it. Do not add a table of ids either - the ids belong in the prose,
+            not instead of it.
 
             Once this is open as a pull request, the review happens there and you will be
             asked for changes on the lines themselves. Make that easy: small commits of
@@ -1231,7 +1249,13 @@ jobs:
               still has one. It is the specification, and it may have been revised since the
               last round - the workflow says so below when it has been. Where it and the
               feedback disagree, the feedback wins: it is newer, and somebody wrote it after
-              seeing the code.
+              seeing the code. Its items are numbered `S1` for a step, `R1` for a risk, `U1`
+              for an unknown or an assumption, `C1` for a check that proves the work is done
+              and `QA1` for an acceptance criterion a tester verifies by hand. Feedback often
+              cites them - "S3 was not done", "C1 still fails" - so read the item it points
+              at before you act. The ids survive a revision, so one quoted in an older
+              comment still means the same item; an older plan may have no ids at all, in
+              which case its steps go by their titles.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
             - `.ai-reports/` - what the checks on this commit actually printed, one directory
               per CI job. A failing `check` in the feedback almost certainly has its output in
@@ -1258,7 +1282,9 @@ jobs:
             Then answer the review. Write `.ai-review/replies.json`: a JSON array of
             `{"reply_target": <number>, "body": "<markdown>"}`, with one entry for every
             feedback item that has a non-null `reply_target`, including the ones you decided
-            against. Say what you changed, or why you did not. A few sentences each. Use only
+            against. Say what you changed, or why you did not. A few sentences each, and where
+            a plan item is what the reply is about, cite its id after the point rather than in
+            place of it - "the guard now covers the empty case (S5)". Use only
             `reply_target` values that appear in the feedback - invented ones are discarded.
             Items whose `reply_target` is null have no thread to answer; cover those in your
             final message instead.
@@ -1287,6 +1313,13 @@ jobs:
             what it said, and anything still needing a decision. Markdown, no preamble, no
             sign-off, well under 10000 characters. Do not add a title or a footer - the
             workflow adds those.
+
+            Cite the plan's ids in it, in brackets after what you are already saying - "the
+            retry now backs off (S3)", "the changelog suite passes (C2)". Never an id on its
+            own: the plan lives on the issue, and somebody reading this pull request has your
+            words and nothing else. `C2` alone tells them nothing, while the sentence with `C2`
+            after it tells them everything and lets them go and find it. That goes for a
+            revision too - name what changed, and put the ids after it.
           claude_args: |
             --model ${{ inputs.model }}
             --max-turns ${{ inputs.max_turns }}

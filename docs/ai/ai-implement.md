@@ -36,6 +36,14 @@ The agent implements the plan on a branch named after the issue, runs whatever t
 it can find, and a pull request appears. The issue gets a comment with the link, and **that
 comment is the hand-off** - from then on the issue is only for the plan.
 
+The pull request body and every round comment cite the plan's
+[ids](ai-plan.md#how-the-plan-is-numbered) - `(S3)` after the change that implements step 3, `(C2)`
+after the check that passed - always next to what is being said rather than in place of it, because
+the plan itself is back on the issue. The plan's `C` checks are the agent's to run; its `QA`
+criteria are for a person to test after this merges, and the agent never reports one as met. You
+can use the same ids talking back to it: "S5 is missing", "C1 still fails" lands exactly where you
+mean it.
+
 Running `/ai-do` on the issue again does not implement anything. It replies pointing at the pull
 request, because that is where the work continues.
 
@@ -438,8 +446,8 @@ turn count.
 ### What the agent can and cannot do
 
 It **may** read and change any file in the checkout, and run any command on the runner - it has a
-shell, on purpose. Without one it could not run the tests, and the plan's verification section
-would be a list rather than something it executes.
+shell, on purpose. Without one it could not run the tests, and the plan's `C` checks would be a
+list rather than something it executes.
 
 It **may not**, and cannot:
 

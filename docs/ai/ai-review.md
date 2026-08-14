@@ -94,6 +94,11 @@ Two things to expect:
 reads like the surrounding code gets a plain comment review saying so, and the loop ends there. A
 reviewer that always found something would never terminate.
 
+**It cannot test the QA criteria**, and it is told not to treat that as a finding. What it can say
+is that the code cannot satisfy one as written, or that nothing in the diff addresses the steps a
+criterion covers, or that a criterion needs a person - which is the note to look for when deciding
+what to hand to QA.
+
 **It never approves.** The verdict is either "changes requested" or "no blocking concerns" -
 merging is a person's decision, and an agent approving its own pipeline's work is not a signal
 anybody should act on. Approve and merge yourself.
@@ -160,7 +165,10 @@ The agent gets the change and the intent behind it:
 * the diff of the branch against its base - three dots, so it is what this branch changed rather
   than everything that has happened on the base since
 * the **plan and the issue**, because a review that does not know what the change was *meant* to do
-  is a style check. "This does not do what the plan says" is the most valuable thing it can find
+  is a style check. "This does not do what the plan says" is the most valuable thing it can find.
+  The plan's [ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff against and what
+  it cites when something is missing - `(S6, QA2)` after the point, never on its own, since the plan
+  is on the issue and the review is not
 * the review history and the failing checks, with **answered threads included** - unlike the
   implementing agent, this one needs to read the reply where its own last concern was addressed or
   argued with, before deciding whether to raise it again

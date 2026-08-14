@@ -370,20 +370,54 @@ jobs:
             and nothing is arriving later, so never end a turn saying you are waiting on
             anything - there is nothing to wait for, and a run that stops to wait posts no
             plan at all. When a question is still open after you have looked at what you
-            can, write the plan anyway and put the question in the risks and assumptions
-            section. A plan with a stated unknown is worth far more than no plan.
+            can, write the plan anyway and record the question as a `U` in the risks,
+            unknowns and assumptions section described below. A plan with a stated unknown
+            is worth far more than no plan.
 
             The plan is markdown, in this order:
 
             - A short summary of the approach, in prose. If you are revising an earlier
-              plan, open with one sentence on what changed and why.
-            - The steps, as a markdown task list - `- [ ] 1. Short imperative title`,
+              plan, open with one sentence on what changed and why, said in ids: "S4
+              dropped, S7 and S8 added, R2 no longer applies".
+            - `## Steps` - a markdown task list, `- [ ] **S1** Short imperative title`,
               each followed by an indented paragraph on what to do and why, and the real
               files it touches. Note explicitly where a step depends on an earlier one.
-            - Risks, unknowns and assumptions worth flagging. Where you could not
-              determine something from the code, say so plainly rather than filling the
-              gap with a guess.
-            - Concrete checks that would prove the task is complete.
+            - `## Risks, unknowns and assumptions` - `**R1**` for a risk, `**U1**` for
+              something you could not determine and for an assumption you are proceeding
+              on regardless. Where you could not settle something from the code, say so
+              plainly rather than filling the gap with a guess.
+            - `## Checks` - `**C1**` each: the concrete checks that prove the work is
+              done. The command to run, the test that passes, the linter that comes back
+              clean. These belong to the agent that implements the plan, and it runs them.
+            - `## QA acceptance criteria` - `**QA1**` each, written for a tester who will
+              not read the code and cannot run anything in the repository: what to do,
+              and what should happen, observable from outside through the interface, the
+              API or the data. Name the steps each one covers - `**QA1** (S2, S5)`.
+              Anything that needs the repository to check is a `C`, not a `QA`.
+
+            Every item carries an id, and every id is permanent. They are how this plan
+            gets talked about: feedback comes back as "S3 is in the wrong order" or "C2
+            proves nothing", and the agents that implement and review the work cite them
+            too. So when you revise a plan, keep the id of everything that survives, even
+            where you reworded it, and give anything new the next number this plan has
+            never used. Never renumber to close a gap, and never reuse a number for
+            different work - an id that changes meaning turns every comment written about
+            it into a lie.
+
+            Items you drop keep their ids as well, collapsed into a single `Retired:` line
+            at the end of the section they were in - `Retired: ~~S4~~ superseded by S7,
+            ~~S6~~ no longer needed.` One line for all of them, no paragraph each. Leaving
+            it out is not an option: it is where the next revision reads which numbers have
+            been used, and it is what keeps an older comment citing `S4` readable.
+
+            List the steps in the order they should be worked in. After a revision or two
+            that is no longer numeric order, which is fine - the number identifies a step,
+            it does not sequence it.
+
+            An earlier plan on this issue may predate all of this, with plainly numbered
+            steps and no ids anywhere else. Assign them as part of the revision: number the
+            items in the order they already appear, and say in your opening sentence that
+            you did. From then on they are fixed like any others.
 
             Do not write the `<!-- ai-plan -->` marker, the `<!-- {...} -->` metadata line
             under it, or a `Requested by` line yourself - the workflow adds all three. Name
