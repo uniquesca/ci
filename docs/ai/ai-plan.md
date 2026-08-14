@@ -22,6 +22,8 @@ issue                                    pull request
                                           | Request changes   ->  another round
                                           | /ai-do            ->  another round
                                           |
+/ai-plan   -> plan revised ------------>  /ai-do             ->  branch reconciled
+                                          |                      with the revision
                                           v
                                           AI Review can drive that loop by itself,
                                           for a bounded number of rounds
@@ -141,9 +143,40 @@ read cannot. Anyone else gets a comment explaining why not. That gate is what st
 spending your API tokens.
 
 Nothing appears until the plan is finished, which takes a few minutes. What comes back is one
-comment: a summary of the approach, the steps as a real task list with checkboxes, risks and
-unknowns, and concrete checks that would prove the work is done. The last line says who asked
-for it and roughly what the run cost.
+comment: a summary of the approach, the steps as a real task list with checkboxes, the risks and
+unknowns behind it, the checks that prove the work is done, and acceptance criteria QA can test
+by hand. The last line says who asked for it and roughly what the run cost.
+
+## How the plan is numbered
+
+Every item in the plan carries an id, and they are how everybody involved refers to it:
+
+| Prefix | Section | What it is |
+|---|---|---|
+| `S1`, `S2` | Steps | The work, in the order it should be done |
+| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong |
+| `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
+| `C1`, `C2` | Checks | A check that proves the work is done - a test, a command, a clean linter. The [implementing agent](ai-implement.md) runs these itself |
+| `QA1`, `QA2` | QA acceptance criteria | What to test by hand and what should happen, written for somebody who will not read the code. Each names the steps it covers, as `QA1 (S2, S5)` |
+
+**Feedback can use them, and that is the point.** "S4 and S5 are the wrong way round", "C2 proves
+nothing, the suite does not cover that path", "QA3 cannot be tested without a fixture" - all of
+that lands precisely, in a revision or in a review, without quoting a paragraph back.
+
+**Ids are stable across revisions.** An item that survives a revision keeps its number even if it
+was reworded, new work takes the next number the plan has never used, and dropped items are listed
+struck through on a `Retired:` line at the end of their section rather than renumbered away. So a
+comment written two revisions ago citing `S4` still points at what it was about, and gaps in the
+numbering are normal. Steps are listed in the order to work in, which after a revision or two is
+no longer numeric order - the number identifies a step, it does not sequence it.
+
+The [implementing](ai-implement.md) and [reviewing](ai-review.md) agents cite the same ids back,
+always alongside what they are saying rather than instead of it - "the retry now backs off (S3)".
+The plan lives on the issue and their comments live on the pull request, so a bare `C2` there
+would mean nothing to whoever is reading.
+
+Plans posted before this existed have plainly numbered steps and no other ids. They keep working
+as they always did, and revising one assigns ids to what is already there.
 
 ## Adjusting the plan
 
@@ -152,6 +185,11 @@ Three ways, depending on how wrong it is.
 **A small correction — just edit the comment.** There is no second copy to keep in sync, so
 editing the markdown *is* editing the plan. Fix a path, drop a step, reword a detail. Nothing
 else needs to happen.
+
+Leave the [ids](#how-the-plan-is-numbered) as they are while you are in there. Renumbering by hand
+undoes what makes them worth citing, and a step you no longer want is better struck through on its
+section's `Retired:` line than deleted outright - that is what the next revision reads to know the
+number is spent.
 
 **Feedback and revision — say what you want, then run `/ai-plan` again.** The agent reads the
 whole thread, takes the most recent plan as its starting point, and applies whatever was asked
@@ -174,7 +212,11 @@ is wrong" rather than "this line is wrong". Every implementing round re-reads th
 issue, so a revision reaches the code without anybody copying it anywhere, and the open pull
 request gets a comment linking to the revision.
 
-What it does not do is undo the code already pushed. Expect the next round to be a large one.
+**Nothing rebuilds on its own.** Ask for an
+[implementing round](ai-implement.md#when-the-plan-is-revised-under-the-work) when the branch should
+be brought in line, and expect a large one - it takes out the code for a step the revision dropped
+as well as adding what it now asks for. Any round that runs before then does the same, so revise
+again rather than leaving a revision you are unhappy with. Editing the comment in place is free.
 
 ## Secrets
 

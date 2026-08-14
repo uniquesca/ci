@@ -33,6 +33,9 @@ outputs:
   plan_base:
     description: 'Branch the staged plan was written against, from the metadata line the planning workflow records under the marker. Empty for a plan posted before that line existed, or for no plan at all - a caller falls back to its own default'
     value: ${{ steps.stage.outputs.plan_base }}
+  plan_created_at:
+    description: 'When the comment the staged plan came from was posted, as an ISO 8601 UTC timestamp. Empty when the issue has no plan. This is what tells a plan revised since some earlier point from one that has not moved - `ai-implement` compares it against its own round watermark'
+    value: ${{ steps.stage.outputs.plan_created_at }}
 
 runs:
   using: composite
@@ -70,16 +73,27 @@ runs:
 
         # The plan is the newest bot-authored comment carrying the marker. Filtering on
         # the bot matters: anyone able to comment can paste a marker of their own.
-        jq -r 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->"))))
-               | last | .body // empty' "$DIR/comments.json" > "$DIR/plan.md"
+        #
+        # Picked out once into scratch, outside the checkout because the implementing workflow
+        # commits its working tree. Three outputs come off this one comment, and selecting it
+        # again for each of them is how a filter drifts - reporting the URL of one plan with the
+        # timestamp of another. No plan at all leaves `{}` here, whose `.body` is empty - which is
+        # what the `-s` check below is reading.
+        plan_comment="$RUNNER_TEMP/ai-stage-issue-plan.json"
+        jq 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->")))) | last // {}' \
+          "$DIR/comments.json" > "$plan_comment"
+
+        jq -r '.body // empty' "$plan_comment" > "$DIR/plan.md"
 
         if [[ -s "$DIR/plan.md" ]]; then
           has_plan='true'
           plan_file="$DIR/plan.md"
-          plan_url=$(
-            jq -r 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->"))))
-                   | last | .url // ""' "$DIR/comments.json"
-          )
+          plan_url=$(jq -r '.url // ""' "$plan_comment")
+
+          # When this plan was posted. A caller with a watermark of its own - `ai-implement` has
+          # one per round - compares the two to find a plan that has been revised under work
+          # already done, which is a different job from implementing a plan for the first time.
+          plan_created_at=$(jq -r '.created_at // ""' "$plan_comment")
 
           # Which branch the plan was written against, from the metadata line the planning
           # workflow writes directly under the marker. Read off the staged plan rather than
@@ -98,13 +112,14 @@ runs:
                     | tostring
                     | gsub("[\r\n]"; "")' "$DIR/plan.md" | jq -r .
           )
-          plan_state="a plan${plan_base:+ for $plan_base}"
+          plan_state="a plan${plan_base:+ for $plan_base}${plan_created_at:+ from $plan_created_at}"
         else
           rm -f "$DIR/plan.md"
           has_plan='false'
           plan_file=''
           plan_url=''
           plan_base=''
+          plan_created_at=''
           plan_state='no plan'
         fi
 
@@ -115,6 +130,7 @@ runs:
           printf 'plan_file=%s\n' "$plan_file"
           printf 'plan_url=%s\n' "$plan_url"
           printf 'plan_base=%s\n' "$plan_base"
+          printf 'plan_created_at=%s\n' "$plan_created_at"
         } >> "$GITHUB_OUTPUT"
 
         echo "Staged issue #$ISSUE with $(jq length "$DIR/comments.json") comment(s) and $plan_state"

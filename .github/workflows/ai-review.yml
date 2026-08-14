@@ -275,7 +275,12 @@ jobs:
             - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - the shape of it.
             - `.ai-plan/plan.md` - the approved plan this was built from, if the issue still has
               one. It is the specification. "This does not do what the plan says" is the most
-              valuable finding you can produce.
+              valuable finding you can produce. Its items are numbered `S1` for a step, `R1` for
+              a risk, `U1` for an unknown or an assumption, `C1` for a check that proves the
+              work is done and `QA1` for an acceptance criterion a tester verifies by hand, each
+              naming the steps it covers. Those ids are what to check the diff against, and what
+              to cite when something is missing. An older plan may not have them, in which case
+              refer to its steps by their titles.
             - `.ai-plan/issue.json` - why the work was wanted in the first place.
             - `.ai-review/feedback.json` - what has already been said on this pull request, and
               what CI currently thinks. Each entry has a `source` (`thread` for an inline
@@ -325,6 +330,13 @@ jobs:
 
             Everything smaller is a `comment` verdict, or not worth saying.
 
+            The plan's `QA` criteria are for a person to test by hand, and you cannot run them.
+            Not being able to verify one is not a finding, and it is not grounds for requesting
+            changes. What is worth saying is that the code cannot satisfy one as written, or that
+            nothing in the diff addresses the steps a criterion covers - both of those you can
+            see. Where the change looks right but only a tester can settle it, say which criteria
+            those are in your summary, so whoever picks it up knows where to start.
+
             Do the reading yourself, in this run. You have no helpers to delegate to and
             nothing is arriving later, so never end a turn saying you are waiting on anything -
             there is nothing to wait for, and a run that stops to wait writes no review at all.
@@ -349,7 +361,12 @@ jobs:
               merging is a person's decision.
             - `summary` - what you looked at, what you concluded, and anything that does not
               belong on one line. If your verdict is `comment` because it is fine, say that in
-              a sentence or two rather than padding it.
+              a sentence or two rather than padding it. Cite the plan's ids in brackets after
+              what you are already saying - "the retry never backs off (S3)", "nothing here
+              covers the migration (S6, QA2)". Never an id on its own: the plan lives on the
+              issue, and whoever reads this review has your words and nothing else. `S3` alone
+              tells them nothing, while the sentence with `S3` after it tells them everything
+              and lets them go and find it. The same goes for an inline comment.
             - `comments` - inline comments. `line` is the line number **in the new file**, and
               it has to be a line the diff actually contains: an added line or a context line
               inside a hunk. A comment on any other line is dropped before the review is

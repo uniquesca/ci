@@ -32,6 +32,7 @@ Used by [`ai-plan`](../ai/ai-plan.md) and [`ai-implement`](../ai/ai-implement.md
 | `plan_file` | Path to the staged plan, empty when the issue has no plan yet |
 | `plan_url` | Link to the comment the staged plan came from, empty when there is none |
 | `plan_base` | Branch the staged plan was written against, empty when the plan does not record one |
+| `plan_created_at` | When the plan comment was posted, as an ISO 8601 UTC timestamp. Empty when there is no plan |
 
 ## Dig deeper
 
@@ -60,3 +61,9 @@ anybody able to comment on the issue can paste a marker of their own, and `is_bo
 plan posted before that line existed has prose on its second line, which is not JSON, so
 `plan_base` comes back empty and the caller falls back to its own default - which is what keeps
 older plans working.
+
+`plan_created_at` is that comment's own timestamp, which is how a caller with a watermark spots a
+plan revised under work already done -
+[`ai-implement`](../ai/ai-implement.md#when-the-plan-is-revised-under-the-work) compares it against
+the end of its last round. It is `created_at` and not `updated_at`, so editing a plan in place stays
+the quiet way to correct one.

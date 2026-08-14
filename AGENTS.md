@@ -19,6 +19,11 @@ When adding something to a section above `## Dig deeper`:
 Match the surrounding density. These docs use short declarative sentences, bold lead-ins for
 things that fail silently, and tables for enumerable outcomes.
 
+**Size a `## Dig deeper` note to the change it documents.** A small feature gets one mid-size
+paragraph, not a heading with bullets and sub-paragraphs - an oversized note misrepresents how much
+of the system the reader has to hold. Prefer extending the subsection that already covers the topic.
+The same goes for explaining the change in conversation.
+
 One page per reusable workflow under `docs/workflows/` and per action under `docs/actions/`, each
 title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper`.
 Both are listed in `docs/workflows-and-actions.md` - **add a new workflow or action to that page**,
