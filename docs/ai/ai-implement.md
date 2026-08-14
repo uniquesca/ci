@@ -180,13 +180,21 @@ jobs:
   ai-implement:
     permissions:
       actions: read
+    secrets:
+      PUSH_ACCESS_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN }}
 ```
+
+`PUSH_ACCESS_TOKEN` is what the agent pushes with, and it is **required for any of this to
+work**: Github does not start workflow runs from pushes made with `GITHUB_TOKEN`, so without it
+your QA workflows never run on the agent's commits and nothing here is ever triggered. Use a
+machine user PAT with `repo` scope, or a Github App installation token.
 
 ## Secrets
 
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
+| `PUSH_ACCESS_TOKEN` | no | Token the agent pushes with. **Without it its pushes trigger no workflows at all** - see [wiring CI into the loop](#wiring-ci-into-the-loop). A machine user PAT with `repo` scope, or a Github App installation token. Add `workflow` scope only if the agent should be allowed to change files under `.github/workflows` |
 
 ## Inputs
 
