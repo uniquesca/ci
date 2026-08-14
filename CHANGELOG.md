@@ -1199,3 +1199,6 @@
 * Update: introduced better structure to the AI plan - using proper indexes, that can be referred to in feedback (edf0084 by George Shestayev)
 * Update: introduced an attempt for an AI agent to generate acceptance criteria for QA (edf0084 by George Shestayev)
 * Update: introduced an ability to revise the plan and re-do the AI implementation using it (e11446f by George Shestayev)
+
+## v10.7.0
+
