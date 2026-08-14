@@ -6,6 +6,9 @@ on:
       ANTHROPIC_API_KEY:
         description: 'Anthropic API key used to call the AI implementing agent'
         required: true
+      PUSH_ACCESS_TOKEN:
+        description: 'Token the branch is pushed with. Optional, but without it a finished QA workflow cannot start another round: Github refuses to start a workflow run from an event made with `GITHUB_TOKEN`, so a push from it produces a `pull_request` run that waits for somebody to approve it, and that run completing cannot trigger anything either - `workflow_run` inherits the same suppression. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the checks trigger work. Add `workflow` scope only if the agent should be allowed to change files under .github/workflows'
+        required: false
     inputs:
       command:
         description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round of it'
@@ -177,6 +180,22 @@ jobs:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
+      # Deliberately a second token, and not a replacement for the one above. Git operations are
+      # what the next trigger hangs off: Github will not start a workflow run from an event made
+      # with `GITHUB_TOKEN`, and `workflow_run` inherits that from the run it chains to - so a
+      # branch pushed by `GITHUB_TOKEN` produces a `pull_request` run parked at `action_required`
+      # whose completion then starts nothing. Pushing as a real identity is what makes the QA
+      # trigger fire at all.
+      #
+      # The API calls stay on `GITHUB_TOKEN` on purpose. They open the pull request, and moving
+      # them here would change who authored it - which is what `ai-review.yml` reads to decide
+      # whether it may request changes, and a pull request opened by the same identity that
+      # reviews it cannot be. One token for git, one for the API, and neither is the other's
+      # business.
+      GIT_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
+      # Read by the push step, which says different things about workflow files and about the
+      # trigger depending on whether it is pushing as a real identity or as the bot
+      HAS_PUSH_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN != '' }}
       # Any guard below can set this to false in $GITHUB_ENV, and every step after it stands
       # down. A job cannot stop itself early without failing, and failing is wrong for most
       # of what the guards catch - running the command too early, or on the wrong pull
@@ -904,7 +923,7 @@ jobs:
         run: |
           # The credential goes on the command line of the one command that needs it, the
           # same header `actions/checkout` would otherwise leave in .git/config
-          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          auth=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
 
           if git -c http.extraheader="AUTHORIZATION: basic $auth" \
                ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
@@ -1403,6 +1422,9 @@ jobs:
           TITLE: ${{ steps.stage_issue.outputs.title }}
           ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
+          # Named in the notice about a missing push token, so that what still works is spelled
+          # out as the thing somebody would actually type
+          COMMAND: ${{ inputs.command }}
         run: |
           git add -A
 
@@ -1430,7 +1452,7 @@ jobs:
             git commit --quiet -F "$RUNNER_TEMP/commit-message.txt"
           fi
 
-          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          auth=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
 
           # Where the base stands now, read before anything decides what to do about it.
           #
@@ -1556,9 +1578,14 @@ jobs:
           # only the first file it objects to - so the full list is worth having whether the
           # push then succeeds or not.
           #
+          # Whether it is refused at all now depends on the token. A `PUSH_ACCESS_TOKEN` carrying
+          # `workflow` scope is allowed through, so this reports rather than predicts: the list is
+          # what Github will be looking at, and the wording below says which of the two cases the
+          # push is in.
+          #
           # Two lists, because they are two different problems with two different answers.
-          # First, what the commits themselves changed: the agent's own doing, and no token
-          # this workflow can be given will push it.
+          # First, what the commits themselves changed: the agent's own doing, and something only
+          # a token with `workflow` scope can push.
           #
           # Measured from what this push adds to the ref, which is not what the pull request
           # shows. A round's branch already carries the base commits an earlier round replayed
@@ -1604,7 +1631,11 @@ jobs:
           workflow_files=''
           if [[ -s "$RUNNER_TEMP/workflow-files.txt" ]]; then
             workflow_files=$(paste -sd, "$RUNNER_TEMP/workflow-files.txt" | sed 's/,/, /g')
-            echo "::warning title=This push changes workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN, whatever this workflow's permissions say"
+            if [[ "$HAS_PUSH_TOKEN" == 'true' ]]; then
+              echo "::warning title=This push changes workflow files::$workflow_files - Github allows these only from a token with \`workflow\` scope, so this push fails unless PUSH_ACCESS_TOKEN has it"
+            else
+              echo "::warning title=This push changes workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN, whatever this workflow's permissions say. A PUSH_ACCESS_TOKEN with \`workflow\` scope is what pushes them"
+            fi
           fi
 
           stale_files=''
@@ -1638,6 +1669,15 @@ jobs:
           fi
 
           echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+          # The one failure mode of this workflow that is completely silent otherwise. Everything
+          # here succeeds - the work lands, the pull request updates, the round reports itself -
+          # and the next trigger simply never arrives, which reads as the checks trigger being
+          # broken rather than as a token that was never configured. Said on the successful path
+          # on purpose: this is not a failure, it is a capability the caller has not turned on.
+          if [[ "$HAS_PUSH_TOKEN" != 'true' ]]; then
+            echo "::notice title=Pushed as github-actions[bot]::No PUSH_ACCESS_TOKEN is configured, so Github will not start a workflow run from this push - the QA run it produces waits for approval, and a finished QA workflow cannot start another round. Reviews and $COMMAND still work"
+          fi
 
       # One pull request per issue, opened by the first run and reused by every round after.
       # A round never reaches this - it already has one.
