@@ -138,6 +138,30 @@ Each round also re-reads **the plan on the issue**, so [revising
 it](#when-the-plan-is-revised-under-the-work) with `/ai-plan` is how you change the approach rather
 than the code.
 
+## Checking its own work
+
+A round that pushes a code style violation costs a whole round to find out about it. So before the
+agent starts, this workflow installs the repository's dependencies and tells it the exact commands
+CI is going to check its work with - and the agent runs the fixer, runs the reporter, and pushes
+something that has already passed.
+
+Nothing to configure. It reads the repository and works out what applies:
+
+| What it finds | What happens |
+|---|---|
+| `task.sh` | Nothing. Those checks run inside a container, which is not set up yet - the agent works out what it can run for itself, as before |
+| `composer.json` and a `phpcs.xml` or `psalm.xml`, or either one's `.dist` | Dependencies installed, and the agent is given `phpcbf`, `phpcs` and `psalm` as they are configured here |
+| `composer.json` and neither | Nothing to install dependencies for |
+| Neither file | Nothing |
+
+Add `COMPOSER_ACCESS_TOKEN` if any of those dependencies are private. Without it a repository whose
+dependencies are all public still installs; one with private dependencies does not, and the round
+falls back to the artifact reports below. Everything the agent is told to run and everything it is
+warned about is in [Dig deeper](#what-the-agent-is-given-to-check-with).
+
+This covers code style and static analysis. Tests, e2e and anything that needs a container are
+still the artifact loop's job, below.
+
 ## Wiring CI into the loop
 
 Two opt-in additions, both useful, both independent of each other. Details and traps for each are
@@ -194,6 +218,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
+| `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies instead of guessing at what they would have said. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports, as before |
 | `PUSH_ACCESS_TOKEN` | no | Token the agent pushes with. **Without it its pushes trigger no workflows at all** - see [wiring CI into the loop](#wiring-ci-into-the-loop). A machine user PAT with `repo` scope, or a Github App installation token. Add `workflow` scope only if the agent should be allowed to change files under `.github/workflows` |
 
 ## Inputs
@@ -214,6 +239,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
 | `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#how-the-wait-works). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
+| `provision_checks` | boolean | `true` | Install this repository's dependencies before the agent starts and tell it the exact commands CI will check its work with, so it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). Turn it off to go back to the agent working out what it can run for itself |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
 ## Outputs
@@ -221,6 +247,44 @@ machine user PAT with `repo` scope, or a Github App installation token.
 None. The result is a branch, a pull request and a round comment.
 
 ## Dig deeper
+
+### What the agent is given to check with
+
+The commands come from the same configuration files
+[`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) detects on, and they have to stay that
+way. The point of this is that the agent gets the same answer CI will; a command that differs by a
+flag is worse than no command at all, because the agent reports clean and then goes red on the push,
+spending the round this was meant to save. `psalm.xml.dist` needs `--config` passed explicitly and
+`psalm.xml` does not, and that asymmetry is Psalm's, not ours.
+
+The agent is told to run the fixer before the reporter, and that a clean run is the floor rather
+than the whole of it - the plan's `C` checks and this repository's tests are still its own to find
+and run. It is deliberately never told these are "checks": that word already means the plan's `C`
+items in both prompts, and an agent with two meanings for it reports `C2` as discharged because a
+linter came back clean.
+
+Two things end up in the commit that a reviewer may not expect:
+
+* **`phpcbf` fixes the whole repository, not the diff.** Violations that were there before the round
+  are swept into it. That is the same thing [`cs-fix`](../actions/cs-fix.md) would have done a round
+  later, arriving earlier.
+* **A repository that commits `vendor/`** gets the install in the commit and in the review diff.
+  The run warns when installing changed tracked files and lists them, rather than acting on it.
+
+`composer.lock` is the exception: it is added to `.git/info/exclude`, so a library with no committed
+lock file does not have one pushed by the round that installed its dependencies. That only hides
+untracked files, so a repository that does commit its lock file is unaffected.
+
+The install runs `--no-scripts`. Post-install scripts are arbitrary repository code and this job has
+`ANTHROPIC_API_KEY` in its environment. `COMPOSER_ACCESS_TOKEN` is scoped to the install step
+alone - the agent inherits a populated `vendor/`, never the credential that filled it.
+
+The PHP version comes from [`_ci_environment.json`](../actions/get-default-ci-environment.md) - the
+`default` matrix entry, or the only one, or PHP 8.2 where the repository says nothing. A repository
+whose linters only pass on one leg of a matrix should name that leg `default`.
+
+Set `provision_checks: false` to skip all of it. The agent still has a shell and is still told to
+verify its own work; it just has to work out what it can run, as it did before.
 
 ### Reports from other workflows
 

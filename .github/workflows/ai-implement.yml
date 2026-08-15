@@ -9,6 +9,9 @@ on:
       PUSH_ACCESS_TOKEN:
         description: 'Token the branch is pushed with. Optional, but without it a finished QA workflow cannot start another round: Github refuses to start a workflow run from an event made with `GITHUB_TOKEN`, so a push from it produces a `pull_request` run that waits for somebody to approve it, and that run completing cannot trigger anything either - `workflow_run` inherits the same suppression. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the checks trigger work. Add `workflow` scope only if the agent should be allowed to change files under .github/workflows'
         required: false
+      COMPOSER_ACCESS_TOKEN:
+        description: 'Access token for cloning Uniques private Composer repositories, so that the agent can run this project''s checks against installed dependencies rather than guessing at what they would have said. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies falls back to the artifact reports as before'
+        required: false
     inputs:
       command:
         description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round of it'
@@ -80,6 +83,11 @@ on:
         required: false
         default: 'ai.review'
         type: string
+      provision_checks:
+        description: 'Install this repository''s dependencies before the agent starts, and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: a repository driving its checks through `task.sh` runs them inside its container and is left alone. Turn this off to go back to the agent working out what it can run for itself'
+        required: false
+        default: true
+        type: boolean
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -1113,6 +1121,165 @@ jobs:
             find .ai-reports -type f -printf '  %p (%s bytes)\n'
           fi
 
+      # Which checks the agent can run on itself before it pushes, and whether anything has to
+      # be installed for it to. A red linter found here costs the agent a few turns; found after
+      # the push it costs a whole round - a second agent run, on a fresh context, working from an
+      # artifact instead of from the tool.
+      #
+      # **Detection is deliberately the same tests php-qa-checks makes** - a config file's
+      # presence, and for Psalm which of the two names it has. The two have to agree: an agent
+      # that checks a different set than CI reports itself clean and then goes red on the push,
+      # which is worse than not checking at all, because the round that would have caught it has
+      # already been spent.
+      #
+      # A repository with `task.sh` is left alone. Its tooling lives inside the container -
+      # `./task.sh cs-check` execs into the app service - so nothing installed on the runner can
+      # run it, and the container is not up here. Those repositories keep working exactly as they
+      # did, from the check reports.
+      - name: Work out what the agent can check its work with
+        id: verify
+        if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
+        run: |
+          if [[ -f 'task.sh' ]]; then
+            echo "kind=task-sh" >> "$GITHUB_OUTPUT"
+            echo "This repository drives its checks through task.sh, which runs them inside its container - nothing to provision here"
+            exit 0
+          fi
+
+          if [[ ! -f 'composer.json' ]]; then
+            echo "kind=none" >> "$GITHUB_OUTPUT"
+            echo "Neither task.sh nor composer.json - the agent works out what it can run, as before"
+            exit 0
+          fi
+
+          # Built here and handed to the agent verbatim, so that what it runs and what CI runs
+          # cannot drift apart in a prompt somebody edited later.
+          #
+          # The fixer comes before the checker, for the same reason php-qa-checks runs it first:
+          # what a tool can fix should never reach a reviewer, and what is left after it is what
+          # the check will actually report.
+          commands=()
+          if [[ -f 'phpcs.xml' || -f 'phpcs.xml.dist' ]]; then
+            commands+=('./vendor/bin/phpcbf' './vendor/bin/phpcs')
+          fi
+
+          # `--config` for the `.dist` name only. Psalm finds `psalm.xml` by itself and stops with
+          # "Could not locate a config file" on the other one.
+          if [[ -f 'psalm.xml' ]]; then
+            commands+=('./vendor/bin/psalm')
+          elif [[ -f 'psalm.xml.dist' ]]; then
+            commands+=('./vendor/bin/psalm --config=psalm.xml.dist')
+          fi
+
+          if [[ ${#commands[@]} -eq 0 ]]; then
+            echo "kind=none" >> "$GITHUB_OUTPUT"
+            echo "composer.json is here but there is no phpcs or psalm configuration - nothing to install dependencies for"
+            exit 0
+          fi
+
+          # The prompt reads this as one block rather than assembling it from several outputs, so
+          # that what the agent is told about these commands lives next to the detection that
+          # found them. Both agent steps interpolate the same value.
+          #
+          # Deliberately never called "checks". That word already means the plan's `C` items in
+          # both prompts, and a second meaning for it here is how an agent ends up reporting `C2`
+          # as discharged because a linter came back clean.
+          {
+            echo 'kind=composer'
+            echo 'instructions<<PROMPT'
+            echo "This project's dependencies are installed for you, and these commands are what"
+            echo 'CI runs on whatever you push - whether or not the plan mentions them:'
+            echo
+            printf -- '- `%s`\n' "${commands[@]}"
+            echo
+            echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
+            echo 'what nobody should have to review, and what survives it is what CI reports.'
+            echo
+            echo 'Having these clean is the floor rather than the whole of it: they are what CI'
+            echo 'will say about your work, not everything that has to be true of it.'
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
+
+          echo "The agent can run: ${commands[*]}"
+
+      # Which PHP the checks run under, read from the same `_ci_environment.json` the QA matrix is
+      # built from. Without it the agent gets whatever `ubuntu-latest` happens to ship, which need
+      # not satisfy `composer.json`'s platform constraint - and the install then fails on the
+      # platform rather than on anything the agent did.
+      #
+      # One version, not the matrix. Proving every leg green stays CI's job; this is here so the
+      # agent can check itself before it pushes.
+      - name: Work out the PHP version to check under
+        id: php
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.kind == 'composer' }}
+        uses: uniquesca/ci/get-default-ci-environment@main
+
+      - name: Set up PHP
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.kind == 'composer' }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ fromJSON(steps.php.outputs.env)[0].php.version }}
+          extensions: ${{ fromJSON(steps.php.outputs.env)[0].php.extensions }}
+
+      # `composer install` with no lock file writes one, and a library here does not commit one -
+      # so without this the round's `git add -A` picks up a `composer.lock` the agent never asked
+      # for and pushes it as part of the change.
+      #
+      # `.git/info/exclude` only hides what git is not already tracking, so a repository that does
+      # commit its lock file still commits a real change to it. The trade is that a plan asking for
+      # a lock file to be *added* needs it added by hand - the rarer of the two, and the one that
+      # is obvious from the diff.
+      - name: Keep the install out of the commit
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.kind == 'composer' }}
+        run: printf '/composer.lock\n' >> .git/info/exclude
+
+      # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
+      # are arbitrary code out of the repository, and this job has ANTHROPIC_API_KEY in it.
+      #
+      # The token is scoped to this step, and `env:` in Actions is per-step - so the agent below
+      # inherits a populated `vendor/` and not the credential that filled it. Same property as
+      # `persist-credentials: false` on the checkout.
+      #
+      # No `--prefer-lowest` and no alternative lock file. The matrix legs that need those are
+      # CI's business; this installs what the branch says it depends on.
+      - name: Install the dependencies
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.kind == 'composer' }}
+        uses: uniquesca/ci/install-packages@main
+        with:
+          composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+          composer_cmd: 'composer install --no-scripts'
+          # phpcs and psalm want `vendor/`, not `node_modules`. Node linters are not among the
+          # checks above, and installing for them would put a lock file in the working tree for
+          # `git add -A` to commit.
+          skip_npm_yarn: true
+
+      # Whether installing changed anything git already tracks. A repository that commits its
+      # `vendor/` is the case that matters: the install then turns up inside the agent's commit,
+      # and in the diff somebody has to review.
+      #
+      # Reported rather than acted on. A repository that commits its dependencies arguably wants
+      # the install committed, and quietly reverting it here would break exactly those - so this
+      # says what happened and leaves it.
+      - name: Say what installing changed
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.kind == 'composer' }}
+        run: |
+          if ! git diff --quiet; then
+            echo "::warning title=Installing the dependencies changed tracked files::This repository commits files the install writes to, so they will be part of this round's commit. The run log lists them."
+            echo "::group::Tracked files the install changed"
+            git diff --name-status
+            echo "::endgroup::"
+          fi
+
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
       # workflow. Only the issue number goes in, which Github restricts to digits.
@@ -1178,6 +1345,8 @@ jobs:
             its tests and linters, run them, and fix what you broke. The plan's `C` checks
             are yours to execute, not to list. If you cannot get one passing, say so in
             your final message rather than leaving it quietly broken.
+
+            ${{ steps.verify.outputs.instructions }}
 
             The `QA` criteria are not yours. They are for a person testing this after it
             merges, and you have no way to discharge them - so never report one as met.
@@ -1311,6 +1480,12 @@ jobs:
             You have a shell. Use it: read the code around a comment before you change it,
             run this project's tests and linters, and fix what you break. A failing check in
             the feedback is yours to make pass, not to explain.
+
+            ${{ steps.verify.outputs.instructions }}
+
+            Where a failing check in the feedback is one of those commands, run it rather than
+            working out what it meant from `.ai-reports/` - the report is what it printed an
+            hour ago, and the command is what it says now.
 
             Do the work yourself, in this run. You have no helpers to delegate to and nothing
             is arriving later, so never end a turn saying you are waiting on anything - there
