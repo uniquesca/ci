@@ -160,7 +160,10 @@ jobs:
         with:
           php-version: ${{ matrix.env.php.version }}
           extensions: ${{ matrix.env.php.extensions }}
-          ini-values: xdebug.mode="coverage"
+          # Off here and turned on for the PHPUnit step below, which is the only one that wants a
+          # coverage report. In coverage mode Xdebug costs every line of PHP that runs under it,
+          # and Composer runs a great deal more of them than the tests do
+          ini-values: xdebug.mode=off
 
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@main
@@ -230,6 +233,11 @@ jobs:
 
       - name: Run PHPUnit
         if: env.phpunit == 1
+        # `XDEBUG_MODE` overrides the `xdebug.mode` the setup step left off, and only for this
+        # step. The coverage badge below is generated from what this run reports, so turning it
+        # on here is what keeps that badge from reading zero
+        env:
+          XDEBUG_MODE: coverage
         run: php ./vendor/bin/phpunit --configuration phpunit.xml
 
       - name: Generate coverage badge

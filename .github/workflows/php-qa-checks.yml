@@ -84,7 +84,10 @@ jobs:
         with:
           php-version: ${{ matrix.setup.php.version }}
           extensions: ${{ matrix.setup.php.extensions }}
-          ini-values: xdebug.mode="coverage"
+          # Off here and turned on for the one step that needs it, further down. The matrix adds
+          # `xdebug` to every leg, and in coverage mode it costs every line of PHP that runs under
+          # it - Composer, PHP_CodeSniffer and Psalm all pay for a report only PHPUnit produces
+          ini-values: xdebug.mode=off
 
       - name: Checkout code
         uses: actions/checkout@v7
@@ -195,6 +198,10 @@ jobs:
       # it `tee` would return success for a tool that failed - turning every red check green.
       - name: Run PHPUnit
         if: env.phpunit == 1
+        # `XDEBUG_MODE` overrides the `xdebug.mode` the setup step left off, and only for this
+        # step - so coverage is collected where it is wanted and nowhere else
+        env:
+          XDEBUG_MODE: coverage
         run: |
           set -o pipefail
           php ./vendor/bin/phpunit 2>&1 | tee "$AI_REPORT_DIR/phpunit.log"

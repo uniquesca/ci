@@ -4,10 +4,67 @@ on:
   push:
     tags:
       - '*'
+  # The escape hatch out of the change detection below, and the only way to rebuild images whose
+  # build failed on the tag that last touched them: a manual run always builds everything
+  workflow_dispatch:
 
 jobs:
-  docker-build-old:
-    name: Build
+  # The images are tagged with a PHP version, not a release version, so a tag that changes nothing
+  # under `docker/` republishes what is already there under the name it is already published as.
+  # That is most tags - this repository is released far more often than its images change
+  changes:
+    name: Decide whether the images need building
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          # The comparison below is against the previous tag, and neither it nor the history
+          # reaching back to it survives a shallow clone
+          fetch-depth: 0
+
+      - name: Decide whether the images need building
+        id: decide
+        run: |
+          set -euo pipefail
+
+          # Anything that is not a tag push is somebody asking for a build by hand
+          if [[ "$GITHUB_EVENT_NAME" != 'push' ]]; then
+            echo "Started by hand - building every image"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [[ -z "$previous" ]]; then
+            echo "No tag before $GITHUB_REF_NAME to compare against - building every image"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The workflow counts as an input to the images: a change to how they are built is a
+          # reason to build them even when no Dockerfile moved
+          watched=( docker/ .github/workflows/build-docker-images.yml )
+
+          if git diff --quiet "$previous" "$GITHUB_REF_NAME" -- "${watched[@]}"; then
+            echo "Nothing the images are built from changed between $previous and $GITHUB_REF_NAME - they would be republished byte for byte under the tags they already carry"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed between $previous and $GITHUB_REF_NAME:"
+            git diff --stat "$previous" "$GITHUB_REF_NAME" -- "${watched[@]}"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The three PROD images share nothing but their base, so they are built at once rather than one
+  # after another. Only DEV has to wait, and only because it is built FROM what this job pushes
+  prod:
+    name: PROD ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
+    needs: [ changes ]
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     # What lets the run's own token push to ghcr.io. A package these images were first pushed to
     # with a personal access token is linked to no repository, so `GITHUB_TOKEN` is refused until
@@ -18,7 +75,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: [ 5.6, 8.1, 8.2, 8.3, 8.4 ]
+        # Quoted, because YAML reads 5.6 as a number and the value is used as an image tag
+        php-version: [ '5.6', '8.1', '8.2', '8.3', '8.4' ]
+        variant: [ apachemod, fpm, apachefpm ]
+        exclude:
+          # Apache + FPM was introduced long after 5.6 went end of life, and there is no image
+          # of it for that version to build on
+          - php-version: '5.6'
+            variant: apachefpm
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -30,78 +94,143 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Choose PHP base image
-        id: php-image
+      # The default `docker` driver cannot export a build cache, so without this the layer cache
+      # below is silently ignored
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Resolve what to build
+        id: image
+        env:
+          PHP_VERSION: ${{ matrix.php-version }}
+          VARIANT: ${{ matrix.variant }}
         run: |
-          if [ "${{ matrix.php-version }}" = "5.6" ]; then
-            echo "modphp-base-image=php:5.6-apache-stretch" >> $GITHUB_OUTPUT
-            echo "fpm-base-image=php:5.6-fpm-stretch" >> $GITHUB_OUTPUT
-            echo "node-version=16" >> $GITHUB_OUTPUT
+          set -euo pipefail
+
+          # 5.6 predates every base image the others are built on, and the newest Node it can be
+          # asked to carry
+          if [[ "$PHP_VERSION" == '5.6' ]]; then
+            suite='stretch'
+            node_version='16'
           else
-            echo "modphp-base-image=php:${{ matrix.php-version }}-apache-trixie" >> $GITHUB_OUTPUT
-            echo "fpm-base-image=php:${{ matrix.php-version }}-fpm-trixie" >> $GITHUB_OUTPUT
-            echo "node-version=24" >> $GITHUB_OUTPUT
+            suite='trixie'
+            node_version='24'
           fi
 
-      - name: Build and push PHP + Apache + mod_php PROD Docker image
+          case "$VARIANT" in
+            apachemod)
+              base="php:${PHP_VERSION}-apache-${suite}"
+              # `php-prod` is what the mod_php image was called before there was more than one
+              # image, still published under both names so that anything pinned to it keeps working
+              tags="ghcr.io/uniquesca/php-apachemod-prod:${PHP_VERSION},ghcr.io/uniquesca/php-prod:${PHP_VERSION}"
+              ;;
+            fpm)
+              base="php:${PHP_VERSION}-fpm-${suite}"
+              tags="ghcr.io/uniquesca/php-fpm-prod:${PHP_VERSION}"
+              ;;
+            apachefpm)
+              base="php:${PHP_VERSION}-fpm-${suite}"
+              tags="ghcr.io/uniquesca/php-apachefpm-prod:${PHP_VERSION}"
+              ;;
+            *)
+              echo "::error::No PROD image is defined for the variant $VARIANT"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "base=$base"
+            echo "tags=$tags"
+            echo "node_version=$node_version"
+            # Kept in the image's own package, which already grants this repository the Write role
+            # the images are pushed with. One cache per PHP version: they share a package, and a
+            # single ref would have each build overwrite the last one's cache
+            echo "cache=ghcr.io/uniquesca/php-${VARIANT}-prod:buildcache-${PHP_VERSION}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          file: docker/php-apachemod-prod/Dockerfile
+          file: docker/php-${{ matrix.variant }}-prod/Dockerfile
           push: true
-          tags: ghcr.io/uniquesca/php-apachemod-prod:${{ matrix.php-version }},ghcr.io/uniquesca/php-prod:${{ matrix.php-version }}
+          tags: ${{ steps.image.outputs.tags }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
-            PHP_BASE_IMAGE=${{ steps.php-image.outputs.modphp-base-image }}
-            NODE_VERSION=${{ steps.php-image.outputs.node-version }}
+            PHP_BASE_IMAGE=${{ steps.image.outputs.base }}
+            NODE_VERSION=${{ steps.image.outputs.node_version }}
+          # What makes a one-line change to a Dockerfile cost one layer instead of an apt install,
+          # a Node build and every PHP extension. `mode=max` so the intermediate layers are kept
+          # too, not just the ones in the final image
+          cache-from: type=registry,ref=${{ steps.image.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max
+          # Buildx would otherwise attach a provenance attestation, which turns a single-platform
+          # image into a manifest list. The images were published without one for years, and this
+          # is not the change to start
+          provenance: false
 
-      - name: Build and push PHP FPM PROD Docker image
+  # Every DEV image is its PROD image plus Xdebug, pulled by tag - so this waits for the whole
+  # PROD matrix. It is a single layer over an image that was just built, so there is no cache
+  # here worth keeping: a fresh PROD digest invalidates it every time
+  dev:
+    name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
+    needs: [ changes, prod ]
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: [ '5.6', '8.1', '8.2', '8.3', '8.4' ]
+        variant: [ apachemod, fpm, apachefpm ]
+        exclude:
+          - php-version: '5.6'
+            variant: apachefpm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve what to build
+        id: image
+        env:
+          PHP_VERSION: ${{ matrix.php-version }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+
+          # No `PHP_BASE_IMAGE`: each DEV Dockerfile defaults it to its own PROD image at this
+          # version, which is exactly what the job above pushed
+          case "$VARIANT" in
+            apachemod)
+              tags="ghcr.io/uniquesca/php-apachemod-dev:${PHP_VERSION},ghcr.io/uniquesca/php-dev:${PHP_VERSION}"
+              ;;
+            fpm)
+              tags="ghcr.io/uniquesca/php-fpm-dev:${PHP_VERSION}"
+              ;;
+            apachefpm)
+              tags="ghcr.io/uniquesca/php-apachefpm-dev:${PHP_VERSION}"
+              ;;
+            *)
+              echo "::error::No DEV image is defined for the variant $VARIANT"
+              exit 1
+              ;;
+          esac
+
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          file: docker/php-fpm-prod/Dockerfile
+          file: docker/php-${{ matrix.variant }}-dev/Dockerfile
           push: true
-          tags: ghcr.io/uniquesca/php-fpm-prod:${{ matrix.php-version }}
-          build-args: |
-            PHP_VERSION=${{ matrix.php-version }}
-            PHP_BASE_IMAGE=${{ steps.php-image.outputs.fpm-base-image }}
-            NODE_VERSION=${{ steps.php-image.outputs.node-version }}
-
-
-      - name: Build and push PHP FPM + Apache PROD Docker image
-        if: matrix.php-version != '5.6'
-        uses: docker/build-push-action@v7
-        with:
-          file: docker/php-apachefpm-prod/Dockerfile
-          push: true
-          tags: ghcr.io/uniquesca/php-apachefpm-prod:${{ matrix.php-version }}
-          build-args: |
-            PHP_VERSION=${{ matrix.php-version }}
-            PHP_BASE_IMAGE=${{ steps.php-image.outputs.fpm-base-image }}
-            NODE_VERSION=${{ steps.php-image.outputs.node-version }}
-
-      - name: Build and push PHP + Apache + mod_php DEV Docker image
-        uses: docker/build-push-action@v7
-        with:
-          file: docker/php-apachemod-dev/Dockerfile
-          push: true
-          tags: ghcr.io/uniquesca/php-apachemod-dev:${{ matrix.php-version }},ghcr.io/uniquesca/php-dev:${{ matrix.php-version }}
-          build-args: |
-            PHP_VERSION=${{ matrix.php-version }}
-
-      - name: Build and push PHP FPM DEV Docker image
-        uses: docker/build-push-action@v7
-        with:
-          file: docker/php-fpm-dev/Dockerfile
-          push: true
-          tags: ghcr.io/uniquesca/php-fpm-dev:${{ matrix.php-version }}
-          build-args: |
-            PHP_VERSION=${{ matrix.php-version }}
-
-      - name: Build and push PHP FPM + Apache DEV Docker image
-        uses: docker/build-push-action@v7
-        if: matrix.php-version != '5.6'
-        with:
-          file: docker/php-apachefpm-dev/Dockerfile
-          push: true
-          tags: ghcr.io/uniquesca/php-apachefpm-dev:${{ matrix.php-version }}
+          tags: ${{ steps.image.outputs.tags }}
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}

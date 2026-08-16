@@ -196,7 +196,7 @@ runs:
         path: ${{ steps.npm_cache_dir.outputs.path }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-npm-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.npm_cache_key_file.outputs.file)) }}
         restore-keys: |
-          ${{ runner.os }}-npm-
+          ${{ runner.os }}-${{ inputs.cache_key}}-npm-
 
     - name: Install NPM dependencies
       shell: bash
@@ -240,7 +240,7 @@ runs:
         path: ${{ steps.yarn_cache_dir.outputs.path }}
         key: ${{ runner.os }}-${{ inputs.cache_key}}-yarn-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.yarn_cache_key_file.outputs.file)) }}
         restore-keys: |
-          ${{ runner.os }}-yarn-
+          ${{ runner.os }}-${{ inputs.cache_key}}-yarn-
 
     - name: Install Yarn dependencies
       shell: bash

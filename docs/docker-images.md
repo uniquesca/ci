@@ -46,3 +46,17 @@ All the images contain:
 DEV images additional have:
 1. PHP Extensions:
    * xdebug
+
+## When they are built
+
+On a tag push, and **only when something under `docker/` changed since the previous tag**. The
+images carry a PHP version rather than a release version, so a tag that touches nothing they are
+built from would republish them unchanged under the names they already have.
+
+The three PROD images build in parallel, and the DEV images follow once their PROD image is
+pushed. Build layers are cached in each image's own package, under a `buildcache-<php-version>`
+tag alongside the images themselves.
+
+To build everything regardless, run the **Build Docker images** workflow by hand from the Actions
+tab. **That is the only way to recover a failed build**: if the run for the tag that changed a
+Dockerfile went red, no later tag rebuilds it, because by then nothing has changed.

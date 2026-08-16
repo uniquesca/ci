@@ -54,7 +54,8 @@ What happens on each run:
 6. If `use_db` is set and the repository has PHPUnit, MySQL is started, the `phpunit`
    database is created, `db_dump_path` is imported, and `db_migration_cmd` runs.
 7. PHPUnit runs, then PHP_CodeSniffer, then Psalm. `fail-fast` is off, so one PHP version
-   failing does not cancel the others.
+   failing does not cancel the others. Xdebug is in coverage mode for PHPUnit and off for
+   everything else, which is most of what keeps Composer, PHP_CodeSniffer and Psalm quick.
 
 The MySQL steps are skipped entirely when the repository has no PHPUnit configuration -
 there would be nothing to use the database.
