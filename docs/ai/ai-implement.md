@@ -141,26 +141,46 @@ than the code.
 ## Checking its own work
 
 A round that pushes a code style violation costs a whole round to find out about it. So before the
-agent starts, this workflow installs the repository's dependencies and tells it the exact commands
-CI is going to check its work with - and the agent runs the fixer, runs the reporter, and pushes
-something that has already passed.
+agent starts, this workflow sets the runner up the way CI sets it up - configuration rendered,
+application running, dependencies installed - and tells it the exact commands CI is going to check
+its work with. The agent runs the fixer, runs the reporter, and pushes something that has already
+passed.
 
 Nothing to configure. It reads the repository and works out what applies:
 
 | What it finds | What happens |
 |---|---|
-| `task.sh` | Nothing. Those checks run inside a container, which is not set up yet - the agent works out what it can run for itself, as before |
+| `task.sh`, or a compose file | The application is brought up, which renders `_ci_environment.json`'s `configs` from the tokens you pass and keeps them out of the round's commit. With a `task.sh`, the agent is given whichever of `cs-fix`, `cs-check`, `psalm` and `test` it supports |
 | `composer.json` and a `phpcs.xml` or `psalm.xml`, or either one's `.dist` | Dependencies installed, and the agent is given `phpcbf`, `phpcs` and `psalm` as they are configured here |
 | `composer.json` and neither | Nothing to install dependencies for |
-| Neither file | Nothing |
+| Neither | Nothing - the agent works out what it can run for itself |
 
-Add `COMPOSER_ACCESS_TOKEN` if any of those dependencies are private. Without it a repository whose
-dependencies are all public still installs; one with private dependencies does not, and the round
-falls back to the artifact reports below. Everything the agent is told to run and everything it is
-warned about is in [Dig deeper](#what-the-agent-is-given-to-check-with).
+Configuration tokens go in as a secret, because they are the environment's credentials - and the
+agent has a shell, so **give it a test environment's and never production's**:
 
-This covers code style and static analysis. Tests, e2e and anything that needs a container are
-still the artifact loop's job, below.
+```yaml
+jobs:
+  ai-implement:
+    permissions:
+      # What the run's own token pulls the images with - see below
+      packages: read
+    uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
+    with:
+      # The default is 65 against an agent_timeout_minutes of 60, and pulling images eats that gap
+      timeout_minutes: 80
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ENV_VARIABLES: ${{ secrets.ENV_VARIABLES }}
+```
+
+Images need no secret: `ghcr.io` is logged into with the run's own token, which is what
+[`packages: read`](#pulling-the-images) is for. Add `COMPOSER_ACCESS_TOKEN` if any Composer
+dependencies are private - one whose dependencies are all public installs without it, and one that
+needs it falls back to the artifact reports below. Everything the agent is told to run and
+everything it is warned about is in [Dig deeper](#what-the-agent-is-given-to-check-with).
+
+Tests that need a browser, and anything else no `task.sh` task covers, are still the artifact
+loop's job, below.
 
 ## Wiring CI into the loop
 
@@ -218,6 +238,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
+| `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with, merged over the `env_variables` input. A secret rather than an input because it holds the environment's credentials - and **the agent can read them**, so make them a test environment's |
 | `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies instead of guessing at what they would have said. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports, as before |
 | `PUSH_ACCESS_TOKEN` | no | Token the agent pushes with. **Without it its pushes trigger no workflows at all** - see [wiring CI into the loop](#wiring-ci-into-the-loop). A machine user PAT with `repo` scope, or a Github App installation token. Add `workflow` scope only if the agent should be allowed to change files under `.github/workflows` |
 
@@ -239,7 +260,10 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
 | `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#how-the-wait-works). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
-| `provision_checks` | boolean | `true` | Install this repository's dependencies before the agent starts and tell it the exact commands CI will check its work with, so it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). Turn it off to go back to the agent working out what it can run for itself |
+| `provision_checks` | boolean | `true` | Set the runner up before the agent starts - bring the application up with its config templates rendered, install the dependencies - and tell it the exact commands CI will check its work with, so it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). The master switch for all of it: turn it off and nothing is prepared |
+| `env_variables` | string | `'{}'` | JSON object of configuration tokens, for the ones that are not secret. The `ENV_VARIABLES` secret is merged over this. Read only when the application is brought up, which is what renders the templates |
+| `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
+| `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
 ## Outputs
@@ -251,11 +275,14 @@ None. The result is a branch, a pull request and a round comment.
 ### What the agent is given to check with
 
 The commands come from the same configuration files
-[`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) detects on, and they have to stay that
-way. The point of this is that the agent gets the same answer CI will; a command that differs by a
-flag is worse than no command at all, because the agent reports clean and then goes red on the push,
+[`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) and
+[`docker-qa-checks`](../actions/docker-qa-checks.md) detect on, and they have to stay that way. The
+point of this is that the agent gets the same answer CI will; a command that differs by a flag is
+worse than no command at all, because the agent reports clean and then goes red on the push,
 spending the round this was meant to save. `psalm.xml.dist` needs `--config` passed explicitly and
-`psalm.xml` does not, and that asymmetry is Psalm's, not ours.
+`psalm.xml` does not, and that asymmetry is Psalm's, not ours. In a container the four tasks are
+asked for with `./task.sh supports`, which is the repository's own answer about itself, so a task
+that was renamed is never offered.
 
 The agent is told to run the fixer before the reporter, and that a clean run is the floor rather
 than the whole of it - the plan's `C` checks and this repository's tests are still its own to find
@@ -275,9 +302,31 @@ Two things end up in the commit that a reviewer may not expect:
 lock file does not have one pushed by the round that installed its dependencies. That only hides
 untracked files, so a repository that does commit its lock file is unaffected.
 
+Every path in `_ci_environment.json`'s `configs` is excluded the same way, and for a stronger
+reason: a rendered config holds the credentials it was rendered from, and the round commits its
+working tree. The same limitation applies - a repository that *commits* a file it renders gets a
+warning naming it and the file goes into the pull request, so either gitignore it or do not give
+this workflow a secret you would mind reading there. Watch for the containers too: anything they
+write into the checkout is swept into the commit unless the repository already ignores it, which is
+why they run as the runner's own user rather than as root.
+
+The rendering is [`docker-spin-up`](../actions/docker-spin-up.md)'s and happens only as part of
+bringing the application up. There is deliberately no standalone render: what gets built here
+without a container is libraries, and a library has no configuration to render - so a repository
+that would need one is one nothing else about this would work for either.
+
+The spin-up cannot fail a round. A template referencing a token nobody supplied, or a compose file
+the branch itself just broke, leaves a warning on the run and the round goes on without a
+container - failing instead would mean the repository whose setup is broken is the one that cannot
+be worked on. What it costs is the feedback: the agent is back to the artifact reports for what CI
+would say. It costs time as well, inside the job's own limit, which is what `timeout_minutes` has to
+have room for.
+
 The install runs `--no-scripts`. Post-install scripts are arbitrary repository code and this job has
 `ANTHROPIC_API_KEY` in its environment. `COMPOSER_ACCESS_TOKEN` is scoped to the install step
-alone - the agent inherits a populated `vendor/`, never the credential that filled it.
+alone - the agent inherits a populated `vendor/`, never the credential that filled it. The one place
+repository code does run here is `_ci_environment.json`'s `init_script`, which
+[`docker-spin-up`](../actions/docker-spin-up.md) executes before the containers start.
 
 The PHP version comes from [`_ci_environment.json`](../actions/get-default-ci-environment.md) - the
 `default` matrix entry, or the only one, or PHP 8.2 where the repository says nothing. A repository
@@ -285,6 +334,21 @@ whose linters only pass on one leg of a matrix should name that leg `default`.
 
 Set `provision_checks: false` to skip all of it. The agent still has a shell and is still told to
 verify its own work; it just has to work out what it can run, as it did before.
+
+### Pulling the images
+
+`ghcr.io` is the only registry logged into, with `github.actor` and the run's own `GITHUB_TOKEN`, so
+there is no secret to configure and nothing for the agent to find. Two things have to be true for a
+private image, and both fail the same way - the pull is denied and the round carries on without a
+container:
+
+* **`packages: read` on the calling job.** A reusable workflow cannot hold a permission its caller
+  does not grant, exactly as with `actions: read`. Without it the token has `packages: none`.
+* **The package has to be linked to the repository.** An image first pushed to `ghcr.io` with a
+  personal access token belongs to no repository, and `GITHUB_TOKEN` is refused for it until that
+  package grants this one the Read role under **Package settings → Manage Actions access**.
+
+Public images need neither, and a repository pulling only from Docker Hub is unaffected either way.
 
 ### Reports from other workflows
 
