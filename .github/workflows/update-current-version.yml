@@ -12,7 +12,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          # Full history, because a shallow clone has no merge base for the merge below
           fetch-depth: 0
+          # The merge needs the file contents of the two tips and their merge base, and git
+          # fetches those when it reaches them. What this skips is every other version of every
+          # file in the history, which the merge never looks at
+          filter: blob:none
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git

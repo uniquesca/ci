@@ -34,7 +34,12 @@ runs:
     - name: Checkout
       uses: actions/checkout@v6
       with:
+        # Full history, because the changelog below is generated from the log between two tags
         fetch-depth: 0
+        # None of the file contents that history is made of, though - `update-changelog` reads
+        # commit messages and tag names and nothing else. Git fetches a blob if something does
+        # ask for one, so this is a saving rather than a restriction
+        filter: blob:none
 
     - name: Create dist
       if: ${{ inputs.attach_dist == 'true' }}

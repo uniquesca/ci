@@ -57,8 +57,14 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Checkout code
+      # `qa-ci-matrix` reads one file and nothing else, and this job is on the critical path of
+      # every run - every check below waits for it. Cone mode off so the pattern is matched as a
+      # path rather than a directory prefix
+      - name: Checkout the environment file
         uses: actions/checkout@v7
+        with:
+          sparse-checkout: _ci_environment.json
+          sparse-checkout-cone-mode: false
 
       - name: Get QA matrix
         id: matrix
@@ -174,7 +180,15 @@ jobs:
         uses: shogo82148/actions-setup-mysql@v1
         with:
           mysql-version: ${{ inputs.mysql_version }}
-          my-cnf: ${{ inputs.mysql_config }}
+          # This database is created, filled from a dump and thrown away inside one job, so it
+          # is paying for durability it can never need - these three are what most of that costs.
+          # `mysql_config` is appended rather than replaced, and the last setting of an option
+          # wins, so anything the caller names still overrides what is here
+          my-cnf: |
+            innodb_flush_log_at_trx_commit=0
+            innodb_doublewrite=0
+            sync_binlog=0
+            ${{ inputs.mysql_config }}
           root-password: 'root'
           auto-start: true
 

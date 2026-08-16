@@ -108,7 +108,7 @@ jobs:
 | `setup_cmd` | string | `''` | Command to run before the checks execute |
 | `use_db` | boolean | `false` | Whether a database is needed, for example for unit tests |
 | `mysql_version` | string | `8.0` | Version of MySQL to set up |
-| `mysql_config` | string | `''` | MySQL config to apply, `my.cnf` syntax |
+| `mysql_config` | string | `''` | MySQL config to apply, `my.cnf` syntax. Appended to the CI durability defaults (`innodb_flush_log_at_trx_commit=0`, `innodb_doublewrite=0`, `sync_binlog=0`), so it overrides them |
 | `db_dump_path` | string | | Path to the DB dump. Ignored unless `use_db` is `true` |
 | `db_migration_cmd` | string | `''` | Migration command, runs before the unit tests |
 | `env_variables` | string | `'{}'` | JSON object of environment variables |
