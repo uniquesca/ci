@@ -238,7 +238,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
-| `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with, merged over the `env_variables` input. A secret rather than an input because it holds the environment's credentials - and **the agent can read them**, so make them a test environment's |
+| `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with. Read only when the application is brought up, which is what renders the templates. **The agent can read them**, so make them a test environment's |
 | `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies instead of guessing at what they would have said. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports, as before |
 | `PUSH_ACCESS_TOKEN` | no | Token the agent pushes with. **Without it its pushes trigger no workflows at all** - see [wiring CI into the loop](#wiring-ci-into-the-loop). A machine user PAT with `repo` scope, or a Github App installation token. Add `workflow` scope only if the agent should be allowed to change files under `.github/workflows` |
 
@@ -261,7 +261,6 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
 | `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#how-the-wait-works). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts - bring the application up with its config templates rendered, install the dependencies - and tell it the exact commands CI will check its work with, so it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). The master switch for all of it: turn it off and nothing is prepared |
-| `env_variables` | string | `'{}'` | JSON object of configuration tokens, for the ones that are not secret. The `ENV_VARIABLES` secret is merged over this. Read only when the application is brought up, which is what renders the templates |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
@@ -602,6 +601,10 @@ It **may not**, and cannot:
   them can reach a commit however the agent leaves the working tree. Its replies to your threads
   are the one thing it writes back, and they are validated rather than trusted - a reply to a
   thread that was not part of this round is discarded.
+
+It is also told never to touch `CHANGELOG.md` - the release generates it from the git log, so an
+entry written by hand is overwritten or left conflicting. Instruction rather than enforcement,
+unlike the list above, and [`ai-review`](ai-review.md) is told to comment if one appears anyway.
 
 What actually limits this is the permission gate and the branch check, not the tool list. An agent
 with a shell runs whatever an issue body or a review comment talks it into, and

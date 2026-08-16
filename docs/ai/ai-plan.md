@@ -251,6 +251,9 @@ conventions from a sample of files. Worth putting in it: how to build and test, 
 laid out, the conventions a change is expected to follow, and anything surprising a newcomer
 would get wrong.
 
+The agent is told never to plan a step or a check that edits `CHANGELOG.md` - the release generates
+it from the git log, so one sends the implementing agent to do work that gets thrown away.
+
 ### What the agent can and cannot do
 
 It has **no shell and no network**. It cannot fetch the issue, so the workflow writes the issue
