@@ -204,7 +204,9 @@ reviewer, because the loop never ends and every turn costs money. Four things wo
   concern to justify the review, and not to request changes over a preference. It is also told what
   to do with a concern the implementing agent answered with a reasoned refusal: accept the argument,
   or say in the summary that a person should settle it. **Not** to repeat it. Two agents restating
-  positions at each other is the specific failure this has to avoid.
+  positions at each other is the specific failure this has to avoid. It is also told that a missing
+  `CHANGELOG.md` entry is never a finding, since the release generates that file from the git log -
+  and that a pull request editing it is worth a comment the other way.
 
 If the cap is reached while the reviewer still wants changes, the pull request is left with a
 blocking review and a comment asking for a person. That is the correct end state: something needs

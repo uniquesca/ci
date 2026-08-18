@@ -48,7 +48,7 @@ jobs:
 | `migration_command` | string | `./vendor/bin/phinx migrate` | Migration command |
 | `sql_command` | string | | SQL to run before exporting the dump, usually cleanup |
 | `mysql_version` | string | `8.0` | Version of MySQL to set up |
-| `mysql_config` | string | `''` | MySQL config to apply, `my.cnf` syntax |
+| `mysql_config` | string | `''` | MySQL config to apply, `my.cnf` syntax. Appended to the CI durability defaults (`innodb_flush_log_at_trx_commit=0`, `innodb_doublewrite=0`, `sync_binlog=0`), so it overrides them |
 | `env_variables` | string | `'{}'` | JSON object of environment variables for the config templates |
 | `node_version` | number | `20` | Node version to use |
 | `pre_cmd` | string | `''` | Command to run before anything else |

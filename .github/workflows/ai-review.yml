@@ -330,6 +330,10 @@ jobs:
 
             Everything smaller is a `comment` verdict, or not worth saying.
 
+            A missing `CHANGELOG.md` entry is never a finding. Every repository here generates
+            that file from the git log when it releases, so nothing in a pull request should be
+            editing it - and if something does, that is worth an inline comment the other way.
+
             The plan's `QA` criteria are for a person to test by hand, and you cannot run them.
             Not being able to verify one is not a finding, and it is not grounds for requesting
             changes. What is worth saying is that the code cannot satisfy one as written, or that

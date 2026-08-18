@@ -17,7 +17,7 @@ Imports a SQL dump into a database with the `mysql` client. The database has to 
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `dump_file_path` | yes | | Path to the dump to import |
+| `dump_file_path` | yes | | Path to the dump to import. Decompressed on the way in when it ends in `.gz` |
 | `db_name` | yes | | Database to import into |
 | `host` | no | `127.0.0.1` | MySQL server address |
 | `port` | no | `3306` | MySQL port |
@@ -39,6 +39,10 @@ than the two required ones, which is why they are the defaults.
 
 The dump is fed in on stdin, so anything a dump can contain runs: a `USE` statement in the file
 wins over `db_name`, and a dump taken with `--all-databases` ignores it entirely.
+
+`unique_checks` and `foreign_key_checks` are turned off for the connection, which is what makes a
+large import worth waiting for. A dump from `mysqldump` turns both off in its own preamble
+anyway - this is for the ones written by something else.
 
 ### Where it is used for you
 

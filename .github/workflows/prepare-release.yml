@@ -95,7 +95,13 @@ jobs:
     outputs:
       env: ${{ steps.env.outputs.env }}
     steps:
+      # `get-default-ci-environment` reads one file and nothing else, and the release job below
+      # waits for this one. Cone mode off so the pattern is matched as a path rather than a
+      # directory prefix
       - uses: actions/checkout@v6
+        with:
+          sparse-checkout: _ci_environment.json
+          sparse-checkout-cone-mode: false
 
       - id: env
         uses: uniquesca/ci/get-default-ci-environment@main
@@ -111,7 +117,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          # Full history, because the changelog is generated from the log between two tags
           fetch-depth: 0
+          # None of the file contents that history is made of, though - the changelog is built
+          # from commit messages, and everything else here works on the tree as it is now. Git
+          # fetches a blob if something does ask for one, so this is a saving rather than a
+          # restriction
+          filter: blob:none
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -160,7 +172,10 @@ jobs:
         with:
           php-version: ${{ matrix.env.php.version }}
           extensions: ${{ matrix.env.php.extensions }}
-          ini-values: xdebug.mode="coverage"
+          # Off here and turned on for the PHPUnit step below, which is the only one that wants a
+          # coverage report. In coverage mode Xdebug costs every line of PHP that runs under it,
+          # and Composer runs a great deal more of them than the tests do
+          ini-values: xdebug.mode=off
 
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@main
@@ -173,7 +188,15 @@ jobs:
         uses: shogo82148/actions-setup-mysql@v1
         with:
           mysql-version: ${{ inputs.mysql_version }}
-          my-cnf: ${{ inputs.mysql_config }}
+          # This database is created, filled from a dump and thrown away inside one job, so it
+          # is paying for durability it can never need - these three are what most of that costs.
+          # `mysql_config` is appended rather than replaced, and the last setting of an option
+          # wins, so anything the caller names still overrides what is here
+          my-cnf: |
+            innodb_flush_log_at_trx_commit=0
+            innodb_doublewrite=0
+            sync_binlog=0
+            ${{ inputs.mysql_config }}
           root-password: 'root'
           auto-start: true
 
@@ -230,6 +253,11 @@ jobs:
 
       - name: Run PHPUnit
         if: env.phpunit == 1
+        # `XDEBUG_MODE` overrides the `xdebug.mode` the setup step left off, and only for this
+        # step. The coverage badge below is generated from what this run reports, so turning it
+        # on here is what keeps that badge from reading zero
+        env:
+          XDEBUG_MODE: coverage
         run: php ./vendor/bin/phpunit --configuration phpunit.xml
 
       - name: Generate coverage badge

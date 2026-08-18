@@ -12,6 +12,9 @@ on:
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private Composer repositories, so that the agent can run this project''s checks against installed dependencies rather than guessing at what they would have said. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies falls back to the artifact reports as before'
         required: false
+      ENV_VARIABLES:
+        description: 'JSON object of configuration tokens this repository''s config templates are rendered with. Read only when the application is brought up, which is what renders the templates. These reach a shell the agent controls, so give it a test environment''s credentials and never production''s'
+        required: false
     inputs:
       command:
         description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round of it'
@@ -84,10 +87,20 @@ on:
         default: 'ai.review'
         type: string
       provision_checks:
-        description: 'Install this repository''s dependencies before the agent starts, and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: a repository driving its checks through `task.sh` runs them inside its container and is left alone. Turn this off to go back to the agent working out what it can run for itself'
+        description: 'Set the runner up before the agent starts - bring this repository''s application up in Docker with its config templates rendered, install its dependencies - and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: what is there decides what is done. The master switch for all of it: turn it off and nothing is prepared, and the agent works out what it can run for itself'
         required: false
         default: true
         type: boolean
+      spin_up_docker:
+        description: 'Bring this repository''s application up in Docker before the agent starts, when it has a `task.sh` or a compose file. That is what lets a repository whose checks run inside its container have them run at all - the agent is given the `task.sh` commands it supports. Costs whatever pulling the images and starting the containers takes, so `timeout_minutes` needs room above `agent_timeout_minutes` for it'
+        required: false
+        default: true
+        type: boolean
+      docker_profile:
+        description: 'Docker Compose profile to bring up, for a repository whose test services are behind one'
+        required: false
+        default: ''
+        type: string
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -184,6 +197,13 @@ jobs:
       # reusable workflow cannot hold a permission its caller does not grant, so the caller
       # needs this too.
       actions: read
+      # What lets the run's own token pull this organisation's images from ghcr.io when the
+      # application is brought up. The same caller rule applies as above.
+      #
+      # Not sufficient on its own: an image first pushed to ghcr.io with a personal access token
+      # is linked to no repository, and `GITHUB_TOKEN` is refused for it until that package grants
+      # this repository the Read role under Package settings, Manage Actions access.
+      packages: read
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1132,17 +1152,17 @@ jobs:
       # which is worse than not checking at all, because the round that would have caught it has
       # already been spent.
       #
-      # A repository with `task.sh` is left alone. Its tooling lives inside the container -
-      # `./task.sh cs-check` execs into the app service - so nothing installed on the runner can
-      # run it, and the container is not up here. Those repositories keep working exactly as they
-      # did, from the check reports.
+      # A repository with `task.sh` installs nothing here. Its tooling lives inside the container -
+      # `./task.sh cs-check` execs into the app service - so nothing installed on the runner could
+      # run it. Its commands are worked out further down instead, once the container it needs is
+      # actually up.
       - name: Work out what the agent can check its work with
         id: verify
         if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
         run: |
           if [[ -f 'task.sh' ]]; then
             echo "kind=task-sh" >> "$GITHUB_OUTPUT"
-            echo "This repository drives its checks through task.sh, which runs them inside its container - nothing to provision here"
+            echo "This repository drives its checks through task.sh, which runs them inside its container - nothing to install on the runner"
             exit 0
           fi
 
@@ -1280,6 +1300,218 @@ jobs:
             echo "::endgroup::"
           fi
 
+      # Everything from here to the agent is about the application rather than the toolchain: its
+      # configuration rendered from the repository's own templates, and its containers brought up.
+      #
+      # Deliberately after the install and its diff above, which asks whether installing changed
+      # anything git tracks. Rendering a config file first would put it in that answer and report
+      # the install for a file it never touched.
+      #
+      # Detection rather than configuration, on the same terms as the step above: what the
+      # repository has is what decides. Two independent things are being looked for, and a
+      # repository can have either, both or neither.
+      - name: Work out how this application is set up
+        id: setup
+        if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
+        env:
+          SPIN_UP: ${{ inputs.spin_up_docker }}
+        run: |
+          environment='false'
+          if [[ -f '_ci_environment.json' ]]; then
+            environment='true'
+            echo "_ci_environment.json is here, so bringing the application up renders this repository's config templates"
+          fi
+
+          # `task.sh` first, because that is what this organisation's repositories drive compose
+          # with and `docker-spin-up` prefers it. The compose file names are the ones Docker itself
+          # looks for, so a repository using any of them is one `docker compose up` can start.
+          docker='false'
+          for candidate in task.sh docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+            if [[ -f "$candidate" ]]; then
+              docker='true'
+              echo "$candidate is here, so this repository has an application that can be brought up"
+              break
+            fi
+          done
+
+          # Said out loud rather than passed over in silence. A repository that has a container and
+          # does not get one is the case where the agent's checks quietly become the artifact loop
+          # again, and the reason for it is a workflow input somebody set months ago.
+          if [[ "$docker" == 'true' && "$SPIN_UP" != 'true' ]]; then
+            echo "spin_up_docker is off, so it is left down and the agent works without it"
+          fi
+
+          {
+            printf 'environment=%s\n' "$environment"
+            printf 'docker=%s\n' "$docker"
+          } >> "$GITHUB_OUTPUT"
+
+      # A rendered config file holds the credentials it was rendered from, and this round commits
+      # its working tree with `git add -A`. Without this, the first run on a repository whose
+      # config is generated pushes that config to a branch and opens a pull request showing it.
+      #
+      # In front of the spin-up, which is what renders them - `.git/info/exclude` is read when
+      # `git add` runs rather than when it is written, but the ordering is what makes that obvious.
+      #
+      # The same mechanism and the same limitation as `Keep the install out of the commit`:
+      # `.git/info/exclude` only hides what git is not already tracking. A repository that commits
+      # a rendered config cannot be helped this way, so it is named in a warning instead - there is
+      # no safe thing to do with it here, and quietly reverting the file would leave the
+      # application running against a configuration the working tree does not have.
+      - name: Keep the rendered configuration out of the commit
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && inputs.provision_checks
+          && steps.setup.outputs.environment == 'true'
+          && steps.setup.outputs.docker == 'true' && inputs.spin_up_docker }}
+        run: |
+          tracked=()
+          excluded=0
+
+          # `.configs[]?` rather than `.configs[]`, so a file declaring only `token_fallbacks` is
+          # not an error. `while read` and not a `for`, because a path may legitimately have a
+          # space in it.
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+
+            # `.git/info/exclude` patterns are matched from the repository root when they start
+            # with a slash, and a path out of this file may or may not be written `./like/this`
+            path="${path#./}"
+
+            if git ls-files --error-unmatch -- "$path" > /dev/null 2>&1; then
+              tracked+=("$path")
+              continue
+            fi
+
+            printf '/%s\n' "$path" >> .git/info/exclude
+            excluded=$((excluded + 1))
+          done < <(jq -r '.configs[]?.path // empty' _ci_environment.json)
+
+          echo "$excluded rendered config file(s) will be kept out of this round's commit"
+
+          if [[ ${#tracked[@]} -gt 0 ]]; then
+            echo "::warning title=This repository commits a file it renders::${tracked[*]} - rendering writes the configuration this run was given into ${#tracked[@]} file(s) git already tracks, so they will be part of this round's commit and whatever they hold will be in the pull request. Add them to .gitignore, or do not give this workflow credentials you would mind seeing there"
+          fi
+
+      # The application itself. This renders the configs, runs `_ci_environment.json`'s
+      # `init_script`, starts the containers as the runner's own user and waits for MySQL if
+      # `task.sh` can be asked about it - see the action.
+      #
+      # `ghcr.io` and nothing else, because that is where this organisation's images are built and
+      # pushed - a repository pulling from anywhere else is pulling something public, and a
+      # registry nobody logs into still serves those.
+      #
+      # The run's own token, so there is no secret to configure and nothing for the agent to find.
+      # It needs the `packages: read` granted above, and the package itself has to be linked to
+      # this repository - see the note there.
+      #
+      # Its own step rather than `docker-spin-up`'s registry inputs: this is one fixed registry
+      # authenticated one fixed way, and passing it through three inputs said the same thing at
+      # more length. Allowed to fail for the same reason as the spin-up below - a login that does
+      # not work is a round without a container, not a round that cannot happen.
+      - name: Log in to the container registry
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && inputs.provision_checks
+          && steps.setup.outputs.docker == 'true' && inputs.spin_up_docker }}
+        continue-on-error: true
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # This is what makes a repository whose checks live inside its container checkable at all.
+      # Until it, `./task.sh cs-check` had nothing to exec into, and the agent's only account of
+      # what CI would say was an artifact from an hour earlier.
+      #
+      # `|| '{}'` because a secret nobody configured is an empty string, and passing one explicitly
+      # overrides the action's own `{}` default rather than falling back to it - an empty object is
+      # `{}`, not ``.
+      - name: Spin the application up in Docker
+        id: docker_up
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && inputs.provision_checks
+          && steps.setup.outputs.docker == 'true' && inputs.spin_up_docker }}
+        continue-on-error: true
+        uses: uniquesca/ci/docker-spin-up@main
+        with:
+          env_variables: ${{ secrets.ENV_VARIABLES || '{}' }}
+          profile: ${{ inputs.docker_profile }}
+
+      # The spin-up is allowed to fail, so somewhere has to say that it did. A warning and not an
+      # error: the round goes on, and what it lost is a way for the agent to check itself rather
+      # than the work.
+      #
+      # `success()` still holds when it failed - that is what `continue-on-error` does to a step's
+      # conclusion - so this reads its outcome rather than the job's state.
+      - name: Say the application could not be brought up
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.docker_up.outcome == 'failure' }}
+        run: |
+          echo "::warning title=The application could not be brought up::Docker did not come up, so the agent has no container to run this project's checks in and is back to the artifact reports for what CI says. The step's log has why - an unresolvable token in a config template, an image on ghcr.io this repository has not been granted access to, and a compose file the branch itself broke, are the three to look at first"
+
+      # What the agent can run now that there is a container to run it in - the same four tasks
+      # `docker-qa-checks` runs, asked about the same way, so that what the agent checks and what
+      # CI checks cannot drift apart. A repository supporting none of them gets none listed.
+      #
+      # Only after a spin-up that worked. Handing an agent commands that exec into a container
+      # which is not running costs it several turns to find out, and the answer it gets back says
+      # nothing about its own work.
+      - name: Work out what the agent can check its work with in the container
+        id: container
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.docker_up.outcome == 'success' }}
+        run: |
+          commands=()
+
+          # `supports` is `task.sh`'s own answer about itself, so a repository that has renamed or
+          # dropped a task is never told it can run one. A compose file without a `task.sh` has no
+          # equivalent to ask, and gets the paragraph below without a list.
+          if [[ -f 'task.sh' ]]; then
+            # Fixer first, for the same reason the composer branch orders them that way: what a
+            # tool can fix should never reach a reviewer, and what survives it is what the check
+            # reports.
+            for task in cs-fix cs-check psalm test; do
+              if ./task.sh supports "$task" > /dev/null 2>&1; then
+                commands+=("./task.sh $task")
+              fi
+            done
+          fi
+
+          {
+            echo 'instructions<<PROMPT'
+            echo "This project's application is running in Docker on this runner, brought up before"
+            echo 'you started. Its containers are where this project actually runs, so a command'
+            echo 'that needs the application, its database or its dependencies belongs in one -'
+            echo 'running it on the runner instead is what produces a failure that is about the'
+            echo 'runner rather than about your work.'
+
+            if [[ ${#commands[@]} -gt 0 ]]; then
+              echo
+              echo 'These commands are what CI runs on whatever you push - whether or not the plan'
+              echo 'mentions them - and each one executes inside the container for you:'
+              echo
+              printf -- '- `%s`\n' "${commands[@]}"
+              echo
+              echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
+              echo 'what nobody should have to review, and what survives it is what CI reports.'
+              echo
+              echo 'Having these clean is the floor rather than the whole of it: they are what CI'
+              echo 'will say about your work, not everything that has to be true of it.'
+            fi
+
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ ${#commands[@]} -gt 0 ]]; then
+            echo "The agent can run: ${commands[*]}"
+          elif [[ -f 'task.sh' ]]; then
+            echo "The application is up, but task.sh supports none of the four checks - the agent is told only that it is running"
+          else
+            echo "The application is up, and without a task.sh there is nothing to ask about what it can check - the agent is told only that it is running"
+          fi
+
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
       # workflow. Only the issue number goes in, which Github restricts to digits.
@@ -1348,6 +1580,8 @@ jobs:
 
             ${{ steps.verify.outputs.instructions }}
 
+            ${{ steps.container.outputs.instructions }}
+
             The `QA` criteria are not yours. They are for a person testing this after it
             merges, and you have no way to discharge them - so never report one as met.
             What you can do is make them possible: if the change cannot satisfy one as
@@ -1359,13 +1593,17 @@ jobs:
             pull request at all. Where something is still unresolved, finish everything
             that does not depend on it and say what you left and why in your final message.
 
-            Two things you must not do:
+            Three things you must not do:
 
             - Do not commit, push, create a branch, open a pull request, or comment
               anywhere. The workflow does all of that after you finish, and doing it
               yourself makes a mess of what it pushes.
             - Do not modify anything under `.ai-plan/`. It is the input, and it is not
               part of the change.
+            - Do not touch `CHANGELOG.md`. Every repository here generates it from the git
+              log when it releases, so an entry written by hand is overwritten or left
+              conflicting. This holds even where the plan asks for one - note that you left
+              it out and why.
 
             Leave your work in the working tree as uncommitted changes. That is what gets
             committed for you.
@@ -1483,6 +1721,8 @@ jobs:
 
             ${{ steps.verify.outputs.instructions }}
 
+            ${{ steps.container.outputs.instructions }}
+
             Where a failing check in the feedback is one of those commands, run it rather than
             working out what it meant from `.ai-reports/` - the report is what it printed an
             hour ago, and the command is what it says now.
@@ -1493,12 +1733,15 @@ jobs:
             nobody. Where something is still unresolved, finish the rest and say what you left
             and why.
 
-            Two things you must not do:
+            Three things you must not do:
 
             - Do not commit, push, or comment anywhere. The workflow does all of that after
               you finish, including posting your replies.
             - Do not modify anything under `.ai-plan/`, and do not modify anything under
               `.ai-review/` other than by creating `replies.json`.
+            - Do not touch `CHANGELOG.md`. Every repository here generates it from the git log
+              when it releases, so an entry written by hand is overwritten or left conflicting.
+              This holds even where the feedback asks for one - reply saying so.
 
             Leave your work in the working tree as uncommitted changes.
 

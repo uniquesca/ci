@@ -2,7 +2,7 @@ name: 'mysql-import'
 
 inputs:
   dump_file_path:
-    description: 'Path to the DB dump'
+    description: 'Path to the DB dump. A path ending in `.gz` is decompressed on the way in, so a dump large enough to slow the checkout that carries it can be committed compressed'
     required: true
   db_name:
     description: 'DB name to export dump from'
@@ -29,5 +29,27 @@ runs:
   steps:
     - name: MySQL import
       run: |
-        mysql -u ${{inputs.username}} -p${{inputs.password}} --host ${{inputs.host}} --port ${{inputs.port}} ${{ inputs.db_name }} < ${{ inputs.dump_file_path }}
+        # `pipefail` for the compressed branch below: without it a dump that failed to
+        # decompress is reported by whatever `mysql` made of the truncated stream, which is
+        # usually success
+        set -euo pipefail
+
+        dump="${{ inputs.dump_file_path }}"
+
+        # Both checks off for the length of the connection. `mysqldump` turns them off in its
+        # own preamble, so this is what covers a dump that something else wrote - a hand-made
+        # file, or an extract of a larger one
+        mysql_cmd=(
+          mysql
+          -u "${{ inputs.username }}" -p"${{ inputs.password }}"
+          --host "${{ inputs.host }}" --port "${{ inputs.port }}"
+          --init-command="SET unique_checks=0, foreign_key_checks=0"
+          "${{ inputs.db_name }}"
+        )
+
+        if [[ "$dump" == *.gz ]]; then
+          gzip -dc "$dump" | "${mysql_cmd[@]}"
+        else
+          "${mysql_cmd[@]}" < "$dump"
+        fi
       shell: bash

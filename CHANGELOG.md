@@ -1206,3 +1206,7 @@
 ## v10.8.0
 
 * Update: AI coding agent now installs composer dependencies and attempts to run phpcs and psalm on it's work (e0d8e4c by George Shestayev)
+
+## v10.9.0
+
+* Update: AI coding agent will can now spin docker suite up (f683875 by George Shestayev)

@@ -430,6 +430,11 @@ jobs:
             that executes it. The hard ceiling is 60000 characters, because Github rejects
             a comment longer than 65536.
 
+            Never plan a step or a check that edits `CHANGELOG.md`. Every repository here
+            generates it from the git log when it releases, so an entry written by hand is
+            overwritten or left conflicting - and a step asking for one sends the implementing
+            agent to do work that gets thrown away.
+
             Do not implement the task. Do not modify, create, commit or push any file.
             Writing the plan as your final message is the whole job.
           claude_args: |
