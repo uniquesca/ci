@@ -8,8 +8,6 @@ on:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
-    # What lets the run's own token publish the release. `github-release` uses `GITHUB_TOKEN` and
-    # nothing else, so without this the release cannot be created
     permissions:
       contents: write
     steps:
