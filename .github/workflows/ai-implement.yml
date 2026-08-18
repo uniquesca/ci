@@ -1450,9 +1450,14 @@ jobs:
         run: |
           echo "::warning title=The application could not be brought up::Docker did not come up, so the agent has no container to run this project's checks in and is back to the artifact reports for what CI says. The step's log has why - an unresolvable token in a config template, an image on ghcr.io this repository has not been granted access to, and a compose file the branch itself broke, are the three to look at first"
 
-      # What the agent can run now that there is a container to run it in - the same four tasks
+      # What the agent can run now that there is a container to run it in - the tasks
       # `docker-qa-checks` runs, asked about the same way, so that what the agent checks and what
       # CI checks cannot drift apart. A repository supporting none of them gets none listed.
+      #
+      # `code-quality` is the exception to that symmetry, and deliberately: it is the other three
+      # code style tasks in one call, which is what the agent wants and what `docker-qa-checks`
+      # must not have - a blended log cannot be split back into the per-check reports the artifact
+      # loop uploads. Same tools either way, so nothing about the answer drifts.
       #
       # Only after a spin-up that worked. Handing an agent commands that exec into a container
       # which is not running costs it several turns to find out, and the answer it gets back says
@@ -1464,6 +1469,9 @@ jobs:
           && steps.docker_up.outcome == 'success' }}
         run: |
           commands=()
+          names=()
+          fixer='false'
+          tests='false'
 
           # `supports` is `task.sh`'s own answer about itself, so a repository that has renamed or
           # dropped a task is never told it can run one. A compose file without a `task.sh` has no
@@ -1471,10 +1479,25 @@ jobs:
           if [[ -f 'task.sh' ]]; then
             # Fixer first, for the same reason the composer branch orders them that way: what a
             # tool can fix should never reach a reviewer, and what survives it is what the check
-            # reports.
-            for task in cs-fix cs-check psalm test; do
+            # reports. `code-quality` above the three it wraps, so that an agent taking the first
+            # thing that covers its work takes the one call rather than three.
+            #
+            # Each task carries what it does, because the set overlaps: told only the names, an
+            # agent runs `code-quality` and then the three tools inside it again.
+            for entry in \
+                'cs-fix|fixes every code style problem a tool can fix' \
+                'code-quality|the fixer, the code style check and the static analysis in one call - prefer it to running them one at a time' \
+                'cs-check|reports the code style problems the fixer cannot fix' \
+                'psalm|static analysis' \
+                'test|the unit tests'; do
+              task=${entry%%|*}
+
               if ./task.sh supports "$task" > /dev/null 2>&1; then
-                commands+=("./task.sh $task")
+                commands+=("\`./task.sh $task\` - ${entry#*|}")
+                names+=("$task")
+
+                [[ "$task" == 'cs-fix' ]] && fixer='true'
+                [[ "$task" == 'test' ]] && tests='true'
               fi
             done
           fi
@@ -1492,10 +1515,30 @@ jobs:
               echo 'These commands are what CI runs on whatever you push - whether or not the plan'
               echo 'mentions them - and each one executes inside the container for you:'
               echo
-              printf -- '- `%s`\n' "${commands[@]}"
-              echo
-              echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
-              echo 'what nobody should have to review, and what survives it is what CI reports.'
+              printf -- '- %s\n' "${commands[@]}"
+
+              # Only where the standalone fixer is one of them. A repository offering just
+              # `code-quality` has the ordering inside that one call already, and a list with no
+              # fixer in it at all gets told to run something it was not given.
+              if [[ "$fixer" == 'true' ]]; then
+                echo
+                echo 'Run the fixer before the reporters: it settles what nobody should have to'
+                echo 'review, and what survives it is what CI reports.'
+              fi
+
+              # Only worth the tokens where there is a `test` task to spend them on. The point is
+              # not that reruns are forbidden - it is that the second answer is not evidence, and
+              # an agent that does not know it will chase a contaminated database as a defect.
+              if [[ "$tests" == 'true' ]]; then
+                echo
+                echo 'The unit tests share one database with the rest of the container and leave'
+                echo 'state behind in it, so treat `./task.sh test` as one run per job: run it'
+                echo 'once, when the change is otherwise finished, rather than as you go. What a'
+                echo 'second run reports says as much about what the first one left behind as'
+                echo 'about your code, so do not read a failure that only appears there as a'
+                echo 'defect you introduced.'
+              fi
+
               echo
               echo 'Having these clean is the floor rather than the whole of it: they are what CI'
               echo 'will say about your work, not everything that has to be true of it.'
@@ -1504,10 +1547,10 @@ jobs:
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
 
-          if [[ ${#commands[@]} -gt 0 ]]; then
-            echo "The agent can run: ${commands[*]}"
+          if [[ ${#names[@]} -gt 0 ]]; then
+            echo "The agent can run: ${names[*]}"
           elif [[ -f 'task.sh' ]]; then
-            echo "The application is up, but task.sh supports none of the four checks - the agent is told only that it is running"
+            echo "The application is up, but task.sh supports none of these checks - the agent is told only that it is running"
           else
             echo "The application is up, and without a task.sh there is nothing to ask about what it can check - the agent is told only that it is running"
           fi

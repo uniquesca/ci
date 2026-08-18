@@ -150,7 +150,7 @@ Nothing to configure. It reads the repository and works out what applies:
 
 | What it finds | What happens |
 |---|---|
-| `task.sh`, or a compose file | The application is brought up, which renders `_ci_environment.json`'s `configs` from the tokens you pass and keeps them out of the round's commit. With a `task.sh`, the agent is given whichever of `cs-fix`, `cs-check`, `psalm` and `test` it supports |
+| `task.sh`, or a compose file | The application is brought up, which renders `_ci_environment.json`'s `configs` from the tokens you pass and keeps them out of the round's commit. With a `task.sh`, the agent is given whichever of `cs-fix`, `code-quality`, `cs-check`, `psalm` and `test` it supports |
 | `composer.json` and a `phpcs.xml` or `psalm.xml`, or either one's `.dist` | Dependencies installed, and the agent is given `phpcbf`, `phpcs` and `psalm` as they are configured here |
 | `composer.json` and neither | Nothing to install dependencies for |
 | Neither | Nothing - the agent works out what it can run for itself |
@@ -279,9 +279,20 @@ The commands come from the same configuration files
 point of this is that the agent gets the same answer CI will; a command that differs by a flag is
 worse than no command at all, because the agent reports clean and then goes red on the push,
 spending the round this was meant to save. `psalm.xml.dist` needs `--config` passed explicitly and
-`psalm.xml` does not, and that asymmetry is Psalm's, not ours. In a container the four tasks are
-asked for with `./task.sh supports`, which is the repository's own answer about itself, so a task
-that was renamed is never offered.
+`psalm.xml` does not, and that asymmetry is Psalm's, not ours. In a container the tasks are asked
+for with `./task.sh supports`, which is the repository's own answer about itself, so a task that was
+renamed is never offered. Each one is listed with what it does, because the set overlaps: an agent
+told only the names runs `code-quality` and then the three tools inside it again.
+
+`code-quality` is the one command here [`docker-qa-checks`](../actions/docker-qa-checks.md) does not
+run, and that is on purpose rather than drift - it is the fixer and both reporters in one call,
+which is what an agent wants and what the action must not have, since a blended log cannot be split
+back into the per-check reports it uploads. The tools underneath are the same either way, so the
+answer cannot differ. A `test` task gets one further warning: the unit tests share the container's
+database and leave state in it, so the agent is told to treat the task as **one run per job** - once,
+when the change is otherwise finished - and that a failure appearing only in a second run says as
+much about what the first left behind as about its work. Without that it reads a contaminated
+database as a defect it introduced and spends the rest of the round on it.
 
 The agent is told to run the fixer before the reporter, and that a clean run is the floor rather
 than the whole of it - the plan's `C` checks and this repository's tests are still its own to find
