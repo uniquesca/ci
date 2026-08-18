@@ -93,6 +93,7 @@ function normalizeGitLogRecords(gitLogContents) {
                 || recordText.startsWith('* fix')
                 || recordText.startsWith('* new')
                 || recordText.startsWith('* update')
+                || recordText.startsWith('* qa')
             ) {
                 core.debug("Record above accepted for changelog.");
                 return true;
@@ -103,8 +104,8 @@ function normalizeGitLogRecords(gitLogContents) {
             return false;
         })
         .sort(function (a, b) {
-            const order = ['breaking', 'depr', 'fix', 'new', 'update'];
-            const aMatch = a.text.match(/^\*?\s*(new|update|fix|depr|breaking)/i);
+            const order = ['breaking', 'depr', 'fix', 'new', 'update', 'qa'];
+            const aMatch = a.text.match(/^\*?\s*(new|update|fix|depr|breaking|qa)/i);
             let aIndex = -1;
             if (aMatch) {
                 aIndex = order.indexOf(aMatch[1].toLowerCase());
@@ -113,7 +114,7 @@ function normalizeGitLogRecords(gitLogContents) {
                 aIndex = 100;
             }
 
-            const bMatch = b.text.match(/^\*?\s*(new|update|fix|depr|breaking)/i);
+            const bMatch = b.text.match(/^\*?\s*(new|update|fix|depr|breaking|qa)/i);
             let bIndex = -1;
             if (bMatch) {
                 bIndex = order.indexOf(bMatch[1].toLowerCase());
@@ -148,7 +149,7 @@ function normalizeGitLog(gitLogContents) {
 function normalizeGitLogRecord(gitLogRecord) {
     const [message, hash, author] = gitLogRecord.split('||');
     const messageParts = message.replace(/^\s+|\s+$/g, '')
-        .split(/((?<=[;.]) ?(?=[A-Z][a-z]+: ?.*)|\s^)/gm)
+        .split(/((?<=[;.]) ?(?=(?:[A-Z][a-z]+|QA): ?.*)|\s^)/gm)
         .map(part => part.replace(/^\s+|\s+$/g, '').trim())
         .filter(part => part.length > 0);
 
