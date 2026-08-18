@@ -54,7 +54,8 @@ What happens on each run:
 6. If `use_db` is set and the repository has PHPUnit, MySQL is started, the `phpunit`
    database is created, `db_dump_path` is imported, and `db_migration_cmd` runs.
 7. PHPUnit runs, then PHP_CodeSniffer, then Psalm. `fail-fast` is off, so one PHP version
-   failing does not cancel the others.
+   failing does not cancel the others. Xdebug is in coverage mode for PHPUnit and off for
+   everything else, which is most of what keeps Composer, PHP_CodeSniffer and Psalm quick.
 
 The MySQL steps are skipped entirely when the repository has no PHPUnit configuration -
 there would be nothing to use the database.
@@ -107,7 +108,7 @@ jobs:
 | `setup_cmd` | string | `''` | Command to run before the checks execute |
 | `use_db` | boolean | `false` | Whether a database is needed, for example for unit tests |
 | `mysql_version` | string | `8.0` | Version of MySQL to set up |
-| `mysql_config` | string | `''` | MySQL config to apply, `my.cnf` syntax |
+| `mysql_config` | string | `''` | MySQL config to apply, `my.cnf` syntax. Appended to the CI durability defaults (`innodb_flush_log_at_trx_commit=0`, `innodb_doublewrite=0`, `sync_binlog=0`), so it overrides them |
 | `db_dump_path` | string | | Path to the DB dump. Ignored unless `use_db` is `true` |
 | `db_migration_cmd` | string | `''` | Migration command, runs before the unit tests |
 | `env_variables` | string | `'{}'` | JSON object of environment variables |

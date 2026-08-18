@@ -13,7 +13,7 @@ on:
         description: 'Access token for cloning Uniques private Composer repositories, so that the agent can run this project''s checks against installed dependencies rather than guessing at what they would have said. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies falls back to the artifact reports as before'
         required: false
       ENV_VARIABLES:
-        description: 'JSON object of configuration tokens this repository''s config templates are rendered with, merged over the `env_variables` input. A secret rather than an input because it carries the environment''s credentials - and they reach a shell the agent controls, so give it a test environment''s and never production''s'
+        description: 'JSON object of configuration tokens this repository''s config templates are rendered with. Read only when the application is brought up, which is what renders the templates. These reach a shell the agent controls, so give it a test environment''s credentials and never production''s'
         required: false
     inputs:
       command:
@@ -91,11 +91,6 @@ on:
         required: false
         default: true
         type: boolean
-      env_variables:
-        description: 'JSON object of configuration tokens this repository''s config templates are rendered with, for the ones that are not secret. The `ENV_VARIABLES` secret is merged over this, so a token can be declared here and its value overridden there. Read only when the application is brought up, which is what renders the templates'
-        required: false
-        default: '{}'
-        type: string
       spin_up_docker:
         description: 'Bring this repository''s application up in Docker before the agent starts, when it has a `task.sh` or a compose file. That is what lets a repository whose checks run inside its container have them run at all - the agent is given the `task.sh` commands it supports. Costs whatever pulling the images and starting the containers takes, so `timeout_minutes` needs room above `agent_timeout_minutes` for it'
         required: false
@@ -1351,27 +1346,6 @@ jobs:
             printf 'docker=%s\n' "$docker"
           } >> "$GITHUB_OUTPUT"
 
-      # The tokens the templates are rendered with, from the two places they can come from. The
-      # secret wins, which is what the argument order means: a token can be declared in the
-      # caller's `env_variables` where it is readable, and its value supplied from `ENV_VARIABLES`
-      # where it is masked.
-      #
-      # `|| '{}'` on both because a secret nobody configured is an empty string and an input can be
-      # given one, and the action parses both sides - an empty object is `{}`, not ``.
-      #
-      # Only for a repository being brought up, because that is the only thing here that renders
-      # anything. Rendering on its own is deliberately not done: what this organisation builds
-      # without a container is libraries, and a library has no configuration to render.
-      - name: Merge the configuration tokens
-        id: tokens
-        if: >-
-          ${{ success() && env.PROCEED == 'true' && inputs.provision_checks
-          && steps.setup.outputs.docker == 'true' && inputs.spin_up_docker }}
-        uses: uniquesca/ci/merge-environment-variables@main
-        with:
-          variables1: ${{ inputs.env_variables || '{}' }}
-          variables2: ${{ secrets.ENV_VARIABLES || '{}' }}
-
       # A rendered config file holds the credentials it was rendered from, and this round commits
       # its working tree with `git add -A`. Without this, the first run on a repository whose
       # config is generated pushes that config to a branch and opens a pull request showing it.
@@ -1448,6 +1422,10 @@ jobs:
       # This is what makes a repository whose checks live inside its container checkable at all.
       # Until it, `./task.sh cs-check` had nothing to exec into, and the agent's only account of
       # what CI would say was an artifact from an hour earlier.
+      #
+      # `|| '{}'` because a secret nobody configured is an empty string, and passing one explicitly
+      # overrides the action's own `{}` default rather than falling back to it - an empty object is
+      # `{}`, not ``.
       - name: Spin the application up in Docker
         id: docker_up
         if: >-
@@ -1456,7 +1434,7 @@ jobs:
         continue-on-error: true
         uses: uniquesca/ci/docker-spin-up@main
         with:
-          env_variables: ${{ steps.tokens.outputs.variables }}
+          env_variables: ${{ secrets.ENV_VARIABLES || '{}' }}
           profile: ${{ inputs.docker_profile }}
 
       # The spin-up is allowed to fail, so somewhere has to say that it did. A warning and not an
@@ -1615,13 +1593,17 @@ jobs:
             pull request at all. Where something is still unresolved, finish everything
             that does not depend on it and say what you left and why in your final message.
 
-            Two things you must not do:
+            Three things you must not do:
 
             - Do not commit, push, create a branch, open a pull request, or comment
               anywhere. The workflow does all of that after you finish, and doing it
               yourself makes a mess of what it pushes.
             - Do not modify anything under `.ai-plan/`. It is the input, and it is not
               part of the change.
+            - Do not touch `CHANGELOG.md`. Every repository here generates it from the git
+              log when it releases, so an entry written by hand is overwritten or left
+              conflicting. This holds even where the plan asks for one - note that you left
+              it out and why.
 
             Leave your work in the working tree as uncommitted changes. That is what gets
             committed for you.
@@ -1751,12 +1733,15 @@ jobs:
             nobody. Where something is still unresolved, finish the rest and say what you left
             and why.
 
-            Two things you must not do:
+            Three things you must not do:
 
             - Do not commit, push, or comment anywhere. The workflow does all of that after
               you finish, including posting your replies.
             - Do not modify anything under `.ai-plan/`, and do not modify anything under
               `.ai-review/` other than by creating `replies.json`.
+            - Do not touch `CHANGELOG.md`. Every repository here generates it from the git log
+              when it releases, so an entry written by hand is overwritten or left conflicting.
+              This holds even where the feedback asks for one - reply saying so.
 
             Leave your work in the working tree as uncommitted changes.
 
