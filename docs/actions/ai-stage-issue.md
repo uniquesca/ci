@@ -59,11 +59,10 @@ anybody able to comment on the issue can paste a marker of their own, and `is_bo
 
 `plan_base` comes from a metadata line the planning workflow writes directly under that marker. A
 plan posted before that line existed has prose on its second line, which is not JSON, so
-`plan_base` comes back empty and the caller falls back to its own default - which is what keeps
-older plans working.
+`plan_base` comes back empty and the caller falls back to its own default.
 
 `plan_created_at` is that comment's own timestamp, which is how a caller with a watermark spots a
 plan revised under work already done -
 [`ai-implement`](../ai/ai-implement.md#when-the-plan-is-revised-under-the-work) compares it against
-the end of its last round. It is `created_at` and not `updated_at`, so editing a plan in place stays
-the quiet way to correct one.
+the end of its last round. It is `created_at` and not `updated_at`, so editing a plan in place is
+not a revision.

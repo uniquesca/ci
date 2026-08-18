@@ -14,10 +14,8 @@ workflow has to be told to hand its work over.
 **First, the thing that will otherwise waste your afternoon.** Github will not let an identity
 request changes on a pull request it opened. AI Implement opens its pull requests as
 `github-actions[bot]`, so a review submitted with the built-in `GITHUB_TOKEN` is a self-review and
-the API only allows a plain comment.
-
-That matters beyond the label: a comment review blocks nothing, and it does not start another
-round. So you need a **second identity**:
+the API only allows a plain comment - which blocks nothing and starts no round. So you need a
+**second identity**:
 
 | What you configure | What you get |
 |--------------------|--------------|
@@ -66,8 +64,7 @@ Two more things that fail silently:
 * **`dispatch_review` and the `types:` above have to agree.** Both default to `ai-review`; change
   one and the dispatch lands with nothing to answer it.
 
-Inputs are documented in `.github/workflows/ai-review.yml`. Keep `branch_prefix` and
-`max_unattended_rounds` the same as the implementing workflow's.
+Keep `branch_prefix` and `max_unattended_rounds` the same as the implementing workflow's.
 
 ## Using it
 
@@ -88,11 +85,10 @@ From there it behaves exactly like a review from a colleague, and you have the s
 * **Take over.** Comment `/ai-do` with what you actually want, and that round counts as attended,
   which resets the round cap.
 
-Two things to expect:
+Three things to expect:
 
-**It will sometimes find nothing**, and that is the point. A change that implements the plan and
-reads like the surrounding code gets a plain comment review saying so, and the loop ends there. A
-reviewer that always found something would never terminate.
+**It will sometimes find nothing.** A change that implements the plan and reads like the surrounding
+code gets a plain comment review saying so, and the loop ends there.
 
 **It cannot test the QA criteria**, and it is told not to treat that as a finding. What it can say
 is that the code cannot satisfy one as written, or that nothing in the diff addresses the steps a
@@ -100,8 +96,7 @@ criterion covers, or that a criterion needs a person - which is the note to look
 what to hand to QA.
 
 **It never approves.** The verdict is either "changes requested" or "no blocking concerns" -
-merging is a person's decision, and an agent approving its own pipeline's work is not a signal
-anybody should act on. Approve and merge yourself.
+merging is a person's decision. Approve and merge yourself.
 
 ### When to stop letting it run
 
@@ -115,7 +110,7 @@ the code, go back to [`/ai-plan` on the issue](ai-plan.md#changing-direction).
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI reviewing agent |
-| `AI_REVIEW_TOKEN` | no | Token the review is submitted with. **Without it the review cannot request changes and cannot start another round** - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and [`ai-implement`](ai-implement.md) opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the loop turn |
+| `AI_REVIEW_TOKEN` | no | Token the review is submitted with. **Without it the review cannot request changes and cannot start another round** - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and [`ai-implement`](ai-implement.md) opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token |
 
 ## Inputs
 
@@ -142,17 +137,15 @@ None. The result is a Github review on the pull request.
 ### Why `repository_dispatch` and not a `pull_request` trigger
 
 Because a pull request opened or updated by `GITHUB_TOKEN` produces a workflow run that **waits for
-somebody to click "Approve workflows to run"** - the opposite of reviewing it the moment it
-appears.
-
-Events made with `GITHUB_TOKEN` do not start workflow runs at all, normally; dispatch events are
+somebody to click "Approve workflows to run"**. Events made with `GITHUB_TOKEN` do not start
+workflow runs at all, normally; dispatch events are
 [the documented exception](https://docs.github.com/en/actions/concepts/security/github_token). So
 the implementing workflow can start the reviewer itself, with no extra token, and it does that as
 the very last thing in a round - after the replies and the round comment are in place, so the
 reviewer sees the whole of what it is reviewing.
 
-Nothing is dispatched for a round that changed no file. Reviewing the same commit again produces
-the same review, and the loop would turn without moving.
+Nothing is dispatched for a round that changed no file, since reviewing the same commit again
+produces the same review.
 
 The dispatch payload is arbitrary JSON that anybody with `contents: write` could send, so the pull
 request number is validated and then checked against the same boundary the implementing workflow
@@ -165,25 +158,22 @@ The agent gets the change and the intent behind it:
 * the diff of the branch against its base - three dots, so it is what this branch changed rather
   than everything that has happened on the base since
 * the **plan and the issue**, because a review that does not know what the change was *meant* to do
-  is a style check. "This does not do what the plan says" is the most valuable thing it can find.
-  The plan's [ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff against and what
-  it cites when something is missing - `(S6, QA2)` after the point, never on its own, since the plan
-  is on the issue and the review is not
+  is a style check. The plan's [ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff
+  against and what it cites when something is missing - `(S6, QA2)` after the point, never on its
+  own, since the plan is on the issue and the review is not
 * the review history and the failing checks, with **answered threads included** - unlike the
   implementing agent, this one needs to read the reply where its own last concern was addressed or
   argued with, before deciding whether to raise it again
 
 The working tree is the branch, and the agent is told to open the files around each hunk rather
-than review the diff in isolation. That is the biggest single difference between a useful review
-and a noisy one.
+than review the diff in isolation.
 
 ### Inline comments, and why some go missing
 
 Github rejects an **entire** review - summary, verdict, every comment - if one comment names a line
 the diff does not contain. So the workflow works out from the diff which lines a comment may
 anchor to (every added and every context line inside a hunk, numbered in the new file), drops the
-ones that do not fit, and names them in the run log. Without that, one wrong line number would lose
-the whole review and stall the loop.
+ones that do not fit, and names them in the run log.
 
 If Github still refuses the review it degrades rather than disappears: retry without the inline
 comments, then as a plain comment review, and failing all of that the summary is posted as an
@@ -191,26 +181,23 @@ ordinary comment. The summary is never lost.
 
 ### Making the loop terminate
 
-Worth understanding before you turn it on. A reviewer that always finds something is worse than no
-reviewer, because the loop never ends and every turn costs money. Four things work against that:
+A reviewer that always finds something never lets the loop end, and every turn costs money. Four
+things work against that:
 
 * **The cap** - [`max_unattended_rounds`](ai-implement.md#the-round-cap), enforced in the
   implementing workflow, which is the only place it lives.
 * **A round that changes nothing does not dispatch a review**, so a stalled loop stops rather than
   spinning on one commit.
-* **A "no blocking concerns" verdict starts nothing.** Only a changes-requested review does, so the
-  loop ends the moment the reviewer is satisfied.
+* **A "no blocking concerns" verdict starts nothing.** Only a changes-requested review does.
 * **The agent is told, at length, that finding nothing is a valid outcome** - not to manufacture a
   concern to justify the review, and not to request changes over a preference. It is also told what
   to do with a concern the implementing agent answered with a reasoned refusal: accept the argument,
-  or say in the summary that a person should settle it. **Not** to repeat it. Two agents restating
-  positions at each other is the specific failure this has to avoid. It is also told that a missing
-  `CHANGELOG.md` entry is never a finding, since the release generates that file from the git log -
-  and that a pull request editing it is worth a comment the other way.
+  or say in the summary that a person should settle it, and **not** to repeat it. It is told as well
+  that a missing `CHANGELOG.md` entry is never a finding, since the release generates that file from
+  the git log - and that a pull request editing it is worth a comment the other way.
 
 If the cap is reached while the reviewer still wants changes, the pull request is left with a
-blocking review and a comment asking for a person. That is the correct end state: something needs
-judgement, and the review says what.
+blocking review and a comment asking for a person.
 
 ### What the agent can and cannot do
 
@@ -231,8 +218,7 @@ It **may not**, and cannot:
 
 One review per push, on top of one implementing run per round. With the loop running unattended
 that is up to `max_unattended_rounds` of both before anybody looks, so the cap is a spending
-control as much as a correctness one. Lower it if that is more than you want to risk on a single
-pull request.
+control as much as a correctness one.
 
 `max_turns` is not the other half of that control: the SDK holds a short run to it exactly and lets
 a long one run past it. A review the agent finished over the limit is submitted with a warning on the

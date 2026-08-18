@@ -40,8 +40,6 @@ Used by [`ai-implement`](../ai/ai-implement.md) at the end of a round.
 The agent read a pull request body and review comments any collaborator can write, so what it hands
 back is untreated input. A reply is only posted to a thread whose `reply_target` appears in
 `feedback_file` - the list [`ai-stage-pull-request`](ai-stage-pull-request.md) wrote for this round.
-The reply endpoint is scoped to this pull request, so a wrong identifier would fail rather than post
-somewhere unexpected, but there is no reason to try it.
 
 Duplicates are dropped in the order the agent wrote them, so one thread gets one answer. Empty
 bodies and non-numeric targets go too, and the count ends up in `skipped` with a warning naming how
@@ -52,8 +50,8 @@ can contain anything, including quoted shell.
 
 ### Nothing here fails the run
 
-By the time this executes the work is already committed and pushed, so a rejected reply must not turn
-a good round red. A missing `replies_file` is not an error either: an agent that answered in its
+By the time this executes the work is already committed and pushed, so a rejected reply does not turn
+a good round red. A missing `replies_file` is not an error either - an agent that answered in its
 round summary alone had a worse round, not a failed one.
 
 ### The marker
