@@ -57,7 +57,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
     uses: uniquesca/ci/.github/workflows/ai-plan.yml@main
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -78,7 +78,8 @@ jobs:
 Four things to get right, all of which fail quietly rather than loudly:
 
 * **The `permissions` block belongs on the calling job.** A called workflow can only narrow the
-  token it is given, never widen it.
+  token it is given, never widen it. `pull-requests: write` buys one comment - a replan telling
+  the open pull request its plan moved - and narrowing it to `read` fails only that step.
 * **The file has to be on the default branch.** Github always runs the default-branch version of
   an `issue_comment` workflow, so this cannot be tested from a feature branch.
 * **Both events are needed.** `issue_comment` carries the commands; `pull_request_review` is what

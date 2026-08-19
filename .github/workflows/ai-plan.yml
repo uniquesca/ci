@@ -67,10 +67,11 @@ jobs:
     permissions:
       contents: read
       issues: write
-      # Read-only: the planner never touches a pull request beyond finding the one already
-      # implementing this issue. Commenting on it needs nothing more, because a pull request
-      # conversation comment is an issue comment as far as Github is concerned.
-      pull-requests: read
+      # Write only for the replan comment below, which posts with `gh issue comment` because a
+      # pull request conversation comment is an issue comment in the REST API. The permission
+      # follows the resource rather than the endpoint, though, so `issues: write` does not
+      # cover it and `read` here fails that step.
+      pull-requests: write
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
