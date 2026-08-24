@@ -563,6 +563,7 @@ jobs:
       # never calls. `branch_prefix` is as far as that knowledge goes, and only because the pull
       # request cannot be found without it.
       - name: Tell the pull request that the plan changed
+        id: replan
         if: >-
           ${{ success()
           && steps.task.outputs.has_task == 'true'
@@ -578,6 +579,10 @@ jobs:
             --jq '.[0] // {}' > pull-request.json
 
           number=$(jq -r '.number // ""' pull-request.json)
+
+          # Written before the exit below, so the step after this one can tell "no pull request
+          # to refresh" from "this step never ran"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
 
           if [[ -z "$number" ]]; then
             echo "No open pull request is implementing issue #$ISSUE yet"
@@ -607,6 +612,28 @@ jobs:
           if [[ -n "$pr_base" && "$pr_base" != "$BASE" ]]; then
             echo "::warning title=Plan and pull request disagree on the base::The plan is written against '$BASE', #$number targets '$pr_base'"
           fi
+
+      # The pull request body carries the plan's QA acceptance criteria, copied there when it was
+      # opened so that whoever tests the change never has to come back here for them. A revision
+      # is the moment that copy stops being true, and a tester working to criteria the plan has
+      # dropped is worse off than one who was sent to the issue in the first place. So the copy
+      # moves with the plan, from the step that already knows both.
+      #
+      # The comment above says the branch has not been brought in line yet, and it still does -
+      # the criteria describe what the plan now asks for, not what the branch currently does.
+      - name: Refresh the QA criteria on the pull request
+        if: >-
+          ${{ success()
+          && steps.replan.outputs.number != '' }}
+        uses: uniquesca/ci/ai-qa-criteria@main
+        with:
+          pull_request: ${{ steps.replan.outputs.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # The plan the agent just wrote, rather than the comment it was posted as - the same
+          # file the comment above was built from, without the marker and footer wrapped round it
+          plan_file: ${{ steps.report.outputs.result_file }}
+          plan_url: ${{ steps.post.outputs.url }}
 
       # A failed run is otherwise invisible from the issue - whoever ran the command is
       # left waiting for a comment that never comes. Scoped to these steps' own

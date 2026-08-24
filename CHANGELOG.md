@@ -1216,3 +1216,7 @@
 * Fix: fixed an ability for AI plan to revise the plan (7decf8d by George Shestayev)
 * Update: added QA message prefix support (8bf1391 by George Shestayev)
 * Update: coding agent now can run phpcs, psalm and unit tests (d008252 by George Shestayev)
+
+## v10.11.0
+
+* Update: QA criteria are now copied into a PR (4a9a9a3 by George Shestayev)

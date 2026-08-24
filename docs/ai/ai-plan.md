@@ -190,14 +190,16 @@ task. When the task is wrong, fix it there rather than arguing with the plan.
 `/ai-plan` keeps working after the code exists, and it is the only way to say "the whole approach
 is wrong" rather than "this line is wrong". Every implementing round re-reads the plan off the
 issue, so a revision reaches the code without anybody copying it anywhere, and the open pull
-request gets a comment linking to the revision.
+request gets a comment linking to the revision - along with a rewritten copy of the
+[QA criteria](ai-implement.md#the-qa-criteria-on-the-pull-request) in its body, so nobody tests
+against the version the plan has dropped.
 
 **Nothing rebuilds on its own.** Ask for an
 [implementing round](ai-implement.md#when-the-plan-is-revised-under-the-work) when the branch
 should be brought in line, and expect a large one - it takes out the code for a step the revision
 dropped as well as adding what it now asks for. Any round that runs before then does the same, so
 revise again rather than leaving a revision you are unhappy with. Editing the comment in place is
-free.
+free, though only a revision moves the pull request's copy of the QA criteria.
 
 ## Secrets
 
