@@ -48,15 +48,13 @@ Github **rejects `REQUEST_CHANGES` from the identity that opened the pull reques
 submitted with the run's own token can never request changes, and therefore never starts another
 implementing round. Supply a machine user PAT with `repo` scope, or a Github App installation token.
 
-When that happens anyway the verdict is downgraded to a comment rather than lost, with a warning
-saying so - the inline comments are the most useful half of the review and they survive a comment
-review perfectly well.
+When it happens anyway the verdict is downgraded to a comment rather than lost, with a warning
+saying so - the inline comments survive a comment review perfectly well.
 
 ### Approving is not an option
 
-Only `changes_requested` and `comment` are meaningful verdicts. Merging is a person's decision, and
-an agent approving its own pipeline's work is not a signal anybody should be acting on. An unknown
-verdict is submitted as a comment, with a warning.
+Only `changes_requested` and `comment` are meaningful verdicts; merging is a person's decision. An
+unknown verdict is submitted as a comment, with a warning.
 
 ### Inline comments, and why some go missing
 
@@ -66,21 +64,21 @@ and the bad comments are dropped, rather than finding out on submit and losing t
 
 A comment may sit on any line of a hunk on the `RIGHT` side - added lines and context lines,
 numbered in the new file. Comments are also dropped for an empty body, a non-numeric line, or being
-over `max_comments`. Every dropped one is named in the log, because "the reviewer said something
-about a line and it vanished" is worth being able to see.
+over `max_comments`. Every dropped one is named in the log.
 
 With no `diff_file` at all, the summary is submitted on its own.
 
 ### It does not fail the run
 
-A review that could not be submitted is a warning and an output the caller acts on. Going red adds
-nothing - the caller still has the agent's summary to post as a plain comment. The fallbacks, in
-order: as asked; downgraded to a comment if Github said "your own pull request"; without the inline
-comments; as a comment without them.
+A review that could not be submitted is a warning and an output the caller acts on, since the caller
+still has the agent's summary to post as a plain comment. The fallbacks, in order: as asked;
+downgraded to a comment if Github said "your own pull request"; without the inline comments; as a
+comment without them.
 
 `head_sha` is pinned explicitly so that a push which landed since the diff was taken makes the review
 outdated rather than silently misplaced.
 
 `marker` is how [`ai-implement`](../ai/ai-implement.md) tells a review an agent wrote from one a
-person wrote, which is what keeps its unattended round cap honest when the review token belongs to a
+person wrote, which is what keeps its
+[unattended round cap](../ai/ai-implement.md#the-round-cap) honest when the review token belongs to a
 machine user account. Change it in one place and you have to change it in both.

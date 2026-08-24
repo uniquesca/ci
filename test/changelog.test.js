@@ -70,6 +70,45 @@ test('updateChangelogFromGitLog creates main and tag-specific changelogs', () =>
     );
 });
 
+test('updateChangelogFromGitLog includes QA records and sorts them last', () => {
+    const dir = createTempChangelogDir();
+
+    const gitLog = [
+        fakeGitLogRecord('QA: [api] check the import screen accepts zipped dumps', '1111111'),
+        fakeGitLogRecord('Update: allowed zipped dumps on import', '2222222'),
+        fakeGitLogRecord('BREAKING: dropped the plain dump support', '3333333')
+    ].join('');
+
+    updateChangelogFromGitLog(dir, 'CHANGELOG.md', '1.1.0', gitLog, true);
+
+    const mainChangelog = fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
+    const apiChangelog = fs.readFileSync(path.join(dir, 'CHANGELOG.api.md'), 'utf8');
+
+    assert.match(
+        mainChangelog,
+        /BREAKING: dropped the plain dump support[\s\S]*Update: allowed zipped dumps on import[\s\S]*QA: check the import screen accepts zipped dumps/
+    );
+    assert.match(apiChangelog, /\* QA: check the import screen accepts zipped dumps/);
+});
+
+test('a QA part in a commit body becomes its own record', () => {
+    const dir = createTempChangelogDir();
+
+    const gitLog = [
+        fakeGitLogRecord('Fix: fixed the import. QA: import a zipped dump.', '1111111'),
+        fakeGitLogRecord('New: added the export screen\nQA: export and re-import a dump', '2222222')
+    ].join('');
+
+    updateChangelogFromGitLog(dir, 'CHANGELOG.md', '1.1.0', gitLog, false);
+
+    const mainChangelog = fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf8');
+
+    assert.match(mainChangelog, /^\* Fix: fixed the import \(1111111 by Test User\)$/m);
+    assert.match(mainChangelog, /^\* QA: import a zipped dump \(1111111 by Test User\)$/m);
+    assert.match(mainChangelog, /^\* New: added the export screen \(2222222 by Test User\)$/m);
+    assert.match(mainChangelog, /^\* QA: export and re-import a dump \(2222222 by Test User\)$/m);
+});
+
 test('updateChangelogFromGitLog does not create tag-specific changelogs when useTags is false', () => {
     const dir = createTempChangelogDir();
 

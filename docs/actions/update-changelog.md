@@ -1,8 +1,8 @@
 # Update changelog
 
 Generates a changelog section for a version out of the git log and writes it into `CHANGELOG.md`.
-Commit subjects decide what appears: only those starting with `Breaking`, `Depr`, `Fix`, `New` or
-`Update` are included, and they are grouped in that order.
+Commit subjects decide what appears: only those starting with `BREAKING`, `Depr`, `Fix`, `New`,
+`Update` or `QA` are included, and they are grouped in that order.
 
 ```yaml
 - name: Update the changelog
@@ -30,7 +30,7 @@ This action produces no outputs - it writes `CHANGELOG.md`, and in `normal` mode
 
 ### Which commits make it in
 
-Commits are read with `git log --no-merges`, and a subject has to start with one of five words to
+Commits are read with `git log --no-merges`, and a subject has to start with one of six words to
 count:
 
 | Prefix | Meaning |
@@ -40,15 +40,16 @@ count:
 | `Fix:` | A bug fix |
 | `New:` | A new feature |
 | `Update:` | A change to something that exists |
+| `QA:` | Something to test by hand, and what should happen |
 
 Anything else - `CI:`, `Refactor:`, a bare subject - is left out. The list is sorted into the order
 above, so the breaking changes are the first thing a reader sees. When commits exist but none of
 them qualify, the section says so rather than being empty: *"All the changes in this version are
 insignificant and are probably limited to code quality or infrastructure."*
 
-**One commit can contribute several entries.** A message is split where a new `Word: ` begins, so
-a commit whose body carries `Fix: ...` on its own line under an `Update: ...` subject produces both.
-`Co-authored-by` trailers are dropped.
+**One commit can contribute several entries.** A message is split where a new `Word: ` - or `QA: `,
+the one prefix that is not a word - begins, so a commit whose body carries `QA: ...` on its own line
+under an `Update: ...` subject produces both. `Co-authored-by` trailers are dropped.
 
 Each entry is written as `* <text> (<short hash> by <author>)`.
 

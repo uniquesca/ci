@@ -60,9 +60,6 @@ reply_target, text}`, where `source` is `thread`, `review`, `comment` or `check`
 an `anchor` with the file, line and diff hunk, and a `reply_target` that
 [`ai-post-review-replies`](ai-post-review-replies.md) can answer. The rest carry `null` for both.
 
-One list, one shape, because then the agent reads one file - and the next kind of feedback to exist
-is one more entry in a concatenation rather than a new thing for every agent to learn.
-
 ### Which feedback is included
 
 | Source | Rule |
@@ -72,14 +69,13 @@ is one more entry in a concatenation rather than a new thing for every agent to 
 | Conversation comments | Written since `since`, except the workflow's own round comments |
 | Failing checks | Currently `failure`, `timed_out` or `action_required` on `head_sha` |
 
-State-based sources ignore `since` entirely: "still unresolved" and "currently red" are not
-questions about when something was said. Time-based ones are read from the end of the previous
+State-based sources ignore `since` entirely. Time-based ones are read from the end of the previous
 round, or from the pull request's creation on the first round.
 
 A thread whose newest comment carries `reply_marker` has been answered and is left out, or every
 round would re-address the same comment forever. A human replying after the bot puts the thread back
-in play. `include_answered_threads` turns the exception off - a reviewing agent wants those threads,
-because that is where its own last concern was met or argued with.
+in play. `include_answered_threads` turns the exception off, which is what a reviewing agent wants -
+those threads are where its own last concern was met or argued with.
 
 Only the first 100 review threads are staged, with a warning when there are more.
 
@@ -87,27 +83,25 @@ Only the first 100 review threads are staged, with a warning when there are more
 
 Each finished round leaves one `round_marker` comment carrying its own metadata, and those comments
 are the history. `round` is how many have run plus one. `unattended_rounds` counts consecutive
-bot-triggered rounds back from the newest, and **any round a person asked for resets it to zero** -
-a human looking at the pull request is exactly what the cap on it waits for. A round whose metadata
-cannot be parsed counts as unattended, erring towards stopping rather than looping.
+bot-triggered rounds back from the newest, and **any round a person asked for resets it to zero**. A
+round whose metadata cannot be parsed counts as unattended, erring towards stopping rather than
+looping.
 
 ### Checks
 
 `ignore_check_patterns` exists because the AI workflows report their own check runs on the very
-commit being staged. Without it the previous round's red status arrives as a code defect and the
-agent spends a round chasing its own tail. Keep the pattern covering whatever the AI workflows are
-named in your repository.
+commit being staged, and without it the previous round's red status arrives as a code defect. Keep
+the pattern covering whatever the AI workflows are named in your repository.
 
 `checks_pending` above zero means the commit is **not known to be green, only not known to be red**.
-It is said out loud in the staged data too, because an agent reading an empty failure list ten
-seconds after a push would otherwise report the branch as passing.
+It is said out loud in the staged data too, so an agent reading an empty failure list ten seconds
+after a push does not report the branch as passing.
 
 A failing check becomes one item rather than one per annotation, with at most `max_annotations` of
-them quoted - hundreds of lint errors would bury every human comment, and the agent has a shell to
-run the linter again for the rest.
+them quoted - the agent has a shell to run the linter again for the rest.
 
-`checks: read` may not be granted; when it is missing the checks are staged as an empty list with a
-warning, because that should cost the review feedback nothing.
+When `checks: read` is missing the checks are staged as an empty list with a warning, rather than
+failing.
 
 ### Why files and not step outputs
 

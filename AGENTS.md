@@ -5,8 +5,8 @@
 The release generates it from the git log, and it rewrites the section for the version being
 released - so a hand-written entry is either overwritten or left conflicting with the commit the
 release makes. **Your commit message is the changelog entry.** Prefix it `BREAKING:`, `Depr:`,
-`Fix:`, `New:` or `Update:` and the release picks it up; anything else is left out. This holds for
-every Uniques repository, not only this one.
+`Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
+holds for every Uniques repository, not only this one.
 
 ## Documentation
 

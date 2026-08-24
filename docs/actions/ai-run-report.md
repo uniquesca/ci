@@ -43,8 +43,7 @@ Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) a
 
 `claude-code-action` fails a step whose run overran `--max-turns`, and a run it fails that way is
 still `completed`. Conversely `completed` is `false` for a run that was cut off, one that died, and
-one that wrote no closing record at all - **anything but a clear yes is a no**, since a log this
-cannot be read out of is not evidence that the work is finished.
+one that wrote no closing record at all - **anything but a clear yes is a no**.
 
 That is why the callers compare `turns` against the budget they set: a finished-but-overrun round
 is worth keeping, and a killed one is not.
@@ -52,8 +51,8 @@ is worth keeping, and a killed one is not.
 ### Why the result is a file
 
 `result_file` rather than a string output, because a plan can run to tens of kilobytes and a step
-output cannot. It is written under `$RUNNER_TEMP`, deliberately outside the checkout, so a workflow
-that commits its working tree cannot sweep the agent's own output into the commit.
+output cannot. It is written under `$RUNNER_TEMP`, outside the checkout, so a workflow that commits
+its working tree cannot sweep the agent's own output into the commit.
 
 The text comes from the `result` field of the log's closing record. On an `api_error` that field
 holds the error rather than an answer, so it is treated as no result.
@@ -67,5 +66,4 @@ which. Call this action with `if: always()` - a run that died partway is exactly
 ### The narration
 
 The first step prints the agent's own text and every tool call it made, pulled out of the JSON
-transcript. That is the readable version of what happened; the raw transcript is left to the
-caller's `debug` input.
+transcript. The raw transcript is left to the caller's `debug` input.

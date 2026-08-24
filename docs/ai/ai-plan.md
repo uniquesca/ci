@@ -6,9 +6,9 @@ Turns a Github issue into an implementation plan. Somebody comments `/ai-plan` o
 agent reads the issue and the real code, and the plan is posted back as a comment on the same
 issue.
 
-The plan is the specification for everything that follows, and it lives on the issue in exactly
-one copy. There is no second, machine-readable version: you can edit it, tick steps off, or
-reject it, and the implementing agent reads the same text you approved.
+The plan lives on the issue in exactly one copy, and there is no machine-readable second version:
+you can edit it, tick steps off, or reject it, and the implementing agent reads the same text you
+approved.
 
 ## How the three fit together
 
@@ -30,12 +30,11 @@ issue                                    pull request
 ```
 
 **The issue holds the plan. The pull request holds the review.** Once a pull request exists,
-`/ai-do` on the issue stops doing anything except pointing at it. The issue stays the place the
-plan lives, though, so `/ai-plan` keeps working - see [changing direction](#changing-direction).
+`/ai-do` on the issue only points at it. `/ai-plan` keeps working, though - see
+[changing direction](#changing-direction).
 
-One thing travels along that first arrow besides the plan text: **the branch the plan was written
-against**. `/ai-plan base=develop` records `develop` in the plan; a later `/ai-plan` revises it
-against the same branch, and `/ai-do` builds on it - neither has to be told again. See
+The plan also records **the branch it was written against**, and a later `/ai-plan` and `/ai-do`
+both follow it without being told again. See
 [planning against another branch](#planning-against-another-branch).
 
 ## Integrating a repository
@@ -58,7 +57,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
     uses: uniquesca/ci/.github/workflows/ai-plan.yml@main
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -79,35 +78,39 @@ jobs:
 Four things to get right, all of which fail quietly rather than loudly:
 
 * **The `permissions` block belongs on the calling job.** A called workflow can only narrow the
-  token it is given, never widen it.
+  token it is given, never widen it. `pull-requests: write` buys one comment - a replan telling
+  the open pull request its plan moved - and narrowing it to `read` fails only that step.
 * **The file has to be on the default branch.** Github always runs the default-branch version of
   an `issue_comment` workflow, so this cannot be tested from a feature branch.
 * **Both events are needed.** `issue_comment` carries the commands; `pull_request_review` is what
-  lets a review start another implementing round. Leave the second out and reviews silently do
-  nothing.
+  lets a review start another implementing round.
 * **`ANTHROPIC_API_KEY` has to be listed explicitly**, or `secrets: inherit`. Secrets do not
   cross the `workflow_call` boundary on their own.
 
 Add the key as an Actions secret under **Settings → Secrets and variables → Actions**, at
 repository or organisation level. You do *not* need the Claude Github App installed.
 
-Every input to every workflow has a description in the workflow file itself
-(`.github/workflows/ai-plan.yml` and friends) - read those rather than a list here, which would
-only go stale. The ones worth knowing about are called out where they matter.
-
 ## Triggering the planner
 
-Comment `/ai-plan` on an issue. The command has to be at the very beginning of the comment.
+Comment `/ai-plan` on an issue, with the command at the very beginning of the comment. Only
+collaborators with **admin** or **write** access can run it - Github reports the `maintain` role as
+`write` and `triage` as `read` - and anyone else gets a comment explaining why not.
 
 **The issue body is what gets planned.** Prose you type after the command is ignored, so put the
 task in the issue, not in the comment. An empty issue body gets a comment saying so, and nothing
 is charged for it.
 
+Nothing appears until the plan is finished, which takes a few minutes. What comes back is one
+comment: a summary of the approach, the steps as a real task list with checkboxes, the risks and
+unknowns behind it, the checks that prove the work is done, and acceptance criteria QA can test by
+hand. The last line says who asked for it, roughly what the run cost, and which branch it was
+written against.
+
 ### Planning against another branch
 
 By default the planner reads the repository default branch. Name another one and it plans against
-that instead - **once, on the first run.** The plan remembers the branch, and everything
-afterwards follows it:
+that instead - **once, on the first run.** The plan remembers the branch, and everything afterwards
+follows it:
 
 ```
 /ai-plan base=develop     # plans against develop, and records it
@@ -117,35 +120,17 @@ afterwards follows it:
 ```
 
 A bare `/ai-plan` on an issue that already has a plan is a **revision of that plan**, so it reads
-the branch that plan was written against. Falling back to the default branch there would be the
-same mistake in a smaller form - the revision would describe files that have moved and work
-already done, and it would be arguing with feedback written about different code. The default
-branch is only right when no plan has an opinion yet.
-
-`/ai-do` inherits the same way - see
+the branch that plan was written against. `/ai-do` inherits the same way - see
 [basing the work on another branch](ai-implement.md#basing-the-work-on-another-branch).
 
-Every plan says which branch it was written against, in its last line under
-`Requested by`. That is the thing to check when a plan looks like it read the wrong code.
-
-Only read when `base=` is the first thing after the command. A branch that does not exist gets a
-comment and no plan, which costs nothing.
+`base=` is only read when it is the first thing after the command. A branch that does not exist
+gets a comment and no plan, which costs nothing.
 
 **To change branch, say so again.** Replanning with a different `base=` overrides what the last
-plan recorded, and it is how you correct a plan written against the wrong branch - the new plan
-records the new branch, and later runs follow that one. If a pull request is already open for the
-issue and the revised plan names a different branch than it targets, the pull request gets told -
-it cannot move itself, because a base is settled when the branch is created.
-
-Only collaborators with **admin** or **write** access can run it. Github reports the `maintain`
-role as `write` and `triage` as `read`, so owners, maintainers and developers can; triage and
-read cannot. Anyone else gets a comment explaining why not. That gate is what stops a stranger
-spending your API tokens.
-
-Nothing appears until the plan is finished, which takes a few minutes. What comes back is one
-comment: a summary of the approach, the steps as a real task list with checkboxes, the risks and
-unknowns behind it, the checks that prove the work is done, and acceptance criteria QA can test
-by hand. The last line says who asked for it and roughly what the run cost.
+plan recorded, and it is how you correct a plan written against the wrong branch. If a pull request
+is already open for the issue and the revised plan names a different branch than it targets, the
+pull request gets told - it cannot move itself, because a base is settled when the branch is
+created.
 
 ## How the plan is numbered
 
@@ -160,15 +145,14 @@ Every item in the plan carries an id, and they are how everybody involved refers
 | `QA1`, `QA2` | QA acceptance criteria | What to test by hand and what should happen, written for somebody who will not read the code. Each names the steps it covers, as `QA1 (S2, S5)` |
 
 **Feedback can use them, and that is the point.** "S4 and S5 are the wrong way round", "C2 proves
-nothing, the suite does not cover that path", "QA3 cannot be tested without a fixture" - all of
-that lands precisely, in a revision or in a review, without quoting a paragraph back.
+nothing, the suite does not cover that path" - all of that lands precisely, in a revision or in a
+review, without quoting a paragraph back.
 
 **Ids are stable across revisions.** An item that survives a revision keeps its number even if it
 was reworded, new work takes the next number the plan has never used, and dropped items are listed
-struck through on a `Retired:` line at the end of their section rather than renumbered away. So a
-comment written two revisions ago citing `S4` still points at what it was about, and gaps in the
-numbering are normal. Steps are listed in the order to work in, which after a revision or two is
-no longer numeric order - the number identifies a step, it does not sequence it.
+struck through on a `Retired:` line at the end of their section rather than renumbered away. So
+gaps in the numbering are normal, and steps are listed in the order to work in rather than in
+numeric order - the number identifies a step, it does not sequence it.
 
 The [implementing](ai-implement.md) and [reviewing](ai-review.md) agents cite the same ids back,
 always alongside what they are saying rather than instead of it - "the retry now backs off (S3)".
@@ -183,20 +167,16 @@ as they always did, and revising one assigns ids to what is already there.
 Three ways, depending on how wrong it is.
 
 **A small correction — just edit the comment.** There is no second copy to keep in sync, so
-editing the markdown *is* editing the plan. Fix a path, drop a step, reword a detail. Nothing
-else needs to happen.
+editing the markdown *is* editing the plan.
 
-Leave the [ids](#how-the-plan-is-numbered) as they are while you are in there. Renumbering by hand
-undoes what makes them worth citing, and a step you no longer want is better struck through on its
-section's `Retired:` line than deleted outright - that is what the next revision reads to know the
-number is spent.
+Leave the [ids](#how-the-plan-is-numbered) as they are while you are in there, and strike a step
+you no longer want through on its section's `Retired:` line rather than deleting it - that is what
+the next revision reads to know the number is spent.
 
 **Feedback and revision — say what you want, then run `/ai-plan` again.** The agent reads the
-whole thread, takes the most recent plan as its starting point, and applies whatever was asked
-for after it was posted. Parts nobody objected to survive. Each run posts a new comment, and the
-newest one is the current plan. Bare `/ai-plan` is right even when the first run named a
-`base=`: the revision reads the [same branch](#planning-against-another-branch) without being
-told again.
+whole thread, takes the most recent plan as its starting point, and applies whatever was asked for
+after it was posted. Parts nobody objected to survive. Each run posts a new comment, and the
+newest one is the current plan.
 
 Editing and re-running mix in one direction only: a re-run reads your edited comment as its
 starting point, so your edits survive, but the agent may reword around them. If some wording has
@@ -213,10 +193,11 @@ issue, so a revision reaches the code without anybody copying it anywhere, and t
 request gets a comment linking to the revision.
 
 **Nothing rebuilds on its own.** Ask for an
-[implementing round](ai-implement.md#when-the-plan-is-revised-under-the-work) when the branch should
-be brought in line, and expect a large one - it takes out the code for a step the revision dropped
-as well as adding what it now asks for. Any round that runs before then does the same, so revise
-again rather than leaving a revision you are unhappy with. Editing the comment in place is free.
+[implementing round](ai-implement.md#when-the-plan-is-revised-under-the-work) when the branch
+should be brought in line, and expect a large one - it takes out the code for a step the revision
+dropped as well as adding what it now asks for. Any round that runs before then does the same, so
+revise again rather than leaving a revision you are unhappy with. Editing the comment in place is
+free.
 
 ## Secrets
 
@@ -256,28 +237,22 @@ it from the git log, so one sends the implementing agent to do work that gets th
 
 ### What the agent can and cannot do
 
-It has **no shell and no network**. It cannot fetch the issue, so the workflow writes the issue
-and its comments into the checkout first and the agent only ever reads files. That is also what
-keeps issue text out of the workflow file: `gh` writes it straight to disk, so nothing written by
-whoever opened the issue is ever expanded into YAML.
+It has **no shell and no network**. The workflow writes the issue and its comments into the
+checkout with [`ai-stage-issue`](../actions/ai-stage-issue.md) first and the agent only ever reads
+files, which is also what keeps issue text out of the workflow file - nothing written by whoever
+opened the issue is expanded into YAML.
 
-The plan step is read-only in two independent ways. The job holds `contents: read`, so nothing
-the agent does to the checkout can be pushed - that is the boundary that actually holds. Editing,
-writing and shell tools are switched off as well, which is defence in depth and stops turns being
-spent on work that would be discarded. If you extend this workflow, keep `contents: read`: it is
-doing more work than the tool list.
+The plan step is read-only in two independent ways. The job holds `contents: read`, so nothing the
+agent does to the checkout can be pushed, and the editing, writing and shell tools are switched off
+as well. If you extend this workflow, keep `contents: read`: it is doing more work than the tool
+list.
+
+Only **bot-authored** comments carrying the `<!-- ai-plan -->` marker are treated as previous
+plans, so a marker anybody pastes into a comment of their own is not revised as one.
 
 The checkout is of the **default branch unless a branch was named**, and nothing about it is
-inferred from the event. An `issue_comment` carries no ref worth checking out, and planning an
-issue is a question about the mainline rather than about whichever branch happens to be open -
-[`base=`](#planning-against-another-branch), on this run or on the one that produced the plan
-being revised, is the only way to point it elsewhere.
-
-### Revising a plan safely
-
-Comments carry an `is_bot` flag, and the agent is told to treat only bot-authored comments
-carrying the `<!-- ai-plan -->` marker as previous plans. Without that, anyone able to comment
-could paste a marker and have the next run "revise" a plan they wrote themselves.
+inferred from the event - [`base=`](#planning-against-another-branch), on this run or on the one
+that produced the plan being revised, is the only way to point it elsewhere.
 
 ### When a run goes wrong
 
@@ -287,17 +262,15 @@ balance, a hit turn limit and a genuine bug look identical otherwise.
 
 **A run that overran `max_turns` is not a failed run, whatever its step says.** `claude-code-action`
 checks the turn count after the agent has already stopped and fails its own step when the count came
-out over the limit - which happens because the limit is not enforced on a long run, so the agent
-finishes of its own accord and the check only notices afterwards
+out over the limit, which happens because the limit is not enforced on a long run
 ([#1577](https://github.com/anthropics/claude-code-action/issues/1577)). The plan is complete, so the
 workflow posts it and puts a warning on the run instead of failing. A run genuinely cut off part-way
 reports `error_max_turns`, and that one still fails with nothing posted.
 
-Not every stop is a failure. An empty issue body, or a `base=` naming a branch that does not exist
-or is not a usable branch name, gets a comment and a green run - the command was asked too early or
-typed wrong, which is not a CI error and should not read like one. A replan whose *previous* plan
-named a branch that has since been merged and deleted stops the same way, and asks you to name a
-branch: continuing against the default branch would silently replan against different code.
+Three things end without a plan and with a green run, because the command was asked too early or
+typed wrong: an empty issue body, a `base=` naming a branch that does not exist or is not a usable
+branch name, and a replan whose *previous* plan named a branch that has since been merged and
+deleted - that one asks you to name a branch rather than silently replanning against the default.
 
 Three places to look afterwards:
 
@@ -314,12 +287,11 @@ Three places to look afterwards:
 
 Every run costs Anthropic API tokens against your key, and planning reads the repository, so it
 is a model call per turn rather than a single prompt. The cost line on the plan is the agent's own
-estimate from its token counts, not a billed figure - treat it as an order of magnitude. Keep the
-command gated to the people who should be spending it.
+estimate from its token counts, not a billed figure - treat it as an order of magnitude.
 
 **`max_turns` is not a spending cap.** The SDK holds a short run to it exactly and lets a long one
-run past it, so treat it as the size of run you are budgeting for rather than a limit that will stop
-one. `agent_timeout_minutes` is the bound that actually holds.
+run past it, so treat it as the size of run you are budgeting for. `agent_timeout_minutes` is the
+bound that actually holds.
 
 Github caps a comment at 65536 characters. The agent is told to stay well under that; a plan that
 would exceed it is a sign the issue should be split.

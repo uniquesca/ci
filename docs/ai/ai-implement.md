@@ -13,15 +13,11 @@ file. Two things in there matter specifically to this one, and both fail silentl
 them:
 
 * **`pull_request_review: types: [ submitted ]`** in the caller's `on:` block. Without it,
-  requesting changes never starts a round and nothing says why.
+  requesting changes never starts a round.
 * **`checks: read`** on the job. Without it, failing CI checks are simply not part of the feedback.
 
 That is enough to run. [Wiring CI into the loop](#wiring-ci-into-the-loop) adds two optional
 things: showing the agent what a check printed, and letting a red check start a round.
-
-Inputs are documented in `.github/workflows/ai-implement.yml`. The two you are most likely to
-change are `max_unattended_rounds` (see [the round cap](#the-round-cap)) and `dispatch_review`
-(see [AI Review](ai-review.md)).
 
 If your repository has **"Allow GitHub Actions to create and approve pull requests"** switched off
 (Settings → Actions → General → Workflow permissions), `gh pr create` fails no matter what the job
@@ -34,18 +30,15 @@ Comment `/ai-do` on an issue that already has a plan. Same permission gate as
 
 The agent implements the plan on a branch named after the issue, runs whatever tests and linters
 it can find, and a pull request appears. The issue gets a comment with the link, and **that
-comment is the hand-off** - from then on the issue is only for the plan.
+comment is the hand-off** - from then on the issue is only for the plan, and running `/ai-do`
+there again just replies pointing at the pull request.
 
 The pull request body and every round comment cite the plan's
 [ids](ai-plan.md#how-the-plan-is-numbered) - `(S3)` after the change that implements step 3, `(C2)`
-after the check that passed - always next to what is being said rather than in place of it, because
-the plan itself is back on the issue. The plan's `C` checks are the agent's to run; its `QA`
-criteria are for a person to test after this merges, and the agent never reports one as met. You
-can use the same ids talking back to it: "S5 is missing", "C1 still fails" lands exactly where you
-mean it.
-
-Running `/ai-do` on the issue again does not implement anything. It replies pointing at the pull
-request, because that is where the work continues.
+after the check that passed - always next to what is being said rather than in place of it. The
+plan's `C` checks are the agent's to run; its `QA` criteria are for a person to test after this
+merges, and the agent never reports one as met. You can use the same ids talking back to it: "S5 is
+missing", "C1 still fails" lands exactly where you mean it.
 
 ### Basing the work on another branch
 
@@ -66,9 +59,7 @@ Say it here when it should differ from the plan - the plan was right, but the la
 ```
 
 The branch is created from `hotfix/1.2` and the pull request targets it. Doing this when the plan
-named a different branch gets a comment saying which one won, because a plan describing one branch
-while the code lands on another is the mismatch this whole mechanism exists to prevent - the note
-is there so it is never accidental.
+named a different branch gets a comment saying which one won.
 
 In full, for a new branch, most specific first:
 
@@ -77,15 +68,14 @@ In full, for a new branch, most specific first:
 3. the branch a closed pull request being revived used to target
 4. the repository default branch
 
-Only read when `base=` is the **first thing after the command**, so the rest of the comment stays
-what it has always been - instructions for the agent. `/ai-do also update the changelog` is not a
-request to retarget anything, and neither is a `base=` mentioned mid-sentence. Surrounding
-backticks are stripped, so ``/ai-do base=`develop` `` works too.
+`base=` is only read when it is the **first thing after the command**, so the rest of the comment
+stays what it has always been - instructions for the agent. `/ai-do also update the changelog` is
+not a request to retarget anything. Surrounding backticks are stripped, so ``/ai-do base=`develop` ``
+works too.
 
 A branch that does not exist gets a comment and nothing else - no branch, no pull request, and a
 green run. A branch the *plan* named that has since been merged and deleted fails the run instead,
-loudly: silently building on something else is the one outcome worth being noisy about. The base is
-only ever settled on the **first** run for an issue; see
+loudly. The base is only ever settled on the **first** run for an issue; see
 [one branch, one pull request](#one-branch-one-pull-request) for what happens if you ask later.
 
 ## Reviewing it, and asking for changes
@@ -101,13 +91,11 @@ run.
 re-run with nothing new to say.
 
 An **approved** or plain **commented** review deliberately does nothing. Requesting changes is a
-decision; a passing remark is not, and firing an agent on every stray comment would be expensive
-and surprising.
+decision; a passing remark is not.
 
 Each round ends with the agent pushing to the same branch, **replying to every thread it was
 given**, and posting one summary comment. It replies even to the comments it decided against -
-"I did not do this, because X" is the most useful thing it can tell you, and it is where you find
-out you disagree.
+"I did not do this, because X" is where you find out you disagree.
 
 ### What to do with a reply
 
@@ -140,23 +128,22 @@ than the code.
 
 ## Checking its own work
 
-A round that pushes a code style violation costs a whole round to find out about it. So before the
-agent starts, this workflow sets the runner up the way CI sets it up - configuration rendered,
-application running, dependencies installed - and tells it the exact commands CI is going to check
-its work with. The agent runs the fixer, runs the reporter, and pushes something that has already
-passed.
+Before the agent starts, this workflow sets the runner up the way CI sets it up - configuration
+rendered, application running, dependencies installed - and tells it the exact commands CI is going
+to check its work with. The agent runs the fixer, runs the reporter, and pushes something that has
+already passed, rather than spending a whole round finding out about a style violation.
 
 Nothing to configure. It reads the repository and works out what applies:
 
 | What it finds | What happens |
 |---|---|
-| `task.sh`, or a compose file | The application is brought up, which renders `_ci_environment.json`'s `configs` from the tokens you pass and keeps them out of the round's commit. With a `task.sh`, the agent is given whichever of `cs-fix`, `cs-check`, `psalm` and `test` it supports |
+| `task.sh`, or a compose file | The application is brought up, which renders `_ci_environment.json`'s `configs` from the tokens you pass and keeps them out of the round's commit. With a `task.sh`, the agent is given whichever of `cs-fix`, `code-quality`, `cs-check`, `psalm` and `test` it supports |
 | `composer.json` and a `phpcs.xml` or `psalm.xml`, or either one's `.dist` | Dependencies installed, and the agent is given `phpcbf`, `phpcs` and `psalm` as they are configured here |
 | `composer.json` and neither | Nothing to install dependencies for |
 | Neither | Nothing - the agent works out what it can run for itself |
 
-Configuration tokens go in as a secret, because they are the environment's credentials - and the
-agent has a shell, so **give it a test environment's and never production's**:
+Configuration tokens go in as a secret, and the agent has a shell, so **give it a test
+environment's and never production's**:
 
 ```yaml
 jobs:
@@ -175,9 +162,8 @@ jobs:
 
 Images need no secret: `ghcr.io` is logged into with the run's own token, which is what
 [`packages: read`](#pulling-the-images) is for. Add `COMPOSER_ACCESS_TOKEN` if any Composer
-dependencies are private - one whose dependencies are all public installs without it, and one that
-needs it falls back to the artifact reports below. Everything the agent is told to run and
-everything it is warned about is in [Dig deeper](#what-the-agent-is-given-to-check-with).
+dependencies are private. Everything the agent is told to run is in
+[Dig deeper](#what-the-agent-is-given-to-check-with).
 
 Tests that need a browser, and anything else no `task.sh` task covers, are still the artifact
 loop's job, below.
@@ -189,7 +175,10 @@ in [Dig deeper](#dig-deeper).
 
 **Show the agent what a check printed.** It cannot read job logs, so upload an artifact named
 `ai-report-*` from a run on the pull request's head commit. Every match is collected into
-`.ai-reports/` before each round, and the agent is told to read it. Nothing to configure here:
+`.ai-reports/` before each round, and the agent is told to read it.
+[`docker-qa-checks`](../actions/docker-qa-checks.md) and
+[`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) already upload one; for a check of your
+own:
 
 ```yaml
       - name: Run the thing
@@ -239,7 +228,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
 | `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with. Read only when the application is brought up, which is what renders the templates. **The agent can read them**, so make them a test environment's |
-| `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies instead of guessing at what they would have said. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports, as before |
+| `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports |
 | `PUSH_ACCESS_TOKEN` | no | Token the agent pushes with. **Without it its pushes trigger no workflows at all** - see [wiring CI into the loop](#wiring-ci-into-the-loop). A machine user PAT with `repo` scope, or a Github App installation token. Add `workflow` scope only if the agent should be allowed to change files under `.github/workflows` |
 
 ## Inputs
@@ -260,7 +249,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 | `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
 | `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#how-the-wait-works). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
-| `provision_checks` | boolean | `true` | Set the runner up before the agent starts - bring the application up with its config templates rendered, install the dependencies - and tell it the exact commands CI will check its work with, so it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). The master switch for all of it: turn it off and nothing is prepared |
+| `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
@@ -273,66 +262,53 @@ None. The result is a branch, a pull request and a round comment.
 
 ### What the agent is given to check with
 
-The commands come from the same configuration files
-[`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) and
-[`docker-qa-checks`](../actions/docker-qa-checks.md) detect on, and they have to stay that way. The
-point of this is that the agent gets the same answer CI will; a command that differs by a flag is
-worse than no command at all, because the agent reports clean and then goes red on the push,
-spending the round this was meant to save. `psalm.xml.dist` needs `--config` passed explicitly and
-`psalm.xml` does not, and that asymmetry is Psalm's, not ours. In a container the four tasks are
-asked for with `./task.sh supports`, which is the repository's own answer about itself, so a task
-that was renamed is never offered.
+The commands are the ones [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) and
+[`docker-qa-checks`](../actions/docker-qa-checks.md) run, worked out from the same configuration
+files, so the agent gets the answer CI will rather than one that differs by a flag. In a container
+the tasks come from `./task.sh supports`, so a task that was renamed is never offered. Each one is
+listed with what it does, since the set overlaps - `code-quality` is the fixer and both reporters in
+one call, and an agent told only the names runs it and then the three tools inside it again.
 
-The agent is told to run the fixer before the reporter, and that a clean run is the floor rather
-than the whole of it - the plan's `C` checks and this repository's tests are still its own to find
-and run. It is deliberately never told these are "checks": that word already means the plan's `C`
-items in both prompts, and an agent with two meanings for it reports `C2` as discharged because a
-linter came back clean.
+The agent is told to run the fixer before the reporter, and that a clean run is the floor: the plan's
+`C` checks and this repository's tests are still its own to find and run. A `test` task is given as
+**one run per job**, because the unit tests share the container's database and leave state in it - so
+a failure appearing only in a second run may be the first run's leftovers.
 
 Two things end up in the commit that a reviewer may not expect:
 
 * **`phpcbf` fixes the whole repository, not the diff.** Violations that were there before the round
-  are swept into it. That is the same thing [`cs-fix`](../actions/cs-fix.md) would have done a round
-  later, arriving earlier.
+  are swept into it - the same thing [`cs-fix`](../actions/cs-fix.md) would have done a round later.
 * **A repository that commits `vendor/`** gets the install in the commit and in the review diff.
   The run warns when installing changed tracked files and lists them, rather than acting on it.
 
-`composer.lock` is the exception: it is added to `.git/info/exclude`, so a library with no committed
-lock file does not have one pushed by the round that installed its dependencies. That only hides
-untracked files, so a repository that does commit its lock file is unaffected.
+`composer.lock` and every path in `_ci_environment.json`'s `configs` are added to
+`.git/info/exclude`, so the round does not push a lock file a library never committed, or a rendered
+config holding the credentials it was rendered from. That only hides untracked files: a repository
+that *commits* a file it renders gets a warning naming it and the file goes into the pull request,
+so either gitignore it or do not give this workflow a secret you would mind reading there. Anything
+the containers write into the checkout is swept into the commit unless the repository already ignores
+it, which is why they run as the runner's own user rather than as root.
 
-Every path in `_ci_environment.json`'s `configs` is excluded the same way, and for a stronger
-reason: a rendered config holds the credentials it was rendered from, and the round commits its
-working tree. The same limitation applies - a repository that *commits* a file it renders gets a
-warning naming it and the file goes into the pull request, so either gitignore it or do not give
-this workflow a secret you would mind reading there. Watch for the containers too: anything they
-write into the checkout is swept into the commit unless the repository already ignores it, which is
-why they run as the runner's own user rather than as root.
-
-The rendering is [`docker-spin-up`](../actions/docker-spin-up.md)'s and happens only as part of
-bringing the application up. There is deliberately no standalone render: what gets built here
-without a container is libraries, and a library has no configuration to render - so a repository
-that would need one is one nothing else about this would work for either.
+Rendering is [`docker-spin-up`](../actions/docker-spin-up.md)'s and happens only as part of bringing
+the application up - there is no standalone render.
 
 The spin-up cannot fail a round. A template referencing a token nobody supplied, or a compose file
 the branch itself just broke, leaves a warning on the run and the round goes on without a
-container - failing instead would mean the repository whose setup is broken is the one that cannot
-be worked on. What it costs is the feedback: the agent is back to the artifact reports for what CI
-would say. It costs time as well, inside the job's own limit, which is what `timeout_minutes` has to
-have room for.
+container - back to the artifact reports for what CI would say. It costs time as well, inside the
+job's own limit, which is what `timeout_minutes` has to have room for.
 
-The install runs `--no-scripts`. Post-install scripts are arbitrary repository code and this job has
-`ANTHROPIC_API_KEY` in its environment. `COMPOSER_ACCESS_TOKEN` is scoped to the install step
+The install runs `--no-scripts`, because post-install scripts are arbitrary repository code and this
+job has `ANTHROPIC_API_KEY` in its environment. `COMPOSER_ACCESS_TOKEN` is scoped to the install step
 alone - the agent inherits a populated `vendor/`, never the credential that filled it. The one place
-repository code does run here is `_ci_environment.json`'s `init_script`, which
-[`docker-spin-up`](../actions/docker-spin-up.md) executes before the containers start.
+repository code does run is `_ci_environment.json`'s `init_script`, which `docker-spin-up` executes
+before the containers start.
 
 The PHP version comes from [`_ci_environment.json`](../actions/get-default-ci-environment.md) - the
 `default` matrix entry, or the only one, or PHP 8.2 where the repository says nothing. A repository
 whose linters only pass on one leg of a matrix should name that leg `default`.
 
 Set `provision_checks: false` to skip all of it. The agent still has a shell and is still told to
-verify its own work; it just has to work out what it can run, as it did before.
+verify its own work; it just has to work out what it can run.
 
 ### Pulling the images
 
@@ -342,7 +318,7 @@ private image, and both fail the same way - the pull is denied and the round car
 container:
 
 * **`packages: read` on the calling job.** A reusable workflow cannot hold a permission its caller
-  does not grant, exactly as with `actions: read`. Without it the token has `packages: none`.
+  does not grant. Without it the token has `packages: none`.
 * **The package has to be linked to the repository.** An image first pushed to `ghcr.io` with a
   personal access token belongs to no repository, and `GITHUB_TOKEN` is refused for it until that
   package grants this one the Read role under **Package settings → Manage Actions access**.
@@ -351,7 +327,7 @@ Public images need neither, and a repository pulling only from Docker Hub is una
 
 ### Reports from other workflows
 
-Three lines there are load-bearing, and getting any of them wrong fails quietly:
+Three lines in the upload are load-bearing, and getting any of them wrong fails quietly:
 
 * **`if: always()`** - a failed step skips the ones after it, so without this the run you wanted the
   report from is the one that uploads nothing.
@@ -376,7 +352,7 @@ A round pushes, and your QA workflows and the reviewing agent start in parallel 
 order. The first to finish starts a round, sees the other still working, and exits within about a
 minute having posted nothing. The second finds nothing pending and runs the round properly.
 
-There is no handshake between them - each asks GitHub what is still reporting on that commit - so a
+There is no handshake between them - each asks Github what is still reporting on that commit - so a
 duplicated or lost trigger cannot wedge it. If `dispatch_review` is off or the reviewing agent
 fails, nothing waits for it: the question is whether the reviewer is *still working*, not whether a
 review arrived.
@@ -390,21 +366,17 @@ Two consequences worth expecting:
   them, so they count against [the round cap](#the-round-cap) - which is what stops the
   round → push → CI → round cycle running away.
 * **A green pull request produces no comment.** The round starts, finds nothing to act on and exits
-  silently, because this fires on every push and saying so each time would be noise.
+  silently, because this fires on every push.
 
 The optional `branches:` filter narrows this to branches the workflow could have pushed. Without it
 every QA run in the repository creates a run that immediately works out it has nothing to do - the
-job `if` skips those, so they cost nothing and say nothing, but they still appear in the Actions
-tab. It matches on the head branch and nothing checks it against `branch_prefix`, so a pattern
-narrower than the prefix stops rounds starting with no error to say why.
+job `if` skips those, so they cost nothing, but they still appear in the Actions tab. It matches on
+the head branch and nothing checks it against `branch_prefix`, so a pattern narrower than the prefix
+stops rounds starting with no error to say why.
 
 ### The round cap
 
-A person asking for another round is bounded by their own patience and their willingness to spend
-the money. A bot asking is not - with [AI Review](ai-review.md) wired up, the loop could otherwise
-run until the API key is empty.
-
-So rounds are counted, and the count is only ever about **consecutive rounds a bot started**. Any
+Rounds are counted, and the count is only ever about **consecutive rounds a bot started**. Any
 round a person asked for resets it to zero, because a person looking at the work is exactly the
 thing the limit exists to wait for. `max_unattended_rounds` defaults to `5`, which is *not* "five
 rounds per pull request" - iterating with a human ten times is normal and uncapped.
@@ -412,11 +384,11 @@ rounds per pull request" - iterating with a human ten times is normal and uncapp
 Past the limit the round is refused with a comment asking for a person, and it takes a human
 comment or review to start another.
 
-Two mechanisms decide whether a round counts, and it takes both: the actor is a `Bot`, **or** the
-review body starts with `<!-- ai-review -->`. The second is the one that matters in practice,
-because a review token belonging to a machine *user* account makes Github report the review as
-authored by a `User`. Anyone can paste that marker into a review of their own; all that does is
-make their own round count against the cap, so it can only ever stop the loop sooner.
+A round counts as a bot's when the actor is a `Bot`, **or** the review body starts with
+`<!-- ai-review -->`. The second is the one that matters in practice, because a review token
+belonging to a machine *user* account makes Github report the review as authored by a `User`.
+Anyone can paste that marker into a review of their own; all that does is make their own round count
+against the cap.
 
 A round that changes no file says so plainly in its comment. That is usually the more informative
 signal than the cap itself: two agents talking past each other tends to produce a lot of activity
@@ -427,41 +399,29 @@ and no diff.
 Only pull requests it opened: the head branch has to be in **this** repository and to carry the
 configured prefix. Anything else is left alone.
 
-This is a security boundary, not tidiness. `issue_comment` and `pull_request_review` fire on every
-pull request in the repository, including ones from forks, and both run in the base repository's
-context with a write token and **full access to secrets**. Without the branch check, `/ai-do` on a
-fork's pull request would check out that fork's code and hand it a shell with
-`ANTHROPIC_API_KEY` in the environment.
+This is a security boundary. `issue_comment` and `pull_request_review` fire on every pull request in
+the repository, including ones from forks, and both run in the base repository's context with a
+write token and **full access to secrets**. Without the branch check, `/ai-do` on a fork's pull
+request would check out that fork's code and hand it a shell with `ANTHROPIC_API_KEY` in the
+environment.
 
-The check happens twice, at two different costs:
+The check happens twice. The job's `if` pre-filters `pull_request_review` and `workflow_run`, whose
+payloads carry the head branch, so an out-of-scope pull request is **skipped** before a runner is
+allocated - a pre-filter only, since `startsWith` in a Github expression is case-insensitive while
+branch names are not. `Resolve the pull request` then checks against the API for every trigger, and
+that is the one that decides. An `issue_comment` payload carries no head branch at all, so a typed
+`/ai-do` always costs a runner.
 
-* **In the job's `if`**, for `pull_request_review` and `workflow_run`. Both payloads carry the head
-  branch and the head repository, so a pull request that is out of scope is filtered out before a
-  runner is allocated - the job reports as **skipped** and costs nothing. This is a pre-filter
-  only: `startsWith` in a GitHub expression is case-insensitive while branch names are not.
-* **In `Resolve the pull request`**, against what the API says, for every trigger. This is the one
-  that decides, and it is the only one available to `issue_comment` - that payload carries no head
-  branch at all, so a typed `/ai-do` always costs a runner.
-
-The triggers behave differently when a pull request is out of scope, deliberately. A review or a
-finished QA run says nothing at all - both land on work that has nothing to do with this workflow,
-and commenting on each would be noise on somebody else's thread. An explicit `/ai-do` gets an
-answer, because a person asked.
-
-That answer is behind the permission gate, and the gate is behind the branch check. Ordering
-matters in both directions: somebody who could not have run the command anyway gets silence rather
-than an explanation, and a refusal is only ever posted on something this workflow owns - otherwise
-a stranger's pull request collects a comment telling them off for a command they never typed.
-
-Running this on human-authored pull requests would be a different feature, and the branch check
-is what currently stands between the two.
+An out-of-scope review or finished QA run says nothing at all; an explicit `/ai-do` gets an answer,
+because a person asked. That answer is behind the permission gate, and the gate is behind the
+branch check - so somebody who could not have run the command anyway gets silence, and a refusal is
+only ever posted on something this workflow owns.
 
 ### Two filters, on purpose
 
 Your review comments and conversation comments are filtered by **time**, from a watermark the
 previous round recorded. Threads and failing checks are filtered by **state**, because "still
-unresolved" and "currently red" are not questions about when something was said - a thread nobody
-has resolved is still open work however long it has been sitting there.
+unresolved" and "currently red" are not questions about when something was said.
 
 The watermark is recorded when a round *starts* reading, not when it finishes, so a review you
 submit while a round is running lands on the next round rather than falling into the gap between
@@ -478,26 +438,21 @@ mechanism:
 * **Every round** - the same branch is fetched, so the agent starts from the previous round rather
   than from scratch. The push updates the open pull request. No second one appears.
 * **A closed pull request** - `/ai-do` on the issue revives it. Pushing to a closed pull request's
-  branch does not reopen it, so it is reopened explicitly rather than a second one being opened
-  beside it.
+  branch does not reopen it, so it is reopened explicitly.
 * **A merged pull request** - `/ai-do` says the work already shipped. Open a new issue.
 
-The pull request body says `Implements #<number>`, deliberately not `Closes`. Review here is the
-point, and auto-closing the issue on the first merge cuts that short. Close the issue yourself
-when the work is actually done.
+The pull request body says `Implements #<number>`, deliberately not `Closes`, so the first merge
+does not close the issue. Close it yourself when the work is actually done.
 
 **The base is settled when the branch is created**, and after that the pull request is the record
 of it. So `base=` on a round, or on an issue whose branch is still lying around from an abandoned
-attempt, gets a comment saying so and is otherwise ignored - the history is already sitting on top
-of something else, and quietly retargeting it would misrepresent the diff. Retarget the pull
-request yourself if you need to move it, with `gh pr edit --base` or the **Edit** button by its
-title: later rounds read the base off the pull request, so they follow along. Retargeting changes
-what the pull request is compared against and not what is on the branch, so a rebase is usually
-wanted too.
+attempt, gets a comment saying so and is otherwise ignored. Retarget the pull request yourself if
+you need to move it, with `gh pr edit --base` or the **Edit** button by its title: later rounds
+read the base off the pull request, so they follow along. Retargeting changes what the pull request
+is compared against and not what is on the branch, so a rebase is usually wanted too.
 
-The one apparent exception follows the same rule. Reviving a closed pull request whose branch was
-deleted does honour `base=`, because there is no branch left and one has to be created - and the
-pull request is retargeted to match, so its diff still describes only this work. Revive one
+Reviving a closed pull request whose branch was deleted does honour `base=`, because there is no
+branch left and one has to be created - and the pull request is retargeted to match. Revive one
 without saying anything and it keeps the base it had rather than snapping back to the default
 branch.
 
@@ -506,38 +461,35 @@ starts from what the first pushed.
 
 ### When the base moves under the work
 
-A run takes as long as the agent takes, and the base rarely stands still for it. So a first run
-replays its work on top of the base as it stands at the moment of the push, rather than pushing a
-branch cut from wherever the base was an hour earlier. The run log says which it did, under
-`work replayed:`.
+A first run replays its work on top of the base as it stands at the moment of the push, rather than
+pushing a branch cut from wherever the base was an hour earlier. The run log says which it did,
+under `work replayed:`.
 
 This matters for one refusal in particular. A branch being created has no previous tip for Github
 to compare it against, so it compares the workflow files it carries against the default branch -
 and a branch cut before somebody edited `.github/workflows/something.yml` still carries the older
 copy, which reads as this push updating a workflow file. `GITHUB_TOKEN` is never allowed to do
 that, whatever `permissions:` says, and the push is refused with a message naming a file the agent
-never opened. Replaying the work first is what stops that: the branch then carries the same copy
-the default branch has, and there is nothing for Github to object to.
+never opened. Replaying the work first is what stops that.
 
 Rounds are not replayed. They push to a branch that already exists, which Github compares against
-its own previous tip - a file the branch has been carrying all along is not a change - and moving
-one would mean force pushing over work somebody may be part way through reviewing.
+its own previous tip, and moving one would mean force pushing over work somebody may be part way
+through reviewing.
 
 If the replay hits a conflict, nothing is force-fixed: the work is pushed as it was cut, with a
-warning on the run, and the pull request arrives wanting a rebase. That is the ordinary state for
-a pull request to be in. The exception is a conflict that leaves a stale workflow file on the
-branch, which is the case above and gets refused - the run then comments with the file's name and
-what to do, which is to run the command again now the base has settled.
+warning on the run, and the pull request arrives wanting a rebase. The exception is a conflict that
+leaves a stale workflow file on the branch, which is the case above and gets refused - the run then
+comments with the file's name and asks you to run the command again now the base has settled.
 
 ### The round comment
 
 Every round ends with one comment, whatever else happened, and its first two lines are hidden
 markers carrying the round number, whether a person asked for it, and a timestamp.
 
-That is not decoration. The next round counts these comments to find the round number and the
-unattended streak, and reads the timestamp to know where to draw its watermark. A round that
-failed to post one would have the next round act on the same feedback all over again - which is
-why it is posted even when nothing changed.
+The next round counts these comments to find the round number and the unattended streak, and reads
+the timestamp to know where to draw its watermark. A round that failed to post one would have the
+next round act on the same feedback all over again - which is why it is posted even when nothing
+changed.
 
 ### When the plan is revised under the work
 
@@ -548,7 +500,7 @@ asks for comes back out, and the round says so above its summary. Feedback still
 disagree. That reconciling happens on any round that runs, including one CI started, so a revision
 can be picked up before you are finished with it - revise again rather than leaving one you are
 unhappy with. Editing a plan comment in place is not a revision, because the comparison is on when
-it was posted, which is what makes polishing safe.
+it was posted.
 
 ### When nothing happens
 
@@ -575,8 +527,7 @@ Cases that end without a failure and without a red run:
 Anything else that goes wrong comments on the issue or the pull request with the reason the agent
 stopped, the same way [a failed plan does](ai-plan.md#when-a-run-goes-wrong) - including the same
 exception: a round the agent finished a few turns over `max_turns` is pushed with a warning on the
-run rather than thrown away, because the alternative is losing a whole working tree of edits to a
-turn count.
+run rather than thrown away.
 
 ### What the agent can and cannot do
 
@@ -590,13 +541,11 @@ It **may not**, and cannot:
   somebody reviews and merges. Nothing here merges anything.
 * **Push, commit, open a pull request, or comment anywhere.** The checkout runs with
   `persist-credentials: false`, so there is no git credential on disk while the agent is working.
-  The workflow supplies one per command, before the agent starts and after it finishes. An agent
-  talked into `git push` finds it fails.
-* **Change a workflow file.** Not a rule this workflow enforces - Github refuses a push from
-  `GITHUB_TOKEN` that creates or updates anything under `.github/workflows/`, and there is no
-  permission that can be granted to allow it. An agent that edits one costs the run its whole
-  working tree, so the push warns about the files by name before it tries. Ask for CI changes
-  yourself rather than through the agent.
+  The workflow supplies one per command, before the agent starts and after it finishes.
+* **Change a workflow file.** Github refuses a push from `GITHUB_TOKEN` that creates or updates
+  anything under `.github/workflows/`, and there is no permission that can be granted to allow it.
+  An agent that edits one costs the run its whole working tree, so the push warns about the files by
+  name before it tries. Ask for CI changes yourself rather than through the agent.
 * **Change the plan or the feedback it was given.** Both are excluded from git, so nothing under
   them can reach a commit however the agent leaves the working tree. Its replies to your threads
   are the one thing it writes back, and they are validated rather than trusted - a reply to a
