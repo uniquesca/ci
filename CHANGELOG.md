@@ -1210,3 +1210,9 @@
 ## v10.9.0
 
 * Update: AI coding agent will can now spin docker suite up (f683875 by George Shestayev)
+
+## v10.10.0
+
+* Fix: fixed an ability for AI plan to revise the plan (7decf8d by George Shestayev)
+* Update: added QA message prefix support (8bf1391 by George Shestayev)
+* Update: coding agent now can run phpcs, psalm and unit tests (d008252 by George Shestayev)
