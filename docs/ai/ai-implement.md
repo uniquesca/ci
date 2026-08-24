@@ -31,7 +31,9 @@ Comment `/ai-do` on an issue that already has a plan. Same permission gate as
 The agent implements the plan on a branch named after the issue, runs whatever tests and linters
 it can find, and a pull request appears. The issue gets a comment with the link, and **that
 comment is the hand-off** - from then on the issue is only for the plan, and running `/ai-do`
-there again just replies pointing at the pull request.
+there again replies pointing at the pull request. The exception is a
+[revised plan](#when-the-plan-is-revised-under-the-work), which is what `/ai-do` on the issue is
+still for: it runs the round on the pull request.
 
 The pull request body and every round comment cite the plan's
 [ids](ai-plan.md#how-the-plan-is-numbered) - `(S3)` after the change that implements step 3, `(C2)`
@@ -237,7 +239,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 
 | Input | Type | Default | Description |
 |---|---|---|---|
-| `command` | string | `/ai-do` | Comment command that triggers a round. Has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round |
+| `command` | string | `/ai-do` | Comment command that triggers a round. Has to be at the very beginning of the comment. On an issue it starts the work - or runs a round on the pull request already implementing it, when the plan has been revised since that work last read it; on the pull request it always runs a round |
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
 | `allowed_bots` | string | `github-actions[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back |
 | `model` | string | `claude-opus-4-8` | Model used to implement the plan and to act on review feedback |
@@ -439,6 +441,8 @@ mechanism:
   work pushed, pull request opened.
 * **Every round** - the same branch is fetched, so the agent starts from the previous round rather
   than from scratch. The push updates the open pull request. No second one appears.
+* **An open pull request** - `/ai-do` on the issue runs a round on it when the plan has moved
+  since it was last worked to, and points at it when the plan has not.
 * **A closed pull request** - `/ai-do` on the issue revives it. Pushing to a closed pull request's
   branch does not reopen it, so it is reopened explicitly.
 * **A merged pull request** - `/ai-do` says the work already shipped. Open a new issue.
@@ -458,8 +462,11 @@ branch left and one has to be created - and the pull request is retargeted to ma
 without saying anything and it keeps the base it had rather than snapping back to the default
 branch.
 
-Two rounds on one pull request never run at once. They queue rather than cancel, so the second
-starts from what the first pushed.
+Two rounds on one pull request queue rather than cancel, so the second starts from what the first
+pushed. How well they queue is limited by what the event can say: a comment on the pull request
+carries no branch, so a round started that way can overlap one started from the issue, from a
+review or by CI. The one that pushes second has its push refused as non-fast-forward and fails
+loudly - the branch keeps the work of the one that got there first.
 
 ### When the base moves under the work
 
@@ -513,7 +520,10 @@ asks for comes back out, and the round says so above its summary. Feedback still
 disagree. That reconciling happens on any round that runs, including one CI started, so a revision
 can be picked up before you are finished with it - revise again rather than leaving one you are
 unhappy with. Editing a plan comment in place is not a revision, because the comparison is on when
-it was posted.
+it was posted. `/ai-do` on the issue is the shortest way to ask: with a plan newer than anything
+the open pull request has been built to, it runs the round there rather than replying with a
+pointer, copies what you typed into that thread so the agent reads it, and says on the issue where
+the work went.
 
 ### When nothing happens
 
@@ -521,7 +531,7 @@ Cases that end without a failure and without a red run:
 
 | Situation | What you get |
 |-----------|--------------|
-| `/ai-do` on an issue whose pull request is open | A comment pointing at it |
+| `/ai-do` on an issue whose pull request is open, with the plan unchanged | A comment pointing at it. A plan revised since [runs a round](#when-the-plan-is-revised-under-the-work) there instead |
 | `/ai-do` on an issue whose pull request was merged | A comment saying the work shipped |
 | `/ai-do` on an issue with no plan | A comment saying to run `/ai-plan` first |
 | `base=` naming a branch that does not exist | A comment saying so, and nothing is started |

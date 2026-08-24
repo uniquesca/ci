@@ -594,7 +594,7 @@ jobs:
           {
             printf 'The plan for #%s has been revised: %s\n\n' "$ISSUE" "$PLAN_URL"
             printf 'Requested by @%s. This pull request was built from the previous version, so read the revision before reviewing further.\n\n' "$COMMENTER"
-            printf 'No round starts because of this revision. Trigger the coding agent here when the branch should be brought in line with it, or request changes in a review - that round adds what the plan now asks for and takes out what it no longer does. Polish the plan first if it needs it: editing the comment in place is not a further revision.\n\n'
+            printf 'No round starts because of this revision. Trigger the coding agent - here, or on the issue the plan lives on - when the branch should be brought in line with it, or request changes in a review: that round adds what the plan now asks for and takes out what it no longer does. Polish the plan first if it needs it: editing the comment in place is not a further revision.\n\n'
             printf '**Any round that runs before then works to this revised plan too, whatever started it.** So a review or a failing check can pick it up early - revise again rather than leaving a revision you are unhappy with.\n'
 
             # The one way the two ends can still drift apart. A round cannot move a pull request

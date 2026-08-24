@@ -17,7 +17,7 @@ on:
         required: false
     inputs:
       command:
-        description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work; on the pull request it runs another round of it'
+        description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work - or runs a round on the pull request already implementing it, when the plan has been revised since that work last read it; on the pull request it always runs a round'
         required: false
         default: '/ai-do'
         type: string
@@ -166,8 +166,7 @@ jobs:
     timeout-minutes: ${{ inputs.timeout_minutes }}
     # Two rounds on one pull request must not run at once - they would push over each other
     # on the same branch. Queued rather than cancelled, so the second round starts from what
-    # the first one pushed. Issues and pull requests share one numbering sequence, so this
-    # group cannot collide between the two.
+    # the first one pushed.
     #
     # Cancelling instead would be worse than the duplicate it prevents: a round killed
     # mid-flight loses whatever the agent had edited but not pushed, or lands commits whose
@@ -175,11 +174,26 @@ jobs:
     # tokens are spent either way. A queued duplicate is cheap, because the first round's push
     # moves the head SHA and the gate below then stands the duplicate down in seconds.
     #
-    # A `workflow_run` event carries neither number, so it falls back to the branch. Without
-    # that, every QA-triggered round in the repository would share one group and queue behind
-    # unrelated pull requests.
+    # Keyed on whatever the event can say about the work, which is not the same thing in each
+    # of them, and no expression here can look anything up. A `workflow_run` carries only the
+    # branch. A comment on an *issue* carries only the issue number - and a round can start from
+    # one, so it is keyed on the branch that issue builds rather than on the number, which is
+    # what puts it in the same group as the QA-triggered rounds already running on that branch.
+    #
+    # A comment on a pull request, and a review, carry only the number: neither payload says
+    # which branch it is about, so those two share a group with each other and cannot be made to
+    # share one with the other two without a separate job to resolve the branch first. What that
+    # leaves is two people acting on the same work in the same minute - and the loser of that
+    # race has its push refused as non-fast-forward rather than pushing over anything.
     concurrency:
-      group: ai-implement-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.event.workflow_run.head_branch }}
+      group: >-
+        ai-implement-${{ github.repository }}-${{
+          github.event.issue.pull_request == null
+            && github.event.issue.number
+            && format('{0}issue-{1}', inputs.branch_prefix, github.event.issue.number)
+          || github.event.issue.number
+          || github.event.pull_request.number
+          || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     permissions:
       # Wider than the planner needs, because this one pushes a branch and opens a pull
@@ -257,6 +271,80 @@ jobs:
       # whatever kind of token the reviewer was given.
       REVIEW_MARKER: '<!-- ai-review -->'
     steps:
+      # Both of these run before anything else, because `Work out what this run is` needs their
+      # answers to say what this run is: the command on an issue whose work is already open and
+      # whose plan has moved is a round, and a round has to be one from the start - the mode, the
+      # pull request and the branch are settled in that step and read by every step after it.
+      #
+      # Read-only, and in front of the permission gate for that reason. Neither answers anybody
+      # or writes anything; the gate still stands in front of every step that does.
+      - name: Find the pull request for the issue
+        id: existing_pr
+        if: >-
+          ${{ success()
+          && github.event_name == 'issue_comment'
+          && github.event.issue.pull_request == null }}
+        env:
+          ISSUE: ${{ github.event.issue.number }}
+          BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
+        run: |
+          gh pr list --head "$BRANCH" --state all --json number,state,url,baseRefName,createdAt \
+            --jq 'sort_by(.number) | last // {}' > "$RUNNER_TEMP/existing.json"
+
+          number=$(jq -r '.number // ""' "$RUNNER_TEMP/existing.json")
+          state=$(jq -r '.state // ""' "$RUNNER_TEMP/existing.json")
+
+          # Where the last round drew its watermark, or when the pull request was opened if no
+          # round has run yet. `ai-stage-pull-request` works `since` out exactly this way for a
+          # round, off the same marker comments and the metadata line under each - done here
+          # because the question of whether this run is a round at all is what needs the answer.
+          since=''
+          if [[ "$state" == 'OPEN' ]]; then
+            since=$(
+              gh api --paginate --slurp "repos/$GH_REPO/issues/$number/comments" \
+                | jq -r --arg marker "$ROUND_MARKER" '
+                    flatten
+                    | map(select(.user.type == "Bot" and (.body | startswith($marker))))
+                    | map(.body
+                          | split("\n")
+                          | (.[1] // "")
+                          | ltrimstr("<!-- ") | rtrimstr(" -->")
+                          | (try fromjson catch {}))
+                    | last | .staged_at // ""'
+            )
+            [[ -z "$since" ]] && since=$(jq -r '.createdAt // ""' "$RUNNER_TEMP/existing.json")
+          fi
+
+          {
+            printf 'state=%s\n' "$state"
+            printf 'number=%s\n' "$number"
+            printf 'since=%s\n' "$since"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$state" ]]; then
+            echo "Issue #$ISSUE has a pull request at #$number ($state)${since:+, standing at $since}"
+          else
+            echo "Issue #$ISSUE has no pull request yet"
+          fi
+
+      # When the plan was posted, which is the other half of that comparison. Only worth asking
+      # when there is an open pull request to compare it against.
+      #
+      # The staging action rather than a filter of its own: which comment is the plan is that
+      # action's rule - bot-authored, carrying the marker, newest of them - and a second copy of
+      # the rule here is one that drifts out of step with it. Into `$RUNNER_TEMP` because nothing
+      # is checked out yet; the staging the agent reads happens further down, into the working
+      # tree, and this one is thrown away with the runner.
+      - name: Find when the plan was last posted
+        id: plan_at
+        if: ${{ success() && steps.existing_pr.outputs.state == 'OPEN' }}
+        uses: uniquesca/ci/ai-stage-issue@main
+        with:
+          issue: ${{ github.event.issue.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          directory: ${{ runner.temp }}/existing-plan-check
+
       # Two event shapes carry the same work, and nothing below should have to care which one
       # it got. Everything after this reads these outputs rather than `github.event`, which is
       # also where the next trigger - a reviewing agent, a red suite - will slot in.
@@ -284,6 +372,12 @@ jobs:
           RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
           RUN_ACTOR_TYPE: ${{ github.event.workflow_run.actor.type }}
           RUN_NAME: ${{ github.event.workflow_run.name }}
+          # What the two steps above found: the open pull request already implementing this
+          # issue, the watermark its work stands at, and when the plan was last posted. All
+          # three are empty for every other trigger, and for an issue with nothing open.
+          OPEN_PR: ${{ steps.existing_pr.outputs.state == 'OPEN' && steps.existing_pr.outputs.number || '' }}
+          PLAN_SINCE: ${{ steps.existing_pr.outputs.since }}
+          PLAN_AT: ${{ steps.plan_at.outputs.plan_created_at }}
         run: |
           if [[ "$EVENT_NAME" == 'workflow_run' ]]; then
             mode='round'; trigger='checks'
@@ -310,9 +404,27 @@ jobs:
             pull_request="$COMMENT_NUMBER"; issue=''
             actor="$COMMENT_ACTOR"; actor_type="$COMMENT_ACTOR_TYPE"
           else
-            mode='initial'; trigger='issue-command'
-            pull_request=''; issue="$COMMENT_NUMBER"
+            trigger='issue-command'
+            issue="$COMMENT_NUMBER"
             actor="$COMMENT_ACTOR"; actor_type="$COMMENT_ACTOR_TYPE"
+
+            # The command on an issue starts the work. Once the work is open it is a round
+            # instead, and only when the plan has moved since that work last read it: somebody
+            # has revised the plan and is asking for the branch to be brought in line with it,
+            # which is the one thing this command can do that a review cannot. An open pull
+            # request whose plan has not moved is not this run's business - the step further
+            # down points the person at it and stands the run down.
+            #
+            # Both timestamps are fixed-width UTC, which is what makes comparing them as strings
+            # the same as comparing them as times - `Notice a plan revised since the last round`
+            # sets that out at length. That step asks the same question again once the round is
+            # under way, off the same two values, and its answer is what the agent is told.
+            if [[ -n "$OPEN_PR" && -n "$PLAN_AT" && -n "$PLAN_SINCE" && "$PLAN_AT" > "$PLAN_SINCE" ]]; then
+              mode='round'; pull_request="$OPEN_PR"
+              echo "The plan was revised at $PLAN_AT, after the $PLAN_SINCE #$OPEN_PR stands at - running a round there rather than starting the work again"
+            else
+              mode='initial'; pull_request=''
+            fi
           fi
 
           # `base=<branch>` on the command, which asks for the work to be based on something
@@ -387,6 +499,12 @@ jobs:
           # `gh issue comment` works on a pull request number.
           target="${pull_request:-$issue}"
 
+          # Where a reply to whoever triggered it goes, which is not always the same thread. A
+          # round asked for from an issue runs on the pull request, and `target` follows the
+          # work - but the person is looking at the issue they typed in, and being told there
+          # that they may not run the command beats being told somewhere they are not reading.
+          answer_to="${issue:-$pull_request}"
+
           {
             printf 'mode=%s\n' "$mode"
             printf 'trigger=%s\n' "$trigger"
@@ -396,6 +514,7 @@ jobs:
             printf 'actor_type=%s\n' "$actor_type"
             printf 'attended=%s\n' "$attended"
             printf 'target=%s\n' "$target"
+            printf 'answer_to=%s\n' "$answer_to"
             printf 'base_given=%s\n' "$base_given"
             printf 'requested_base=%s\n' "$requested_base"
           } >> "$GITHUB_OUTPUT"
@@ -548,7 +667,7 @@ jobs:
           COMMAND: ${{ inputs.command }}
           PERMISSION: ${{ steps.permissions.outputs.permission }}
           ACTOR: ${{ steps.event.outputs.actor }}
-          TARGET: ${{ steps.event.outputs.target }}
+          TARGET: ${{ steps.event.outputs.answer_to }}
         run: |
           # PROCEED is true, so there is a pull request or an issue behind this - but a refusal
           # that cannot be posted must still fail the job rather than die on an empty argument
@@ -574,21 +693,66 @@ jobs:
         if: >-
           ${{ success()
           && steps.pull_request.outputs.stand_down != ''
-          && steps.event.outputs.trigger == 'pr-command'
+          && (steps.event.outputs.trigger == 'pr-command'
+              || steps.event.outputs.trigger == 'issue-command')
           && steps.permissions.outputs.allowed == 'true' }}
         env:
+          # Two numbers, because they are not always the same one: the pull request the command
+          # cannot run on, and the thread the person who typed it is reading
           PR: ${{ steps.event.outputs.pull_request }}
+          TARGET: ${{ steps.event.outputs.answer_to }}
           ACTOR: ${{ steps.event.outputs.actor }}
           COMMAND: ${{ inputs.command }}
           PREFIX: ${{ inputs.branch_prefix }}
           REASON: ${{ steps.pull_request.outputs.stand_down }}
         run: |
-          gh issue comment "$PR" --body "@$ACTOR I cannot run \`$COMMAND\` on this pull request - $REASON. This command only continues work this workflow started, on a \`$PREFIX\` branch of this repository." \
-            || echo "::warning title=Could not say the command does not apply::Nothing was posted on #$PR"
+          gh issue comment "$TARGET" --body "@$ACTOR I cannot run \`$COMMAND\` on #$PR - $REASON. This command only continues work this workflow started, on a \`$PREFIX\` branch of this repository." \
+            || echo "::warning title=Could not say the command does not apply::Nothing was posted on #$TARGET"
 
-      # Once there is a pull request, that is where the work continues. Running the command
-      # on the issue again would push a round nobody can review in place, and split the
-      # conversation across two threads.
+      # A round asked for on the issue runs on the pull request, which is a thread away from
+      # where the person typed. Both ends have to say so: the pull request, or a round appears
+      # on it with nothing to explain why, and the issue, or somebody is left watching a thread
+      # where nothing more is going to happen.
+      #
+      # Copying what they typed is also how it reaches the agent. A round reads its feedback off
+      # the pull request, and `ai-stage-pull-request` stages every conversation comment posted
+      # since the last round - so this one is staged with the rest, and `/ai-do and drop the
+      # cache layer while you are there` is not quietly thrown away. It has to be posted before
+      # the staging step further down for that to work.
+      #
+      # `GITHUB_TOKEN` cannot trigger a workflow, which is what keeps this from starting a
+      # second round of its own - the comment it posts begins with the command.
+      - name: Say where the round asked for on the issue is happening
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.trigger == 'issue-command' }}
+        env:
+          ISSUE: ${{ steps.event.outputs.issue }}
+          PR: ${{ steps.event.outputs.pull_request }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          # Untrusted text. Written to a file rather than interpolated into anything, on the
+          # same terms as everywhere else it is read.
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # Quoted rather than repeated as this workflow's own words: it is somebody else's
+          # text arriving in a thread they did not type it in.
+          {
+            printf '@%s asked for this round on #%s, where the plan has been revised since this branch was last worked on:\n\n' "$ACTOR" "$ISSUE"
+            printf '%s\n' "$COMMENT_BODY" | sed 's/^/> /'
+          } > "$RUNNER_TEMP/asked-on-issue.md"
+
+          gh issue comment "$PR" --body-file "$RUNNER_TEMP/asked-on-issue.md" \
+            || echo "::warning title=Could not copy the request::#$PR was not told what @$ACTOR asked for on #$ISSUE, so the round runs on the revised plan alone"
+
+          gh issue comment "$ISSUE" --body "@$ACTOR the plan has moved since #$PR was last worked on, so a round is running there now to bring the branch in line with it. Everything it does lands on that pull request - this issue stays where the plan lives." \
+            || echo "::warning title=Could not say where the round is::Nothing was posted on #$ISSUE"
+
+      # Everything a first run cannot do anything with. A pull request that is open and built
+      # to the plan as it stands is where the work continues - running the command on the issue
+      # again would push a round nobody can review in place, and split the conversation across
+      # two threads. An open pull request whose plan has moved never reaches this step: the run
+      # is a round by then, decided where this event was worked out.
       - name: Send the issue to its pull request
         id: existing
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
@@ -596,11 +760,8 @@ jobs:
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
           COMMAND: ${{ inputs.command }}
-          BRANCH: ${{ inputs.branch_prefix }}issue-${{ steps.event.outputs.issue }}
         run: |
-          gh pr list --head "$BRANCH" --state all --json number,state,url,baseRefName \
-            --jq 'sort_by(.number) | last // {}' > "$RUNNER_TEMP/existing.json"
-
+          number=$(jq -r '.number // ""' "$RUNNER_TEMP/existing.json")
           state=$(jq -r '.state // ""' "$RUNNER_TEMP/existing.json")
           url=$(jq -r '.url // ""' "$RUNNER_TEMP/existing.json")
 
@@ -610,14 +771,17 @@ jobs:
           # code block.
           case "$state" in
             OPEN)
+              # The plan has not moved since that pull request last read it - a plan that had
+              # would have made this run a round instead, and this step would not be running.
+              # So what is left to say is where the work is, and what to do there.
               {
                 printf '@%s the work for this issue is already open at %s, so this is not the place to ask for changes any more.\n\n' "$ACTOR" "$url"
                 printf 'Review it there: comment on the lines you want changed and submit the review as **Request changes**, and another round starts by itself. `%s` works in that pull request too, if you would rather just say what you want and run it.\n\n' "$COMMAND"
-                printf 'This issue is still where the plan lives. If the approach itself is wrong rather than the code, run `/ai-plan` here to revise it - the next round will pick the revision up.\n'
+                printf 'This issue is still where the plan lives. Revise it with `/ai-plan` if the approach is wrong rather than the code, then run `%s` here - a plan that has moved is what makes this command a round on that pull request rather than an answer like this one.\n' "$COMMAND"
               } > "$RUNNER_TEMP/redirect.md"
               gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/redirect.md"
               echo "PROCEED=false" >> "$GITHUB_ENV"
-              echo "Issue #$ISSUE already has an open pull request at $url"
+              echo "Issue #$ISSUE already has an open pull request at $url, built to the plan as it stands"
               ;;
             MERGED)
               gh issue comment "$ISSUE" --body "@$ACTOR the work for this issue was already merged in $url, so there is nothing here to implement again. Open a new issue for what you want next."
@@ -633,7 +797,7 @@ jobs:
               # matters if its branch is still there - if it was deleted, a new branch gets cut
               # and the base is an open question again.
               {
-                printf 'reopen=%s\n' "$(jq -r '.number' "$RUNNER_TEMP/existing.json")"
+                printf 'reopen=%s\n' "$number"
                 printf 'base=%s\n' "$(jq -r '.baseRefName // ""' "$RUNNER_TEMP/existing.json")"
               } >> "$GITHUB_OUTPUT"
               echo "Reviving the closed pull request $url for issue #$ISSUE"
