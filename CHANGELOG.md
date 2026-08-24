@@ -1220,3 +1220,7 @@
 ## v10.11.0
 
 * Update: QA criteria are now copied into a PR (4a9a9a3 by George Shestayev)
+
+## v10.11.1
+
+* Fix: fixed an ability to revise a plan and re-trigger coding agent (7a8f872 by George Shestayev)
