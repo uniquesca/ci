@@ -37,8 +37,10 @@ The pull request body and every round comment cite the plan's
 [ids](ai-plan.md#how-the-plan-is-numbered) - `(S3)` after the change that implements step 3, `(C2)`
 after the check that passed - always next to what is being said rather than in place of it. The
 plan's `C` checks are the agent's to run; its `QA` criteria are for a person to test after this
-merges, and the agent never reports one as met. You can use the same ids talking back to it: "S5 is
-missing", "C1 still fails" lands exactly where you mean it.
+merges, and the agent never reports one as met - they are
+[copied into the pull request body](#the-qa-criteria-on-the-pull-request), so testing it does not
+mean going back to the issue. You can use the same ids talking back to it: "S5 is missing", "C1
+still fails" lands exactly where you mean it.
 
 ### Basing the work on another branch
 
@@ -490,6 +492,17 @@ The next round counts these comments to find the round number and the unattended
 the timestamp to know where to draw its watermark. A round that failed to post one would have the
 next round act on the same feedback all over again - which is why it is posted even when nothing
 changed.
+
+### The QA criteria on the pull request
+
+The plan's `## QA acceptance criteria` section is copied into the pull request body when it is
+opened, under what the agent did and above the review instructions, by
+[`ai-qa-criteria`](../actions/ai-qa-criteria.md). It is a marked block rather than prose, so it is
+rewritten in place rather than added to: [`ai-plan`](ai-plan.md) refreshes it the moment it revises
+a plan under an open pull request, and a round that worked to a revised plan refreshes it too. The
+plan on the issue stays the original - where the two disagree, believe the plan - and a plan with no
+such section leaves the body alone. Retired ids are left behind, because a tester should see what
+they have to test and nothing else.
 
 ### When the plan is revised under the work
 

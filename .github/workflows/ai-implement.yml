@@ -244,6 +244,12 @@ jobs:
       # a thread the agent has answered from one still waiting.
       ROUND_MARKER: '<!-- ai-implement-round -->'
       REPLY_MARKER: '<!-- ai-implement-reply -->'
+      # The pair that delimits the plan's QA criteria in the pull request body. Printed empty
+      # when the body is composed, so the block lands where it belongs rather than at the end,
+      # and filled in - and refilled, whenever the plan moves - by `ai-qa-criteria`. Both ends
+      # are named here because the workflow and the action have to agree on them.
+      QA_MARKER: '<!-- ai-qa-criteria -->'
+      QA_END_MARKER: '<!-- /ai-qa-criteria -->'
       # First line of a review the reviewing workflow submitted. Identity is not enough to
       # recognise one: requesting changes needs a token that is not `GITHUB_TOKEN`, and if that
       # token belongs to a machine *user* account Github reports the review as authored by a
@@ -2209,6 +2215,10 @@ jobs:
                 cat "$SUMMARY_FILE"
                 printf '\n'
               fi
+              # Empty here, filled in by the step below. Printing the pair is how this decides
+              # where the QA criteria go - under what the agent did, above the review
+              # instructions, which is where somebody about to test the change will look.
+              printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
               printf -- '---\n\n'
               printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n\n'
               # This workflow's own command, said on the pull request rather than only in the
@@ -2229,6 +2239,32 @@ jobs:
             printf 'url=%s\n' "$url"
             printf 'number=%s\n' "$number"
           } >> "$GITHUB_OUTPUT"
+
+      # The plan's `QA` criteria are the one part of it written for somebody who will not read
+      # the code, and they were stranded on the issue - the pull request is where that person
+      # is. Copied rather than summarised, into the marker pair the body already carries.
+      #
+      # Twice, for two different reasons. A first run seeds a pull request that has just been
+      # opened, or one revived from a closed one, whose body predates all of this. A round
+      # working to a revised plan refreshes what is there, because criteria a revision has
+      # dropped are worse than no copy at all - `ai-plan` refreshes them the moment it revises,
+      # and this is what covers a plan that moved while the first run was still working.
+      - name: Carry the QA criteria into the pull request
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && (
+            (steps.event.outputs.mode == 'initial' && steps.pr.outputs.url != '')
+            || (steps.event.outputs.mode == 'round' && steps.revision.outputs.revised == 'true')
+          ) }}
+        uses: uniquesca/ci/ai-qa-criteria@main
+        with:
+          pull_request: ${{ steps.pr.outputs.number || steps.event.outputs.pull_request }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          plan_file: ${{ steps.stage_issue.outputs.plan_file }}
+          plan_url: ${{ steps.stage_issue.outputs.plan_url }}
+          marker: ${{ env.QA_MARKER }}
+          end_marker: ${{ env.QA_END_MARKER }}
 
       # The issue is where the work was asked for, so the pull request has to be findable
       # from it. This is also the hand-off: after this comment, the issue is only for the

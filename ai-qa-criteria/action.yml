@@ -1,0 +1,220 @@
+name: AI QA criteria
+
+description: Copy the QA acceptance criteria out of a plan and into the pull request body, so a tester never has to go back to the issue
+
+inputs:
+  pull_request:
+    description: 'Number of the pull request whose body carries the criteria'
+    required: true
+  repository:
+    description: 'Repository the pull request belongs to, in owner/name form'
+    required: true
+  token:
+    description: 'Github token the body is edited with. Needs `pull-requests: write`'
+    required: true
+  plan_file:
+    description: 'The plan to read the criteria out of. `ai-stage-issue` writes this, and its `plan_file` output is what to pass here'
+    required: false
+    default: '.ai-plan/plan.md'
+  plan_url:
+    description: 'Link to the plan comment on the issue, for the line above the criteria. Left out when empty, which only costs the reader a link'
+    required: false
+    default: ''
+  section:
+    description: 'Heading of the plan section to copy, without the `##`. Everything under it up to the next `##` goes into the pull request'
+    required: false
+    default: 'QA acceptance criteria'
+  marker:
+    description: 'Hidden line that opens the copied block. Everything between it and `end_marker` is replaced on every sync, so a caller that wants the block somewhere particular in the body prints this pair there when it composes it'
+    required: false
+    default: '<!-- ai-qa-criteria -->'
+  end_marker:
+    description: 'Hidden line that closes the copied block. Has to differ from `marker`'
+    required: false
+    default: '<!-- /ai-qa-criteria -->'
+
+outputs:
+  synced:
+    description: 'Whether the pull request body now carries the criteria - "true" or "false". False for a plan with no such section, and for anything that went wrong'
+    value: ${{ steps.sync.outputs.synced }}
+  criteria:
+    description: 'How many `**QA<n>**` ids the plan section holds. `0` when there was nothing to copy. Counted from the plan rather than from the body, so it is still the size of the block that was wanted when `synced` is false'
+    value: ${{ steps.sync.outputs.criteria }}
+
+runs:
+  using: composite
+  steps:
+    # The plan lives on the issue, in one copy, and that is right - a second copy anybody can
+    # edit is a specification that disagrees with itself. But whoever tests the change reads
+    # the pull request, and sending them to the issue for the acceptance criteria is the one
+    # place that single copy costs something.
+    #
+    # So the criteria are copied here, and the copy is rewritable: a marked block in the body
+    # rather than prose in a comment, replaced wherever it already is. Every event that moves
+    # the plan calls this, which is what keeps a revision from leaving a tester working to
+    # criteria the plan has dropped.
+    #
+    # Nothing here fails the run. This is presentation on top of work that is already pushed,
+    # and a body that could not be edited must not turn a good round red.
+    - name: Sync the QA criteria into the pull request body
+      id: sync
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull_request }}
+        PLAN_FILE: ${{ inputs.plan_file }}
+        PLAN_URL: ${{ inputs.plan_url }}
+        SECTION: ${{ inputs.section }}
+        MARKER: ${{ inputs.marker }}
+        END_MARKER: ${{ inputs.end_marker }}
+      run: |
+        synced='false'
+        criteria=0
+
+        finish() {
+          {
+            printf 'synced=%s\n' "$synced"
+            printf 'criteria=%s\n' "$criteria"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        if [[ -z "$PR" ]]; then
+          echo "::warning title=No pull request::Nothing was given to sync the QA criteria into"
+          finish
+        fi
+
+        if [[ "$MARKER" == "$END_MARKER" ]]; then
+          echo "::warning title=Markers identical::\`marker\` and \`end_marker\` are both '$MARKER', so a block cannot be delimited"
+          finish
+        fi
+
+        if [[ -z "$PLAN_FILE" || ! -f "$PLAN_FILE" ]]; then
+          echo "There is no plan at '${PLAN_FILE:-<unset>}', so there are no criteria to carry"
+          finish
+        fi
+
+        tmp="$RUNNER_TEMP/ai-qa-criteria"
+        rm -rf "$tmp"
+        mkdir -p "$tmp"
+
+        # Everything under the heading, up to the next one. `^## ` needs the space, so a `###`
+        # subheading inside the section survives rather than ending it.
+        #
+        # The `Retired:` line goes. It is where a revised plan records the ids it has dropped, so
+        # it is bookkeeping between two versions of the plan - a tester reading this list should
+        # see what they have to test and nothing else, and the plan on the issue still has it.
+        awk -v section="$SECTION" '
+          /^## / {
+            if (found) { exit }
+            heading = $0
+            sub(/^##[[:space:]]+/, "", heading)
+            sub(/[[:space:]]+$/, "", heading)
+            if (heading == section) { found = 1 }
+            next
+          }
+          found && /^[*_[:space:]]*Retired:/ { next }
+          found { print }
+        ' "$PLAN_FILE" > "$tmp/raw.md"
+
+        # Blank lines at either end, from the heading break above and from whatever the section
+        # was followed by. Held rather than dropped in the middle, so the paragraphs stay apart.
+        awk '
+          NF == 0 { if (started) { pending++ } next }
+          { while (pending > 0) { print ""; pending-- } print; started = 1 }
+        ' "$tmp/raw.md" > "$tmp/section.md"
+
+        if [[ ! -s "$tmp/section.md" ]]; then
+          echo "The plan has no '## $SECTION' to carry, so #$PR keeps the body it has"
+          finish
+        fi
+
+        # `grep` reports "no match" as a failure, and this step runs under `set -e -o pipefail`
+        criteria=$({ grep -oE '\*\*QA[0-9]+' "$tmp/section.md" || true; } | sort -u | wc -l)
+
+        {
+          printf '%s\n\n' "$MARKER"
+          printf '## %s\n\n' "$SECTION"
+          if [[ -n "$PLAN_URL" ]]; then
+            printf 'Copied from the [plan](%s) so this can be tested without leaving the pull request. ' "$PLAN_URL"
+          else
+            printf 'Copied from the plan on the issue so this can be tested without leaving the pull request. '
+          fi
+          # A copy can always be a revision behind the thing it was copied from - this one is
+          # refreshed when the plan moves, but not by somebody editing the plan comment in place.
+          printf 'The plan is the original: where the two disagree, believe the plan.\n\n'
+          cat "$tmp/section.md"
+          printf '\n%s\n' "$END_MARKER"
+        } > "$tmp/block.md"
+
+        if ! gh pr view "$PR" --json body --jq '.body // ""' > "$tmp/raw-body.md" 2> "$tmp/error.log"; then
+          echo "::warning title=Could not read the body::#$PR was not readable, so its QA criteria were left alone"
+          cat "$tmp/error.log"
+          finish
+        fi
+
+        # Carriage returns are stripped on the way in. A body edited through the web interface
+        # comes back with CRLF line endings, and the markers below are matched as whole lines.
+        tr -d '\r' < "$tmp/raw-body.md" > "$tmp/body.md"
+
+        has_start='false'
+        has_end='false'
+        if grep -qxF "$MARKER" "$tmp/body.md"; then has_start='true'; fi
+        if grep -qxF "$END_MARKER" "$tmp/body.md"; then has_end='true'; fi
+
+        if [[ "$has_start" != "$has_end" ]]; then
+          # Half a block is somebody having deleted one of the two lines while editing the body.
+          # Guessing where the block ended would eat whatever they wrote in between, and adding a
+          # second block would leave two lists disagreeing with each other.
+          echo "::warning title=Block is half there::#$PR carries one of the two QA criteria markers and not the other, so its body was left alone. Delete the stray marker to have the criteria written again"
+          finish
+        fi
+
+        if [[ "$has_start" == 'true' ]]; then
+          awk -v start="$MARKER" -v end="$END_MARKER" -v block="$tmp/block.md" '
+            !replaced && $0 == start {
+              while ((getline line < block) > 0) { print line }
+              close(block)
+              skipping = 1
+              replaced = 1
+              next
+            }
+            skipping && $0 == end { skipping = 0; next }
+            !skipping { print }
+          ' "$tmp/body.md" > "$tmp/new-body.md"
+        elif [[ -s "$tmp/body.md" ]] && grep -q '[^[:space:]]' "$tmp/body.md"; then
+          # No markers: a pull request opened before this existed, or one revived from a closed
+          # one. The block goes at the end rather than anywhere clever - the caller decides where
+          # it belongs by printing the marker pair when it composes a body, and this one was
+          # composed by somebody who never had the chance.
+          {
+            cat "$tmp/body.md"
+            printf '\n'
+            cat "$tmp/block.md"
+          } > "$tmp/new-body.md"
+        else
+          cp "$tmp/block.md" "$tmp/new-body.md"
+        fi
+
+        if cmp -s "$tmp/body.md" "$tmp/new-body.md"; then
+          synced='true'
+          echo "#$PR already carries these $criteria QA criteri(a), nothing to edit"
+          finish
+        fi
+
+        size=$(wc -c < "$tmp/new-body.md")
+        if [[ "$size" -gt 65536 ]]; then
+          echo "::warning title=Body too large::Carrying the QA criteria would make the body of #$PR $size bytes, and Github caps it at 65536 - it was left alone, and the criteria are on the issue"
+          finish
+        fi
+
+        if gh pr edit "$PR" --body-file "$tmp/new-body.md" > /dev/null 2> "$tmp/error.log"; then
+          synced='true'
+          echo "Carried $criteria QA criteri(a) into the body of #$PR"
+        else
+          echo "::warning title=Could not update the body::The QA criteria were not carried into #$PR - they are on the issue"
+          cat "$tmp/error.log"
+        fi
+
+        finish
