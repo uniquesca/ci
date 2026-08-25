@@ -6,9 +6,12 @@ on:
       ANTHROPIC_API_KEY:
         description: 'Anthropic API key used to call the AI implementing agent'
         required: true
-      PUSH_ACCESS_TOKEN:
-        description: 'Token the branch is pushed with. Optional, but without it a finished QA workflow cannot start another round: Github refuses to start a workflow run from an event made with `GITHUB_TOKEN`, so a push from it produces a `pull_request` run that waits for somebody to approve it, and that run completing cannot trigger anything either - `workflow_run` inherits the same suppression. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the checks trigger work. Add `workflow` scope only if the agent should be allowed to change files under .github/workflows'
-        required: false
+      AI_IMPLEMENT_APP_ID:
+        description: 'GitHub App id for the AI Implement app. The app pushes branches and opens or updates pull requests, so QA workflows start from a real app event and the pull request author is distinct from the reviewer'
+        required: true
+      AI_IMPLEMENT_PRIVATE_KEY:
+        description: 'Private key for the AI Implement GitHub App. Used only to mint a short-lived installation token; never passed to the agent'
+        required: true
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private Composer repositories, so that the agent can run this project''s checks against installed dependencies rather than guessing at what they would have said. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies falls back to the artifact reports as before'
         required: false
@@ -27,9 +30,9 @@ on:
         default: 'admin write'
         type: string
       allowed_bots:
-        description: 'Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back'
+        description: 'Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back, so it has to carry the AI Review app''s own bot login - `<app-slug>[bot]`, which is the app name lowercased and hyphenated. A review from a login that is not here starts no round, and says so on the pull request'
         required: false
-        default: 'github-actions[bot]'
+        default: 'github-actions[bot] ai-review[bot]'
         type: string
       timeout_minutes:
         description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so'
@@ -222,22 +225,20 @@ jobs:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      # Deliberately a second token, and not a replacement for the one above. Git operations are
-      # what the next trigger hangs off: Github will not start a workflow run from an event made
-      # with `GITHUB_TOKEN`, and `workflow_run` inherits that from the run it chains to - so a
-      # branch pushed by `GITHUB_TOKEN` produces a `pull_request` run parked at `action_required`
-      # whose completion then starts nothing. Pushing as a real identity is what makes the QA
-      # trigger fire at all.
+      # Everything that pushes, or that opens the pull request, runs on the AI Implement app's
+      # installation token instead. It is minted in a step rather than here, because job env cannot
+      # call an action: the two git steps and the pull request step read it out of
+      # `steps.ai_implement`.
       #
-      # The API calls stay on `GITHUB_TOKEN` on purpose. They open the pull request, and moving
-      # them here would change who authored it - which is what `ai-review.yml` reads to decide
-      # whether it may request changes, and a pull request opened by the same identity that
-      # reviews it cannot be. One token for git, one for the API, and neither is the other's
-      # business.
-      GIT_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
-      # Read by the push step, which says different things about workflow files and about the
-      # trigger depending on whether it is pushing as a real identity or as the bot
-      HAS_PUSH_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN != '' }}
+      # Why the app and not this job's own token. Github will not start a workflow run from an event
+      # made with `GITHUB_TOKEN`, and `workflow_run` inherits that from the run it chains to - so a
+      # branch pushed by `GITHUB_TOKEN` produces a `pull_request` run parked at `action_required`
+      # whose completion then starts nothing. An app is a real identity, so the QA trigger fires.
+      #
+      # It is also what keeps the review loop legal. Github rejects `REQUEST_CHANGES` from the
+      # identity that opened the pull request, so the implementing app opens it and a *second* app
+      # reviews it. Two apps, never one.
+
       # Any guard below can set this to false in $GITHUB_ENV, and every step after it stands
       # down. A job cannot stop itself early without failing, and failing is wrong for most
       # of what the guards catch - running the command too early, or on the wrong pull
@@ -265,12 +266,28 @@ jobs:
       QA_MARKER: '<!-- ai-qa-criteria -->'
       QA_END_MARKER: '<!-- /ai-qa-criteria -->'
       # First line of a review the reviewing workflow submitted. Identity is not enough to
-      # recognise one: requesting changes needs a token that is not `GITHUB_TOKEN`, and if that
-      # token belongs to a machine *user* account Github reports the review as authored by a
-      # `User`. Keying off the marker as well is what keeps the unattended round cap working
-      # whatever kind of token the reviewer was given.
+      # recognise one: which login the reviewer arrives as is the caller's to decide - the AI
+      # Review app is named per repository, and a caller still on a machine user's token reads
+      # as a `User` rather than a `Bot` at all. Keying off the marker as well is what keeps the
+      # unattended round cap working whatever the reviewer was configured with.
       REVIEW_MARKER: '<!-- ai-review -->'
     steps:
+      # Minted once and used only by workflow-owned git and API steps. The agent never receives it,
+      # and the checkout still persists no credentials, so the app can push and open the pull
+      # request without giving the agent a way to do either itself.
+      #
+      # Unconditional, and first. Both secrets are `required: true`, so there is nothing to guard
+      # against - and a guard here would be worse than none: a skipped step still leaves its
+      # outputs readable as empty strings, which is how the commit identity below would end up
+      # being the literal `[bot]` and the push would quietly fall back to a token that triggers
+      # nothing. Failing loudly on an app that is not installed on this repository is the point.
+      - name: Create AI Implement app token
+        id: ai_implement
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+          private-key: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
+
       # Both of these run before anything else, because `Work out what this run is` needs their
       # answers to say what this run is: the command on an issue whose work is already open and
       # whose plan has moved is a round, and a round has to be one from the start - the mode, the
@@ -1099,6 +1116,10 @@ jobs:
         id: branch
         if: ${{ success() && env.PROCEED == 'true' }}
         env:
+          GIT_TOKEN: ${{ steps.ai_implement.outputs.token }}
+          # Who the commits are authored by, resolved below into the app's bot login and the
+          # noreply address that login is linked to
+          APP_SLUG: ${{ steps.ai_implement.outputs.app-slug }}
           BRANCH: ${{ steps.pull_request.outputs.branch || format('{0}issue-{1}', inputs.branch_prefix, steps.event.outputs.issue) }}
           # Which branch the work is cut from, and which one the pull request will target. This
           # is the only place either question is answered, and the three candidates are ranked
@@ -1182,8 +1203,19 @@ jobs:
           # replies can end up in the branch however it leaves the working tree
           printf '/.ai-plan/\n/.ai-review/\n/.ai-reports/\n' >> .git/info/exclude
 
-          git config --local user.name 'github-actions[bot]'
-          git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # The app's own identity, so a commit is attributed to whatever pushed it. Github resolves
+          # the address to an account, so one belonging to anybody else shows the commit against
+          # somebody who did not make it.
+          #
+          # The numeric id is what links the address to the account, and it has to be looked up:
+          # `create-github-app-token` reports the slug but not the user behind it. A lookup that
+          # fails costs the avatar and nothing else, so the address is still written without it
+          # rather than turning a good round red - `${var:+...}` is what keeps a bare `+` out of it.
+          app_login="${APP_SLUG}[bot]"
+          app_user_id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq '.id' 2> /dev/null || echo '')
+
+          git config --local user.name "$app_login"
+          git config --local user.email "${app_user_id:+${app_user_id}+}${app_login}@users.noreply.github.com"
 
           {
             printf 'compare_ref=%s\n' "$compare_ref"
@@ -2034,6 +2066,7 @@ jobs:
         id: push
         if: ${{ success() && env.PROCEED == 'true' }}
         env:
+          GIT_TOKEN: ${{ steps.ai_implement.outputs.token }}
           COMPARE_REF: ${{ steps.branch.outputs.compare_ref }}
           BRANCH: ${{ steps.branch.outputs.branch }}
           # Which branch the work sits on, and where that branch stood when this run read it.
@@ -2053,9 +2086,6 @@ jobs:
           TITLE: ${{ steps.stage_issue.outputs.title }}
           ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
-          # Named in the notice about a missing push token, so that what still works is spelled
-          # out as the thing somebody would actually type
-          COMMAND: ${{ inputs.command }}
         run: |
           git add -A
 
@@ -2204,15 +2234,14 @@ jobs:
           cat "$RUNNER_TEMP/push-facts.txt"
           echo "::endgroup::"
 
-          # Called out before the attempt rather than after it. Github refuses a push from
-          # `GITHUB_TOKEN` that creates or updates anything under .github/workflows, and names
-          # only the first file it objects to - so the full list is worth having whether the
-          # push then succeeds or not.
+          # Called out before the attempt rather than after it. Github refuses a push that creates
+          # or updates anything under .github/workflows unless the identity behind it holds the
+          # `workflows` permission, and names only the first file it objects to - so the full list
+          # is worth having whether the push then succeeds or not.
           #
-          # Whether it is refused at all now depends on the token. A `PUSH_ACCESS_TOKEN` carrying
-          # `workflow` scope is allowed through, so this reports rather than predicts: the list is
-          # what Github will be looking at, and the wording below says which of the two cases the
-          # push is in.
+          # Which is why this reports rather than predicts. Whether the AI Implement app was granted
+          # that permission is the caller's decision and not something this run can read, so the
+          # list is what Github will be looking at and the push itself settles the question.
           #
           # Two lists, because they are two different problems with two different answers.
           # First, what the commits themselves changed: the agent's own doing, and something only
@@ -2262,11 +2291,7 @@ jobs:
           workflow_files=''
           if [[ -s "$RUNNER_TEMP/workflow-files.txt" ]]; then
             workflow_files=$(paste -sd, "$RUNNER_TEMP/workflow-files.txt" | sed 's/,/, /g')
-            if [[ "$HAS_PUSH_TOKEN" == 'true' ]]; then
-              echo "::warning title=This push changes workflow files::$workflow_files - Github allows these only from a token with \`workflow\` scope, so this push fails unless PUSH_ACCESS_TOKEN has it"
-            else
-              echo "::warning title=This push changes workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN, whatever this workflow's permissions say. A PUSH_ACCESS_TOKEN with \`workflow\` scope is what pushes them"
-            fi
+            echo "::warning title=This push changes workflow files::$workflow_files - Github allows these only from an identity holding the \`workflows\` permission, so this push fails unless the AI Implement app was granted it"
           fi
 
           stale_files=''
@@ -2289,10 +2314,10 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             if [[ -n "$workflow_files" ]]; then
-              printf 'reason=%s\n' "this branch changes $workflow_files, and Github does not let this workflow's token create or update anything under .github/workflows/" >> "$GITHUB_OUTPUT"
+              printf 'reason=%s\n' "this branch changes $workflow_files, and the AI Implement app does not hold the \`workflows\` permission Github requires to push them. Grant it only if you want an agent editing CI." >> "$GITHUB_OUTPUT"
               echo "::error title=Push refused, and it changes workflow files::$workflow_files"
             elif [[ -n "$stale_files" ]]; then
-              printf 'reason=%s\n' "the branch is still carrying an older copy of $stale_files, which Github reads as this push updating a workflow file - something this workflow's token is never allowed to do. The base moved on while the agent was working and the work would not replay on top of it. Running the command again starts from the base as it stands now." >> "$GITHUB_OUTPUT"
+              printf 'reason=%s\n' "the branch is still carrying an older copy of $stale_files, which Github reads as this push updating a workflow file. The base moved on while the agent was working and the work would not replay on top of it. Running the command again starts from the base as it stands now." >> "$GITHUB_OUTPUT"
               echo "::error title=Push refused over workflow files the branch is behind on::$stale_files"
             fi
 
@@ -2300,15 +2325,6 @@ jobs:
           fi
 
           echo "pushed=true" >> "$GITHUB_OUTPUT"
-
-          # The one failure mode of this workflow that is completely silent otherwise. Everything
-          # here succeeds - the work lands, the pull request updates, the round reports itself -
-          # and the next trigger simply never arrives, which reads as the checks trigger being
-          # broken rather than as a token that was never configured. Said on the successful path
-          # on purpose: this is not a failure, it is a capability the caller has not turned on.
-          if [[ "$HAS_PUSH_TOKEN" != 'true' ]]; then
-            echo "::notice title=Pushed as github-actions[bot]::No PUSH_ACCESS_TOKEN is configured, so Github will not start a workflow run from this push - the QA run it produces waits for approval, and a finished QA workflow cannot start another round. Reviews and $COMMAND still work"
-          fi
 
       # One pull request per issue, opened by the first run and reused by every round after.
       # A round never reaches this - it already has one.
@@ -2319,6 +2335,7 @@ jobs:
           && steps.event.outputs.mode == 'initial'
           && steps.push.outputs.pushed == 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           BRANCH: ${{ steps.branch.outputs.branch }}
           TITLE: ${{ steps.stage_issue.outputs.title }}
           # Resolved where the branch was, so the pull request targets whatever the work was
@@ -2609,10 +2626,11 @@ jobs:
       # replies are already in place - the reviewer reads both, and a review that arrived
       # before them would be reviewing a round it cannot see the end of.
       #
-      # `repository_dispatch` rather than letting a `pull_request` trigger notice the push:
-      # events made with `GITHUB_TOKEN` do not start workflow runs, and dispatch events are the
-      # documented exception. A `pull_request` run for a branch automation pushed would sit
-      # waiting for somebody to approve it, which is the opposite of what this is for.
+      # `repository_dispatch` rather than letting a `pull_request` trigger notice the push. Such a
+      # run does start - the app's push is a real event - but it starts on the push, and there is no
+      # holding it until the paragraph above is true. Dispatching last is what orders the two, and it
+      # keeps whether to review at all in `dispatch_review` rather than in a trigger the caller has
+      # to remember to remove.
       #
       # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
       # produces the same review, and the loop would turn without moving.

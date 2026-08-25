@@ -12,20 +12,12 @@ workflow has to be told to hand its work over.
 ## Integrating a repository
 
 **First, the thing that will otherwise waste your afternoon.** Github will not let an identity
-request changes on a pull request it opened. AI Implement opens its pull requests as
-`github-actions[bot]`, so a review submitted with the built-in `GITHUB_TOKEN` is a self-review and
-the API only allows a plain comment - which blocks nothing and starts no round. So you need a
-**second identity**:
+request changes on a pull request it opened. So the review is submitted as the
+[AI Review app](ai-implement.md#the-github-apps), which is a second identity from the one
+[AI Implement](ai-implement.md#the-github-apps) opens pull requests with. That is what buys a real
+`changes_requested` review: it blocks the merge, and it starts the next round by itself.
 
-| What you configure | What you get |
-|--------------------|--------------|
-| `AI_REVIEW_TOKEN` — a machine user PAT with `repo` scope, or a Github App installation token | A real `changes_requested` review that blocks the merge and starts the next round automatically |
-| Nothing | The same review with the same inline comments, as a plain comment. Nothing is blocked, nothing starts. Somebody runs `/ai-do` to act on it |
-
-The second row is handled rather than hidden - the review still posts with its comments intact, and
-the pull request gets a comment saying the agent wanted to request changes and could not.
-
-Then add a **second workflow file**, because this one runs on a different event:
+Add a **second workflow file**, because this one runs on a different event:
 
 ```yaml
 name: AI Review
@@ -44,7 +36,8 @@ jobs:
     uses: uniquesca/ci/.github/workflows/ai-review.yml@main
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      AI_REVIEW_TOKEN: ${{ secrets.AI_REVIEW_TOKEN }}
+      AI_REVIEW_APP_ID: ${{ secrets.AI_REVIEW_APP_ID }}
+      AI_REVIEW_PRIVATE_KEY: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
 ```
 
 And turn the hand-off on where [AI Implement](ai-implement.md) is called:
@@ -57,12 +50,15 @@ And turn the hand-off on where [AI Implement](ai-implement.md) is called:
     # permissions and secrets as before
 ```
 
-Two more things that fail silently:
+Three more things that fail silently:
 
 * **`repository_dispatch` only ever runs the default-branch copy of the file**, same as
   `issue_comment`. There is no testing it from a branch.
 * **`dispatch_review` and the `types:` above have to agree.** Both default to `ai-review`; change
   one and the dispatch lands with nothing to answer it.
+* **The implementing workflow's `allowed_bots` has to name this app's bot login.** It defaults to
+  `github-actions[bot] ai-review[bot]`; if the app's slug is anything else, the review lands
+  happily and starts no round.
 
 Keep `branch_prefix` and `max_unattended_rounds` the same as the implementing workflow's.
 
@@ -110,7 +106,8 @@ the code, go back to [`/ai-plan` on the issue](ai-plan.md#changing-direction).
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI reviewing agent |
-| `AI_REVIEW_TOKEN` | no | Token the review is submitted with. **Without it the review cannot request changes and cannot start another round** - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and [`ai-implement`](ai-implement.md) opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token |
+| `AI_REVIEW_APP_ID` | yes | Numeric id of [the AI Review Github App](ai-implement.md#the-github-apps). The review is submitted as this app, which is the second identity the loop needs - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and that is the implementing app |
+| `AI_REVIEW_PRIVATE_KEY` | yes | Private key for the AI Review app. Used only to mint a short-lived installation token for submitting the review; never passed to the agent |
 
 ## Inputs
 
@@ -136,13 +133,14 @@ None. The result is a Github review on the pull request.
 
 ### Why `repository_dispatch` and not a `pull_request` trigger
 
-Because a pull request opened or updated by `GITHUB_TOKEN` produces a workflow run that **waits for
-somebody to click "Approve workflows to run"**. Events made with `GITHUB_TOKEN` do not start
-workflow runs at all, normally; dispatch events are
-[the documented exception](https://docs.github.com/en/actions/concepts/security/github_token). So
-the implementing workflow can start the reviewer itself, with no extra token, and it does that as
-the very last thing in a round - after the replies and the round comment are in place, so the
-reviewer sees the whole of what it is reviewing.
+Because a `pull_request` run cannot be made to wait. It would fire on the push, and the push is not
+the end of a round: the thread replies and the round comment land after it, and those are half of
+what the reviewer is meant to read. A review that arrived on the push would be reviewing a round it
+cannot see the end of.
+
+So the implementing workflow dispatches this itself, as the very last thing it does. That also keeps
+whether to review at all in `dispatch_review`, rather than in a trigger somebody has to remember to
+remove.
 
 Nothing is dispatched for a round that changed no file, since reviewing the same commit again
 produces the same review.

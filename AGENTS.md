@@ -27,6 +27,14 @@ When adding something to a section above `## Dig deeper`:
 Match the surrounding density. These docs use short declarative sentences, bold lead-ins for
 things that fail silently, and tables for enumerable outcomes.
 
+**Describe what is, not what changed** - here and in the workflow comments. Whoever reads this is
+meeting the code for the first time and never saw the state it replaced, so "now that", "no longer",
+"rather than a workaround" and "there is no second token any more" spend their attention on
+something they do not have, and read as stale the moment the next change lands. Write the sentence
+you would have written if it had always been this way. Nothing is allowed to define itself by its
+own absence: if a thing is gone, the text does not mention it. Why it changed belongs in the commit
+message, where anybody asking that is already looking.
+
 **Size a `## Dig deeper` note to the change it documents.** A small feature gets one mid-size
 paragraph, not a heading with bullets and sub-paragraphs - an oversized note misrepresents how much
 of the system the reader has to hold. Prefer extending the subsection that already covers the topic.

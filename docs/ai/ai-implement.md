@@ -16,12 +16,36 @@ them:
   requesting changes never starts a round.
 * **`checks: read`** on the job. Without it, failing CI checks are simply not part of the feedback.
 
-That is enough to run. [Wiring CI into the loop](#wiring-ci-into-the-loop) adds two optional
-things: showing the agent what a check printed, and letting a red check start a round.
+You also need [a Github App](#the-github-apps) - this workflow does not run without one.
+[Wiring CI into the loop](#wiring-ci-into-the-loop) then adds two optional things: showing the agent
+what a check printed, and letting a red check start a round.
 
-If your repository has **"Allow GitHub Actions to create and approve pull requests"** switched off
-(Settings → Actions → General → Workflow permissions), `gh pr create` fails no matter what the job
-grants. Turn it on, or the branch lands and you open the pull request by hand.
+## The Github Apps
+
+**Two apps, not one.** The implementing app pushes the branch and opens the pull request; the
+reviewing app reviews it. Github rejects a `REQUEST_CHANGES` review from the identity that opened
+the pull request, so one app doing both means the review can never block anything or start a round.
+
+Both apps already exist at the organisation level, so there is nothing to create. **Ask a Uniques
+Github administrator to grant them access to the repository**, and to confirm their id and private
+key are readable from it as these secrets:
+
+| Secret | App |
+|---|---|
+| `AI_IMPLEMENT_APP_ID` / `AI_IMPLEMENT_PRIVATE_KEY` | AI Implement |
+| `AI_REVIEW_APP_ID` / `AI_REVIEW_PRIVATE_KEY` | AI Review |
+
+An app that has not been granted the repository fails the run on its first step, which is the one
+thing here that fails loudly. Two that do not:
+
+* **`allowed_bots` has to name the reviewing app's bot login** - `<app-slug>[bot]`, the app name
+  lowercased and hyphenated. A review from a login that is not in the list starts no round.
+* **Neither app holds Workflows: write**, so a branch touching `.github/workflows` is refused. That
+  is deliberate - see [what the agent can and cannot do](#what-the-agent-can-and-cannot-do).
+
+Commits are then authored by `<app-slug>[bot]`, and pull requests opened by it, so the loop reads as
+two named participants rather than as `github-actions[bot]` arguing with itself. The planner needs no
+app of its own: it only comments, which the run's own token does.
 
 ## Starting the work
 
@@ -216,24 +240,21 @@ on:
 jobs:
   ai-implement:
     permissions:
-      actions: read
-    secrets:
-      PUSH_ACCESS_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN }}
+      actions: read     # without this the reports cannot be listed or downloaded
 ```
 
-`PUSH_ACCESS_TOKEN` is what the agent pushes with, and it is **required for any of this to
-work**: Github does not start workflow runs from pushes made with `GITHUB_TOKEN`, so without it
-your QA workflows never run on the agent's commits and nothing here is ever triggered. Use a
-machine user PAT with `repo` scope, or a Github App installation token.
+Your QA workflows run on the agent's commits because [the app](#the-github-apps) pushes them, not
+the run's own token - Github starts no workflow run from a push made with `GITHUB_TOKEN`.
 
 ## Secrets
 
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI implementing agent |
+| `AI_IMPLEMENT_APP_ID` | yes | Numeric id of [the AI Implement Github App](#the-github-apps). The app pushes branches and opens or updates pull requests, so QA workflows start from a real app event and the pull request author is distinct from the reviewer |
+| `AI_IMPLEMENT_PRIVATE_KEY` | yes | Private key for the AI Implement app. Used only to mint a short-lived installation token; never passed to the agent |
 | `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with. Read only when the application is brought up, which is what renders the templates. **The agent can read them**, so make them a test environment's |
 | `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports |
-| `PUSH_ACCESS_TOKEN` | no | Token the agent pushes with. **Without it its pushes trigger no workflows at all** - see [wiring CI into the loop](#wiring-ci-into-the-loop). A machine user PAT with `repo` scope, or a Github App installation token. Add `workflow` scope only if the agent should be allowed to change files under `.github/workflows` |
 
 ## Inputs
 
@@ -241,7 +262,7 @@ machine user PAT with `repo` scope, or a Github App installation token.
 |---|---|---|---|
 | `command` | string | `/ai-do` | Comment command that triggers a round. Has to be at the very beginning of the comment. On an issue it starts the work - or runs a round on the pull request already implementing it, when the plan has been revised since that work last read it; on the pull request it always runs a round |
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
-| `allowed_bots` | string | `github-actions[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back |
+| `allowed_bots` | string | `github-actions[bot] ai-review[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. **This has to name [the reviewing app](#the-github-apps)** - `<app-slug>[bot]` - or a review starts no round |
 | `model` | string | `claude-opus-4-8` | Model used to implement the plan and to act on review feedback |
 | `max_turns` | number | `60` | How many turns the agent may spend before it has to stop with what it has |
 | `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
@@ -477,9 +498,9 @@ under `work replayed:`.
 This matters for one refusal in particular. A branch being created has no previous tip for Github
 to compare it against, so it compares the workflow files it carries against the default branch -
 and a branch cut before somebody edited `.github/workflows/something.yml` still carries the older
-copy, which reads as this push updating a workflow file. `GITHUB_TOKEN` is never allowed to do
-that, whatever `permissions:` says, and the push is refused with a message naming a file the agent
-never opened. Replaying the work first is what stops that.
+copy, which reads as this push updating a workflow file. Github refuses that from any identity
+without the `workflows` permission, which [the app](#the-github-apps) deliberately does not have,
+and the message names a file the agent never opened. Replaying the work first is what stops that.
 
 Rounds are not replayed. They push to a branch that already exists, which Github compares against
 its own previous tip, and moving one would mean force pushing over work somebody may be part way
@@ -565,10 +586,12 @@ It **may not**, and cannot:
 * **Push, commit, open a pull request, or comment anywhere.** The checkout runs with
   `persist-credentials: false`, so there is no git credential on disk while the agent is working.
   The workflow supplies one per command, before the agent starts and after it finishes.
-* **Change a workflow file.** Github refuses a push from `GITHUB_TOKEN` that creates or updates
-  anything under `.github/workflows/`, and there is no permission that can be granted to allow it.
-  An agent that edits one costs the run its whole working tree, so the push warns about the files by
-  name before it tries. Ask for CI changes yourself rather than through the agent.
+* **Change a workflow file.** Github refuses a push that creates or updates anything under
+  `.github/workflows/` unless the identity behind it holds the `workflows` permission, and
+  [the app](#the-github-apps) does not hold it. An agent that edits one costs the run its whole
+  working tree, so the push warns about the files by name before it tries. Unlike the rest of this
+  list it is a granted permission rather than a hard limit, so it is the one thing here an
+  administrator could switch on - ask for CI changes yourself instead, and keep the boundary.
 * **Change the plan or the feedback it was given.** Both are excluded from git, so nothing under
   them can reach a commit however the agent leaves the working tree. Its replies to your threads
   are the one thing it writes back, and they are validated rather than trusted - a reply to a

@@ -10,7 +10,7 @@ inputs:
     description: 'Repository the pull request belongs to, in owner/name form'
     required: true
   token:
-    description: 'Github token used to submit the review. This is the one place where GITHUB_TOKEN is usually the wrong choice: Github rejects `REQUEST_CHANGES` on a pull request the same identity opened, and the implementing workflow opens its pull requests as `github-actions[bot]`. Supply a machine user PAT or a Github App token to be able to request changes at all'
+    description: 'Github token used to submit the review, and the review arrives as whatever identity it belongs to. Supply an installation token for a Github App that is not the one that opened the pull request: Github rejects `REQUEST_CHANGES` from the identity that opened it, and raises no `pull_request_review` event at all for a review made with GITHUB_TOKEN'
     required: true
   head_sha:
     description: 'Commit the review is submitted against. Pinned explicitly so a push that landed since the diff was taken makes the review outdated rather than silently misplaced'
@@ -24,7 +24,7 @@ inputs:
     required: false
     default: '.ai-review/diff.patch'
   marker:
-    description: 'Hidden first line of the review body. The implementing workflow reads it to tell a review an agent wrote from one a person wrote, which is what keeps the unattended round cap honest when the review token belongs to a machine user account'
+    description: 'Hidden first line of the review body. The implementing workflow reads it to tell a review an agent wrote from one a person wrote, which is what keeps the unattended round cap honest - identity cannot answer that on its own, since which login the reviewer arrives as is the caller''s to configure'
     required: false
     default: '<!-- ai-review -->'
   max_comments:
@@ -242,7 +242,7 @@ runs:
         }
 
         # Github's word for "you cannot review your own pull request". Worth telling apart from
-        # a rejected comment position: the fix is a different token, and the inline comments
+        # a rejected comment position: the fix is a different identity, and the inline comments
         # were never the problem - a comment review carries them perfectly well.
         own_pull_request() {
           grep -qi 'your own pull request' "$tmp/error.log"
@@ -254,12 +254,11 @@ runs:
           finish
         fi
 
-        # The implementing workflow opens its pull requests as `github-actions[bot]`, so a
-        # review token that is the same identity lands here every single time. Downgrade the
-        # verdict, keep everything else - losing the inline comments over this would throw away
-        # the most useful half of the review.
+        # A review token belonging to whatever opened the pull request lands here every single
+        # time. Downgrade the verdict, keep everything else - losing the inline comments over this
+        # would throw away the most useful half of the review.
         if own_pull_request && [[ "$event" == 'REQUEST_CHANGES' ]]; then
-          echo "::warning title=Could not request changes::Github rejects REQUEST_CHANGES from the identity that opened the pull request, so this was submitted as a comment instead. It cannot block a merge and it will not start another round. Supply a machine user PAT or a Github App token as the review token"
+          echo "::warning title=Could not request changes::Github rejects REQUEST_CHANGES from the identity that opened the pull request, so this was submitted as a comment instead. It cannot block a merge and it will not start another round. Submit it as a Github App that did not open this pull request"
           event='COMMENT'
           if try "$event" true; then
             submitted='true'

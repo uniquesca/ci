@@ -71,11 +71,14 @@ jobs:
     uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # The planner needs no app of its own - it only comments. This one pushes
+      AI_IMPLEMENT_APP_ID: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+      AI_IMPLEMENT_PRIVATE_KEY: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
 ```
 
 [AI Review](ai-review.md) needs a second file, because it runs on a different event.
 
-Four things to get right, all of which fail quietly rather than loudly:
+Five things to get right, all of which fail quietly rather than loudly:
 
 * **The `permissions` block belongs on the calling job.** A called workflow can only narrow the
   token it is given, never widen it. `pull-requests: write` buys one comment - a replan telling
@@ -84,8 +87,10 @@ Four things to get right, all of which fail quietly rather than loudly:
   an `issue_comment` workflow, so this cannot be tested from a feature branch.
 * **Both events are needed.** `issue_comment` carries the commands; `pull_request_review` is what
   lets a review start another implementing round.
-* **`ANTHROPIC_API_KEY` has to be listed explicitly**, or `secrets: inherit`. Secrets do not
-  cross the `workflow_call` boundary on their own.
+* **Every secret has to be listed explicitly**, or `secrets: inherit`. Secrets do not cross the
+  `workflow_call` boundary on their own.
+* **The implementing workflow needs a Github App**, and the reviewing one needs a second. See
+  [the Github Apps](ai-implement.md#the-github-apps) - nothing implements anything without them.
 
 Add the key as an Actions secret under **Settings → Secrets and variables → Actions**, at
 repository or organisation level. You do *not* need the Claude Github App installed.
