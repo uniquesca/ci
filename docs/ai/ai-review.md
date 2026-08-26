@@ -2,29 +2,31 @@
 
 Part of [AI assisted development](../ai.md).
 
-Reviews what [AI Implement](ai-implement.md) pushed, as a real Github review with real inline
-comments. When it requests changes, that starts the next implementing round - so with this wired
-up the loop runs on its own, for a bounded number of rounds, and stops to ask for a person.
+Reviews a pull request as a real Github review with real inline comments. Every
+[AI Implement](ai-implement.md) round hands its push over for one, and `/ai-review` asks for one on
+any pull request in the repository - including one somebody wrote by hand.
 
-It is opt-in on both sides: the reviewing workflow has to be listening, and the implementing
+On a branch AI Implement pushed, a review requesting changes starts the next round - so with this
+wired up the loop runs on its own, for a bounded number of rounds, and stops to ask for a person.
+That much is opt-in on both sides: the reviewing workflow has to be listening, and the implementing
 workflow has to be told to hand its work over.
 
 ## Integrating a repository
 
-**First, the thing that will otherwise waste your afternoon.** Github will not let an identity
-request changes on a pull request it opened. So the review is submitted as the
-AI Review app, which is a second identity from the one
-[AI Implement](ai-implement.md) opens pull requests with. That is what buys a real
-`changes_requested` review: it blocks the merge, and it starts the next round by itself.
-
-Add a **second workflow file**, because this one runs on a different event:
+This is its own workflow file, because it listens for an event [the planner](ai-plan.md) and
+[the implementer](ai-implement.md) do not. The setup all three share is in
+[AI assisted development](../ai.md#integrating-a-repository).
 
 ```yaml
 name: AI Review
 
 on:
+  # What an implementing round sends when it has pushed
   repository_dispatch:
     types: [ ai-review ]
+  # `/ai-review` on a pull request, which is how one nobody dispatched for gets reviewed
+  issue_comment:
+    types: [ created ]
 
 jobs:
   ai-review:
@@ -46,13 +48,14 @@ jobs:
       AI_REVIEW_PRIVATE_KEY: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
 ```
 
-And make sure [AI Implement](ai-implement.md#integrating-a-repository) is called with
-`dispatch_review: true`, or nothing ever reaches this workflow.
+`/ai-review` works from that alone. For the loop, also make sure
+[AI Implement](ai-implement.md#integrating-a-repository) is called with `dispatch_review: true`, or
+no round ever reaches this workflow.
 
-Three more things that fail silently:
+Three things that fail silently:
 
-* **`repository_dispatch` only ever runs the default-branch copy of the file**, same as
-  `issue_comment`. There is no testing it from a branch.
+* **Both events only ever run the default-branch copy of the file.** There is no testing either of
+  them from a branch.
 * **`dispatch_review` and the `types:` above have to agree.** Both default to `ai-review`; change
   one and the dispatch lands with nothing to answer it.
 * **The implementing workflow's `allowed_bots` has to name this app's bot login.** It defaults to
@@ -63,15 +66,20 @@ Keep `branch_prefix` and `max_unattended_rounds` the same as the implementing wo
 
 ## Using it
 
-You do not trigger this one. Every implementing round hands its push over, and a review appears on
-the pull request a few minutes later. From there it behaves like a review from a colleague, with the
-same options [described for a human review](ai-implement.md#what-to-do-with-a-reply) - let it run,
-resolve a thread, reply to overrule either side, or take over with `/ai-do`.
+Comment `/ai-review` on an open pull request whose branch lives in this repository, and a review
+appears a few minutes later. Anything typed after the command reaches the agent, so `/ai-review the
+migration is the part I am unsure about` is a briefing.
+
+A pull request AI Implement opened needs no asking - every round hands its push over. From there it
+behaves like a review from a colleague, with the same options
+[described for a human review](ai-implement.md#what-to-do-with-a-reply) - let it run, resolve a
+thread, reply to overrule either side, or take over with `/ai-do`.
 
 **It never approves**: the verdict is either changes requested or "no blocking concerns", and
-merging is a person's decision. It will sometimes find nothing, which ends the loop there. And it
-cannot test the QA criteria - what it can say is that the code cannot satisfy one as written, or
-that nothing in the diff addresses the steps a criterion covers.
+merging is a person's decision. A changes-requested review blocks the merge until somebody deals
+with it, wherever the branch came from. It will sometimes find nothing, which ends the loop there.
+And it cannot test the QA criteria - what it can say is that the code cannot satisfy one as written,
+or that nothing in the diff addresses the steps a criterion covers.
 
 ### When to stop letting it run
 
@@ -95,8 +103,10 @@ the code, go back to [`/ai-plan` on the issue](ai-plan.md#adjusting-the-plan).
 | `anthropic_organization_id` | string | *required* | Anthropic organization the rule belongs to. In the Claude Console under **Settings → Organization** |
 | `anthropic_service_account_id` | string | *required* | Service account the minted token acts as. Usage and rate limits are attributed to it |
 | `anthropic_workspace_id` | string | *(none)* | Workspace the minted token is scoped to. Only needed when the rule covers more than one workspace - a rule bound to a single workspace resolves it on its own |
+| `command` | string | `/ai-review` | Comment command that asks for a review, at the very beginning of a comment on a pull request. This is how a pull request nothing dispatched for is reviewed |
+| `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and the triage role as `read`, so this covers owners, maintainers and developers |
 | `dispatch_type` | string | `ai-review` | The `repository_dispatch` event type this reacts to. [`ai-implement`](ai-implement.md) sends it after it pushes |
-| `branch_prefix` | string | `ai-feature/` | Only pull requests whose branch lives in this repository and starts with this prefix are reviewed. Keep it the same as the implementing workflow's |
+| `branch_prefix` | string | `ai-feature/` | Prefix of the branches the implementing workflow pushes to. A dispatched review is only accepted for a branch carrying it, and the prefix is also what tells that workflow's pull requests from ones somebody wrote - which decides whether the agent is told about the plan and the round. Keep it the same as the implementing workflow's |
 | `model` | string | `claude-opus-4-8` | Model used to review |
 | `max_turns` | number | `40` | How many turns the agent may spend reading the code before it has to review with what it found |
 | `agent_timeout_minutes` | number | `25` | How long the reviewing agent itself may run before it is given up on |
@@ -122,6 +132,12 @@ not know what the change was *meant* to do is a style check, and the plan's
 history with **answered threads included**, so it can read the reply where its own last concern was
 addressed before deciding whether to raise it again. The working tree is the branch, and it is told
 to open the files around each hunk rather than review the diff in isolation.
+
+Where there is no plan, the pull request's own title and description are the specification, and a
+closing keyword in that description is followed to the issue behind it - so one saying `Closes
+#4217` is still reviewed against why the work was wanted, while a number naming a pull request or an
+issue of some other repository is ignored rather than staged. Rounds go unmentioned there, and the
+agent is told a person is reading what it writes.
 
 ### Inline comments, and why some go missing
 

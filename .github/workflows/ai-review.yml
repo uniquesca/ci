@@ -27,13 +27,23 @@ on:
         required: false
         default: ''
         type: string
+      command:
+        description: 'Comment command that asks for a review, has to be at the very beginning of the comment on a pull request. This is how a pull request a person wrote is reviewed - nothing dispatches one for it'
+        required: false
+        default: '/ai-review'
+        type: string
+      allowed_permissions:
+        description: 'Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and the triage role as `read`, so `admin write` covers owners, maintainers and developers'
+        required: false
+        default: 'admin write'
+        type: string
       dispatch_type:
         description: 'The `repository_dispatch` event type this reacts to. The implementing workflow sends it as the last thing it does in a round, which is what starts a review - a `pull_request` trigger would fire on the push instead, before the round comment and the thread replies the reviewer has to read are in place'
         required: false
         default: 'ai-review'
         type: string
       branch_prefix:
-        description: 'Only pull requests whose branch lives in this repository and starts with this prefix are reviewed. Keep it the same as the implementing workflow branch_prefix'
+        description: 'Prefix of the branches the implementing workflow pushes to. A dispatched review is only accepted for a branch carrying it, and the prefix is also what tells a pull request that workflow opened from one somebody wrote by hand - which decides whether the agent is told about the plan and the round it is part of. Keep it the same as the implementing workflow branch_prefix'
         required: false
         default: 'ai-feature/'
         type: string
@@ -86,19 +96,35 @@ on:
 jobs:
   review:
     name: Review the pull request
-    # Started by the implementing workflow, not by a person and not by a pull request event:
-    # `pull_request: opened` would fire on the push, before the round comment and the thread replies
-    # the reviewer is meant to read are in place. The implementing workflow dispatches this last,
-    # once they are.
+    # Two ways in. The implementing workflow dispatches a review as the last thing it does in a
+    # round, and a person asks for one by commenting the command on a pull request.
+    #
+    # Neither is a pull request event. `pull_request: opened` would fire on an implementing push
+    # before the round comment and the thread replies the reviewer is meant to read are in place,
+    # and on a pull request somebody wrote it would spend a review on every push - so a review is
+    # something either the loop or a person asks for, never something a branch moving produces.
+    #
+    # A pre-filter and not the real test. `startsWith` here is case-insensitive, and neither branch
+    # proves the pull request is open or that its head is in this repository. `Resolve the pull
+    # request` below re-checks all of it against what the API says, and that check is the one that
+    # decides.
     if: >-
-      ${{ github.event_name == 'repository_dispatch'
-          && github.event.action == inputs.dispatch_type }}
+      ${{ (github.event_name == 'repository_dispatch'
+           && github.event.action == inputs.dispatch_type)
+          || (github.event_name == 'issue_comment'
+              && github.event.action == 'created'
+              && github.event.issue.pull_request
+              && startsWith(github.event.comment.body, inputs.command)) }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout_minutes }}
     # One review per pull request at a time. Queued rather than cancelled: a second push
     # deserves its own review, and cancelling would leave the loop with nothing to answer.
+    #
+    # The number comes from whichever event carried it - the dispatch payload, or the pull request
+    # the command was typed on. The group has to name the same pull request either way, or a review
+    # a person asked for runs alongside the dispatched one for the same branch.
     concurrency:
-      group: ai-review-${{ github.repository }}-${{ github.event.client_payload.pull_request }}
+      group: ai-review-${{ github.repository }}-${{ github.event.client_payload.pull_request || github.event.issue.number }}
       cancel-in-progress: false
     permissions:
       # Read-only on the code. The reviewing agent has no shell and nothing here pushes, so
@@ -119,67 +145,204 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      # Same contract as the implementing workflow: the step below can set this to false, and
-      # **every step after it must test `env.PROCEED == 'true'` in its `if`**. A step that
-      # forgets runs after the job has given up, against outputs that were never written - which
-      # in ai-implement.yml meant `gh pr view ""` failing a job that had correctly decided it had
-      # nothing to do.
+      # Same contract as the implementing workflow: `Resolve the pull request` can set this to
+      # false, and **every step after it must test `env.PROCEED == 'true'` in its `if`**. A step
+      # that forgets runs after the job has given up, against outputs that were never written -
+      # which in ai-implement.yml meant `gh pr view ""` failing a job that had correctly decided
+      # it had nothing to do.
       #
-      # Cheaper to hold to here than there. This job has one entry point rather than four, and
-      # the resolve step is first and unconditional, so there is exactly one place PROCEED is
-      # ever set and everything below it is downstream of that one place. There is no job-level
-      # branch filter for the same reason: `repository_dispatch` carries a pull request number
-      # and nothing else, so the payload cannot answer the question without an API call.
+      # Cheaper to hold to here than there. `Resolve the pull request` is the one place PROCEED
+      # is ever set, whichever event started the run, and everything below it is downstream of
+      # that one place. The two steps above it answer the commenter and touch nothing else. The
+      # three that deliberately do not test it are the two `always()` reporters at the end and
+      # the step that tells somebody their command cannot run here - and that one fires precisely
+      # *because* PROCEED is false.
+      #
+      # There is no job-level branch filter, because neither payload can answer the question
+      # without an API call: `repository_dispatch` carries a pull request number and nothing else,
+      # and `issue_comment` carries the conversation without the branch behind it.
       PROCEED: 'true'
       REVIEW_MARKER: '<!-- ai-review -->'
     steps:
-      # The pull request number arrives in the dispatch payload, which is arbitrary JSON that
-      # anybody with `contents: write` could have sent. It is validated as a number and then
-      # checked against the same boundary the implementing workflow uses.
-      - name: Resolve the pull request
-        id: pull_request
+      # Only for a typed command. A dispatch comes from the implementing workflow, which has run
+      # its own gates before sending it, and the collaborators API has no answer for a bot in any
+      # case. This is what keeps an Anthropic credential and the reviewing app's installation
+      # token away from anybody who can merely comment on a pull request.
+      #
+      # A bot that typed the command is refused rather than looked up, and there is deliberately
+      # no list of allowed bots here. The one bot with a reason to ask for a review is the
+      # implementing workflow, which dispatches instead - and a bot able to type this could trade
+      # rounds with that workflow with nothing bounding the two.
+      - name: Check the commenter permissions
+        id: permissions
+        if: ${{ github.event_name == 'issue_comment' }}
         env:
-          PAYLOAD_PR: ${{ github.event.client_payload.pull_request }}
-          PREFIX: ${{ inputs.branch_prefix }}
+          ALLOWED: ${{ inputs.allowed_permissions }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+          COMMENTER_TYPE: ${{ github.event.comment.user.type }}
         run: |
-          if [[ ! "$PAYLOAD_PR" =~ ^[0-9]+$ ]]; then
-            echo "::error title=Bad dispatch payload::client_payload.pull_request is not a number"
+          allowed='false'
+
+          if [[ "$COMMENTER_TYPE" == 'Bot' ]]; then
+            permission='bot'
+          elif permission=$(gh api "repos/$GH_REPO/collaborators/$COMMENTER/permission" --jq '.permission' 2> error.log); then
+            echo "@$COMMENTER has the '$permission' permission in $GH_REPO"
+            for level in $ALLOWED; do
+              if [[ "$permission" == "$level" ]]; then
+                allowed='true'
+                break
+              fi
+            done
+          elif grep -q 'Not Found' error.log; then
+            # Not a collaborator at all - expected, no permission to run the command
+            permission='none'
+          else
+            # Anything other than a 404 is a real failure, do not silently treat it as a refusal
+            cat error.log
+            echo "::error title=Permission check failed::Could not read the permissions of @$COMMENTER"
             exit 1
           fi
 
-          gh pr view "$PAYLOAD_PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
+          echo "permission=$permission" >> "$GITHUB_OUTPUT"
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+      # Refusals stop the job, so the steps below only ever run for an allowed commenter
+      - name: Refuse the request
+        if: >-
+          ${{ github.event_name == 'issue_comment'
+          && steps.permissions.outputs.allowed != 'true' }}
+        env:
+          COMMAND: ${{ inputs.command }}
+          PERMISSION: ${{ steps.permissions.outputs.permission }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$PR" --body "@$COMMENTER you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`. Ask an owner, a maintainer or a developer to run it for you." \
+            || echo "::warning title=Could not post the refusal::@$COMMENTER was refused, but nothing could be said on #$PR"
+
+          echo "::error title=Permission denied::@$COMMENTER ($PERMISSION) is not allowed to run $COMMAND"
+          exit 1
+
+      # Which pull request, and whether this job may touch it at all. The number arrives either
+      # in the dispatch payload - arbitrary JSON that anybody with `contents: write` could have
+      # sent - or as the pull request a command was typed on. Neither is taken on trust: the
+      # number is validated and the pull request itself is then read from the API.
+      - name: Resolve the pull request
+        id: pull_request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PAYLOAD_PR: ${{ github.event.client_payload.pull_request }}
+          COMMENT_PR: ${{ github.event.issue.number }}
+          PREFIX: ${{ inputs.branch_prefix }}
+        run: |
+          if [[ "$EVENT_NAME" == 'repository_dispatch' ]]; then
+            trigger='dispatch'
+            pr="$PAYLOAD_PR"
+          else
+            trigger='command'
+            pr="$COMMENT_PR"
+          fi
+
+          if [[ ! "$pr" =~ ^[0-9]+$ ]]; then
+            echo "::error title=Bad event payload::'$pr' is not a pull request number"
+            exit 1
+          fi
+
+          # `body` is whatever the author typed, and it is read back off this file with `jq`
+          # below rather than through an expression - nothing anybody wrote is ever expanded
+          # into this YAML.
+          gh pr view "$pr" --json number,state,title,url,body,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
             > "$RUNNER_TEMP/pull-request.json"
 
           state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
           head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pull-request.json")
           head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
 
-          # The same gate as the implementing workflow. Nothing here checks out somebody
-          # else's code: this job holds an Anthropic key and the AI Review app's installation
-          # token, which reaches further than `GITHUB_TOKEN` does.
+          # Whether the implementing workflow pushed this branch. Everything the agent is told
+          # about plans and rounds turns on this rather than on which event started the run, so
+          # a review a person asks for on a branch that workflow pushed is still part of its
+          # loop, and one on a branch somebody wrote is judged on its own description.
+          ai_authored='false'
+          [[ "$head_ref" == "$PREFIX"* ]] && ai_authored='true'
+
+          # The boundary that actually holds, and it holds for both events. Nothing here checks
+          # out somebody else's code: this job holds an Anthropic credential and the AI Review
+          # app's installation token, which reaches further than `GITHUB_TOKEN` does - and
+          # `issue_comment` hands both to a run started from a fork's pull request.
           reason=''
           if [[ "$head_repo" != "$GH_REPO" ]]; then
-            reason="its branch lives in $head_repo rather than in this repository"
-          elif [[ "$head_ref" != "$PREFIX"* ]]; then
-            reason="its branch $head_ref was not created by the implementing workflow"
+            reason="its branch lives in \`$head_repo\` rather than in this repository"
           elif [[ "$state" != 'OPEN' ]]; then
-            reason="it is not open"
+            reason="it is $(echo "$state" | tr '[:upper:]' '[:lower:]')"
+          elif [[ "$trigger" == 'dispatch' && "$ai_authored" != 'true' ]]; then
+            # Only the loop is held to the branch prefix. A dispatch naming a branch the
+            # implementing workflow never pushed did not come from a round whatever it claims,
+            # while a review somebody asked for has the permission gate above in front of it.
+            reason="its branch \`$head_ref\` was not created by the implementing workflow"
           fi
 
           if [[ -n "$reason" ]]; then
             echo "PROCEED=false" >> "$GITHUB_ENV"
-            echo "Not reviewing #$PAYLOAD_PR: $reason"
+
+            # Read by the step that answers a typed command, which is the only trigger this is
+            # ever said out loud for
+            {
+              printf 'trigger=%s\n' "$trigger"
+              printf 'number=%s\n' "$pr"
+              printf 'stand_down=%s\n' "$reason"
+            } >> "$GITHUB_OUTPUT"
+
+            echo "Not reviewing #$pr: $reason"
             exit 0
           fi
 
-          issue="${head_ref##*issue-}"
-          if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
-            echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
-            exit 1
+          # The issue behind the change, which is where the plan lives. Optional: a pull request
+          # somebody wrote may answer to no issue at all, and the review is then built from the
+          # description instead.
+          issue=''
+          if [[ "$ai_authored" == 'true' ]]; then
+            # The branch name carries the number, and that branch is the implementing workflow's
+            # own construction rather than prose anybody can edit.
+            candidate="${head_ref##*issue-}"
+            if [[ "$candidate" =~ ^[0-9]+$ ]]; then
+              issue="$candidate"
+            elif [[ "$trigger" == 'dispatch' ]]; then
+              # An invariant of the loop, so a round that has lost it fails loudly rather than
+              # being reviewed against no plan. A command typed on such a branch is answered by
+              # reviewing it as a pull request somebody wrote, which is the more useful of the two.
+              echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
+              exit 1
+            fi
+          fi
+
+          if [[ -z "$issue" ]]; then
+            # A closing keyword in the description is how a pull request written by hand says
+            # which issue it is for
+            candidate=$(
+              jq -r '.body // ""' "$RUNNER_TEMP/pull-request.json" \
+                | grep -ioE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]]+#[0-9]+' \
+                | head -n 1 | grep -oE '[0-9]+'
+            ) || candidate=''
+
+            # `#12` is a number and nothing more - it may name a pull request, or an issue of
+            # some other repository. One lookup settles it, and anything that is not an issue
+            # here leaves the review to work from the description.
+            if [[ -n "$candidate" ]]; then
+              kind=$(gh api "repos/$GH_REPO/issues/$candidate" \
+                --jq 'if .pull_request then "a pull request" else "an issue" end' 2> /dev/null) || kind=''
+
+              if [[ "$kind" == 'an issue' ]]; then
+                issue="$candidate"
+              else
+                echo "#$candidate is ${kind:-not readable}, not an issue of this repository - reviewing without one"
+              fi
+            fi
           fi
 
           {
-            printf 'number=%s\n' "$PAYLOAD_PR"
+            printf 'number=%s\n' "$pr"
+            printf 'trigger=%s\n' "$trigger"
+            printf 'ai_authored=%s\n' "$ai_authored"
             printf 'issue=%s\n' "$issue"
             printf 'branch=%s\n' "$head_ref"
             printf 'base=%s\n' "$(jq -r '.baseRefName' "$RUNNER_TEMP/pull-request.json")"
@@ -187,7 +350,27 @@ jobs:
             printf 'url=%s\n' "$(jq -r '.url' "$RUNNER_TEMP/pull-request.json")"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Reviewing #$PAYLOAD_PR on $head_ref, implementing issue #$issue"
+          echo "Reviewing #$pr on $head_ref${issue:+, for issue #$issue}"
+
+      # The typed-command half of standing down. A dispatch that cannot be acted on says nothing
+      # on the pull request - it came from a machine and the run log is where that is read - but
+      # somebody who typed the command is waiting for an answer, and no review arriving is not one.
+      #
+      # Deliberately without the `PROCEED` test every other step carries: this step exists
+      # because PROCEED is false.
+      - name: Say the command cannot run here
+        if: >-
+          ${{ success()
+          && steps.pull_request.outputs.trigger == 'command'
+          && steps.pull_request.outputs.stand_down != '' }}
+        env:
+          PR: ${{ steps.pull_request.outputs.number }}
+          REASON: ${{ steps.pull_request.outputs.stand_down }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+          COMMAND: ${{ inputs.command }}
+        run: |
+          gh issue comment "$PR" --body "@$COMMENTER I cannot run \`$COMMAND\` on #$PR - $REASON. A review checks out the branch, so it only runs on an open pull request whose branch lives in this repository." \
+            || echo "::warning title=Could not say the command cannot run::Nothing was posted on #$PR"
 
       # Minted once and used only to submit the review. The reviewing agent writes review.json on
       # disk and never receives this token, so it cannot post, edit or request changes itself.
@@ -249,9 +432,15 @@ jobs:
       # A review that does not know what the change was meant to do is a style check. The plan
       # is the specification, and "this does not do what the plan says" is the most valuable
       # thing a reviewer can find.
+      #
+      # Only when there is an issue to read it from. A pull request somebody wrote may answer to
+      # no issue, and its own title and description are then what the change is measured against
+      # - `ai-stage-pull-request` below writes those out either way.
       - name: Stage the issue and its plan
         id: stage_issue
-        if: ${{ success() && env.PROCEED == 'true' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.pull_request.outputs.issue != '' }}
         uses: uniquesca/ci/ai-stage-issue@main
         with:
           issue: ${{ steps.pull_request.outputs.issue }}
@@ -293,16 +482,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
           # The action refuses to run for a bot actor unless the bot is listed here, and a
-          # review is always started by one: the implementing workflow dispatches it with
-          # `GITHUB_TOKEN`, so the actor is `github-actions[bot]`. Without this the agent
-          # quits before it reads anything. Comma-separated, and unrelated to the
-          # `allowed_bots` input of the implementing workflow, which gates who may trigger
-          # a round and is checked by that workflow itself
+          # dispatched review is started by one: the implementing workflow sends the event with
+          # `GITHUB_TOKEN`, so the actor is `github-actions[bot]`. Without this the agent quits
+          # before it reads anything on every review the loop asks for. Comma-separated, and
+          # unrelated to the `allowed_bots` input of the implementing workflow, which gates who
+          # may trigger a round and is checked by that workflow itself
           allowed_bots: 'github-actions[bot],github-actions'
           prompt: |
             You are a senior engineer reviewing a colleague's pull request. Review
             #${{ steps.pull_request.outputs.number }} of this repository. You are reviewing it,
-            not fixing it - another agent does that, from what you write here.
+            not fixing it - ${{ steps.pull_request.outputs.ai_authored == 'true' && 'another agent does that, from what you write here.' || 'the person who wrote it does that, from what you write here.' }}
 
             Everything has been fetched for you. Read these first:
 
@@ -310,15 +499,20 @@ jobs:
               `${{ steps.pull_request.outputs.base }}`. This is what you are reviewing.
               ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED because it is large, so it stops partway. Read the files themselves for the rest.' || '' }}
             - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - the shape of it.
-            - `.ai-plan/plan.md` - the approved plan this was built from, if the issue still has
-              one. It is the specification. "This does not do what the plan says" is the most
-              valuable finding you can produce. Its items are numbered `S1` for a step, `R1` for
-              a risk, `U1` for an unknown or an assumption, `C1` for a check that proves the
-              work is done and `QA1` for an acceptance criterion a tester verifies by hand, each
-              naming the steps it covers. Those ids are what to check the diff against, and what
-              to cite when something is missing. An older plan may not have them, in which case
-              refer to its steps by their titles.
-            - `.ai-plan/issue.json` - why the work was wanted in the first place.
+            - `.ai-review/pull-request.json` - the title and description the author gave it.
+              ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Context around the plan below.' || '**This is the specification.** What the author says the change is for is what to measure it against, and a description that does not match the diff is itself worth saying.' }}
+            - `.ai-plan/plan.md` - the approved plan the change was built from, when this pull
+              request answers to an issue carrying one. If the file is not there, it does not,
+              and nothing is missing. Where it is there it is the specification, and "this does
+              not do what the plan says" is the most valuable finding you can produce. Its items
+              are numbered `S1` for a step, `R1` for a risk, `U1` for an unknown or an
+              assumption, `C1` for a check that proves the work is done and `QA1` for an
+              acceptance criterion a tester verifies by hand, each naming the steps it covers.
+              Those ids are what to check the diff against, and what to cite when something is
+              missing. An older plan may not have them, in which case refer to its steps by
+              their titles.
+            - `.ai-plan/issue.json` - why the work was wanted in the first place, when there is
+              an issue behind it.
             - `.ai-review/feedback.json` - what has already been said on this pull request, and
               what CI currently thinks. Each entry has a `source` (`thread` for an inline
               comment, `review`, `comment`, `check` for a failing check), an `anchor`, a
@@ -329,35 +523,33 @@ jobs:
             three lines below the hunk is worse than no comment, and this is the single biggest
             difference between a useful review and a noisy one.
 
-            This is round ${{ steps.stage_pr.outputs.round }}. After
-            ${{ inputs.max_unattended_rounds }} rounds in a row without a person involved, the
-            loop stops and asks for one. If you are near that and the same problem is still
-            not fixed, say so plainly in your summary and stop trying to get it fixed by
-            repetition.
+            ${{ steps.pull_request.outputs.ai_authored == 'true' && format('This is round {0}. After {1} rounds in a row without a person involved, the loop stops and asks for one. If you are near that and the same problem is still not fixed, say so plainly in your summary and stop trying to get it fixed by repetition.', steps.stage_pr.outputs.round, inputs.max_unattended_rounds) || 'A review of your own may already be on this pull request, and it is in the feedback below if so. If a problem you raised then is still not fixed, say so plainly in your summary - a person is reading this, and being told the change has not moved is more use to them than the same inline comment twice.' }}
+
+            ${{ steps.pull_request.outputs.trigger == 'command' && 'Somebody asked for this review by commenting on the pull request, and their comment is in the feedback below. If it names something to look at, look at that first - it is the closest thing you have to being briefed.' || '' }}
 
             Before you raise anything, read `.ai-review/feedback.json` properly:
 
-            - A thread with `answered: true` is one where the implementing agent has already
-              replied. Read the reply. If it made the change, do not raise it again. If it
-              gave a reasoned argument for not making it, either accept the argument or say
-              in your summary that a person should settle it - **do not simply repeat the
-              original comment**. Two agents restating positions at each other is the failure
-              mode this whole mechanism has to avoid.
+            - A thread with `answered: true` is one where
+              ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }}
+              has already replied. Read the reply. If it made the change, do not raise it
+              again. If it gave a reasoned argument for not making it, either accept the
+              argument or say in your summary that a person should settle it - **do not simply
+              repeat the original comment**.
+              ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Two agents restating positions at each other is the failure mode this whole mechanism has to avoid.' || 'Restating a position the author has already answered is what makes a reviewer worth ignoring.' }}
             - An unanswered open thread is already raised. Do not duplicate it.
-            - A failing `check` has already been reported to the implementing agent and is
-              already being worked on. Do not spend an inline comment restating what a linter
-              said.
+            - A failing `check` is already visible to whoever pushed the commit. Do not spend an
+              inline comment restating what a linter said
+              ${{ steps.pull_request.outputs.ai_authored == 'true' && '- it has already reached the implementing agent, which is working on it.' || '- though where the change cannot be right while a check is red, that belongs in your summary.' }}
 
-            **You must be willing to find nothing.** A change that implements the plan
-            correctly and reads like the surrounding code should get the `comment` verdict and
-            a short summary saying so. Do not manufacture a concern to justify the review, and
-            do not request changes over a preference. Every unnecessary round costs real money
-            and moves nothing forward. A reviewer that always finds something is worse than no
-            reviewer at all, because the loop never ends.
+            **You must be willing to find nothing.** A change that does what it set out to do
+            and reads like the surrounding code should get the `comment` verdict and a short
+            summary saying so. Do not manufacture a concern to justify the review, and do not
+            request changes over a preference.
+            ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Every unnecessary round costs real money and moves nothing forward, and a reviewer that always finds something is worse than no reviewer at all because the loop never ends.' || 'A reviewer that always finds something is worse than no reviewer at all, because whoever reads it learns to stop.' }}
 
             Request changes only for things that genuinely should not merge as they are:
 
-            - it does not do what the plan or the issue asked
+            - it does not do what the plan, the issue or its own description asked
             - a real bug, a broken edge case, a race, a resource leak
             - a security problem, or untrusted input reaching somewhere it should not
             - it breaks or bypasses an existing convention in this repository, in a way that
@@ -371,12 +563,12 @@ jobs:
             that file from the git log when it releases, so nothing in a pull request should be
             editing it - and if something does, that is worth an inline comment the other way.
 
-            The plan's `QA` criteria are for a person to test by hand, and you cannot run them.
-            Not being able to verify one is not a finding, and it is not grounds for requesting
-            changes. What is worth saying is that the code cannot satisfy one as written, or that
-            nothing in the diff addresses the steps a criterion covers - both of those you can
-            see. Where the change looks right but only a tester can settle it, say which criteria
-            those are in your summary, so whoever picks it up knows where to start.
+            Where the plan lists `QA` criteria, they are for a person to test by hand and you
+            cannot run them. Not being able to verify one is not a finding, and it is not grounds
+            for requesting changes. What is worth saying is that the code cannot satisfy one as
+            written, or that nothing in the diff addresses the steps a criterion covers - both of
+            those you can see. Where the change looks right but only a tester can settle it, say
+            which criteria those are in your summary, so whoever picks it up knows where to start.
 
             Do the reading yourself, in this run. You have no helpers to delegate to and
             nothing is arriving later, so never end a turn saying you are waiting on anything -
@@ -402,18 +594,14 @@ jobs:
               merging is a person's decision.
             - `summary` - what you looked at, what you concluded, and anything that does not
               belong on one line. If your verdict is `comment` because it is fine, say that in
-              a sentence or two rather than padding it. Cite the plan's ids in brackets after
-              what you are already saying - "the retry never backs off (S3)", "nothing here
-              covers the migration (S6, QA2)". Never an id on its own: the plan lives on the
-              issue, and whoever reads this review has your words and nothing else. `S3` alone
-              tells them nothing, while the sentence with `S3` after it tells them everything
-              and lets them go and find it. The same goes for an inline comment.
+              a sentence or two rather than padding it.
+              ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Cite the plan''s ids in brackets after what you are already saying - "the retry never backs off (S3)", "nothing here covers the migration (S6, QA2)". Never an id on its own: the plan lives on the issue, and whoever reads this review has your words and nothing else. `S3` alone tells them nothing, while the sentence with `S3` after it tells them everything and lets them go and find it. The same goes for an inline comment.' || '' }}
             - `comments` - inline comments. `line` is the line number **in the new file**, and
               it has to be a line the diff actually contains: an added line or a context line
               inside a hunk. A comment on any other line is dropped before the review is
               submitted, so check `.ai-review/diff.patch` for the number rather than guessing.
               At most ${{ inputs.max_comments }}. Each one says what is wrong and what to do
-              instead - the agent acting on it has your words and the code, nothing else.
+              instead - whoever acts on it has your words and the code, nothing else.
 
             Your final message is not published anywhere. Put everything you want said in
             `review.json`; the final message is only for the run log, so a sentence on what
@@ -469,10 +657,15 @@ jobs:
 
           echo "::warning title=The reviewing agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The review is complete, so it was submitted anyway - raise max_turns if this keeps happening."
 
-      # This is where the loop turns. The app's review creates a `pull_request_review` event, and
-      # that event is what starts the next implementing round - which is why the review is submitted
-      # on an installation token and not on this job's own. Github raises no event for a review made
-      # with `GITHUB_TOKEN`, so one submitted that way would block a merge and start nothing.
+      # This is where the loop turns, on a branch the implementing workflow pushed. The app's
+      # review creates a `pull_request_review` event, and that event is what starts the next
+      # implementing round - which is why the review is submitted on an installation token and not
+      # on this job's own. Github raises no event for a review made with `GITHUB_TOKEN`, so one
+      # submitted that way would block a merge and start nothing.
+      #
+      # On a pull request somebody wrote it starts nothing either way, because the implementing
+      # workflow only reacts to a review on a branch carrying its own prefix. What it does there
+      # is what a review from a colleague does: block the merge until somebody deals with it.
       - name: Submit the review
         id: submit
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -499,17 +692,32 @@ jobs:
           POSTED: ${{ steps.submit.outputs.comments_posted }}
           DROPPED: ${{ steps.submit.outputs.comments_dropped }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
+          # Rounds are the implementing workflow's count of its own work, so they are only worth
+          # naming on a branch it pushed. On a pull request somebody wrote there is one review
+          # per time it was asked for and nothing to number them against
+          AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
         run: |
+          if [[ "$AI_AUTHORED" == 'true' ]]; then
+            what="round $ROUND"
+          else
+            what="#$PR"
+          fi
+
           if [[ "$SUBMITTED" == 'true' ]]; then
             {
-              printf 'Reviewed round %s' "$ROUND"
+              printf 'Reviewed %s' "$what"
               [[ "$POSTED" != '0' ]] && printf ' with %s inline comment(s)' "$POSTED"
               printf ' - submitted as `%s`.' "$EVENT"
               [[ "$DROPPED" != '0' ]] && printf ' %s comment(s) could not be placed on a line the diff contains; see the run log.' "$DROPPED"
               if [[ "$VERDICT" == 'changes_requested' && "$EVENT" != 'REQUEST_CHANGES' ]]; then
-                printf '\n\n**The agent wanted to request changes and could not.** Github does not allow it from the identity that opened this pull request, so this landed as a comment: it does not block merging, and it will not start another round on its own. Run `/ai-do` here to act on it, and check that the reviewing app is a different app from the implementing one.'
+                printf '\n\n**The agent wanted to request changes and could not.** Github does not allow it from the identity that opened this pull request, so this landed as a comment and it does not block merging.'
+                if [[ "$AI_AUTHORED" == 'true' ]]; then
+                  printf ' It will not start another round on its own either - run `/ai-do` here to act on it, and check that the reviewing app is a different app from the implementing one.'
+                else
+                  printf ' Check that the reviewing app is a different app from the one that opened this pull request.'
+                fi
               fi
               [[ -n "$USAGE" ]] && printf '\n\n%s.' "$USAGE"
               printf '\n'
@@ -526,7 +734,7 @@ jobs:
               fi
               printf '\n\n'
               printf -- '---\n\n'
-              printf 'Round %s.' "$ROUND"
+              [[ "$AI_AUTHORED" == 'true' ]] && printf 'Round %s.' "$ROUND"
               [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
               printf '\n'
             } > "$RUNNER_TEMP/outcome.md"
@@ -553,14 +761,28 @@ jobs:
         env:
           PR: ${{ steps.pull_request.outputs.number }}
           REASON: ${{ steps.report.outputs.reason }}
+          AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
+          COMMAND: ${{ inputs.command }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
-            printf 'The reviewing agent did not finish, so this round has not been reviewed.\n\n'
+            if [[ "$AI_AUTHORED" == 'true' ]]; then
+              printf 'The reviewing agent did not finish, so this round has not been reviewed.\n\n'
+            else
+              printf 'The reviewing agent did not finish, so this pull request has not been reviewed.\n\n'
+            fi
+
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
-            printf 'Nothing is waiting on it - review it yourself, or comment `/ai-do` to run another implementing round. The run log has the detail: %s\n' "$RUN_URL"
+
+            printf 'Nothing is waiting on it - review it yourself'
+            if [[ "$AI_AUTHORED" == 'true' ]]; then
+              printf ', or comment `/ai-do` to run another implementing round'
+            else
+              printf ', or comment `%s` to try again' "$COMMAND"
+            fi
+            printf '. The run log has the detail: %s\n' "$RUN_URL"
           } > "$RUNNER_TEMP/failure.md"
 
           cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"

@@ -6,7 +6,7 @@ Three workflows that take an issue to a reviewed pull request. Each has its own 
 |---|---|
 | [AI Plan](ai/ai-plan.md) | Turns an issue into an implementation plan, on `/ai-plan` |
 | [AI Implement](ai/ai-implement.md) | Builds the plan on a branch and opens a pull request, then runs a round for every review or red check, on `/ai-do` |
-| [AI Review](ai/ai-review.md) | Reviews what a round pushed, as a real Github review that can start the next one |
+| [AI Review](ai/ai-review.md) | Reviews a pull request as a real Github review, on `/ai-review` or on what a round pushed |
 
 ## How the three fit together
 
@@ -34,8 +34,8 @@ and later commands follow it without being told again.
 ## Integrating a repository
 
 The planner and the implementer are two jobs in one workflow file, because they run on the same
-events. The reviewer needs a second file, because it runs on a different one. Each page carries the
-job to copy: [AI Plan](ai/ai-plan.md#integrating-a-repository),
+events. The reviewer needs a second file, because it listens for one the other two do not. Each page
+carries the job to copy: [AI Plan](ai/ai-plan.md#integrating-a-repository),
 [AI Implement](ai/ai-implement.md#integrating-a-repository),
 [AI Review](ai/ai-review.md#integrating-a-repository).
 

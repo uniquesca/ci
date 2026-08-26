@@ -48,7 +48,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 |---|---|
 | [`ai-plan.yml`](ai/ai-plan.md) | Turns an issue into an implementation plan, on `/ai-plan` |
 | [`ai-implement.yml`](ai/ai-implement.md) | Implements the plan on a branch, opens a pull request, and runs another round for every review or red check |
-| [`ai-review.yml`](ai/ai-review.md) | Reviews what an implementing round pushed, as a real Github review |
+| [`ai-review.yml`](ai/ai-review.md) | Reviews a pull request as a real Github review, on `/ai-review` or on what an implementing round pushed |
 
 ### QA
 
