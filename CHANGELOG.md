@@ -1235,3 +1235,7 @@
 ## v11.1.0
 
 * Update: introduced an ability to use ai-review on non au-made PRs (3f7e625 by George Shestayev)
+
+## v11.1.1
+
+* Fix: added necessary docker infrastructure prep for when spinnin up docker sandbox for AI coding agent (6c76166 by George Shestayev)
