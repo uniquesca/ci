@@ -1239,3 +1239,7 @@
 ## v11.1.1
 
 * Fix: added necessary docker infrastructure prep for when spinnin up docker sandbox for AI coding agent (6c76166 by George Shestayev)
+
+## v11.1.2
+
+* Fix: fixed default allowed bots for ai-implement round (afeec0d by George Shestayev)
