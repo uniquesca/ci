@@ -47,8 +47,8 @@ This action produces no outputs.
 
 **Yarn is chosen by `.yarnrc`, not by `yarn.lock`.** A repository with a `yarn.lock` and no
 `.yarnrc` is installed with NPM. That rule is shared with
-[`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow), so the tool that installs the
-dependencies is the tool that runs the scripts.
+[`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow), which runs the package scripts with
+`npm run` either way.
 
 ### Caching
 
@@ -66,7 +66,9 @@ fragments and neither restores the other's cache.
 Composer's token goes in with `composer config --auth`, and any `auth.json` in the working
 directory is deleted before and after. NPM and Yarn get a generated `.npmrc` pointing `@uniquesca`
 at `npm.pkg.github.com`, and it is deleted at the end of the step for the same reason: a token
-written into the working tree is a token a later step could commit.
+written into the working tree is a token a later step could commit. **Neither file belongs in a
+repository** - a committed one is a credential in git history, and this action deletes what it
+finds.
 
 Both are optional. A repository with only public dependencies needs neither.
 

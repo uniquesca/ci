@@ -118,15 +118,14 @@ jobs:
 What happens on each run:
 
 1. Node is set up, the repository is checked out, and `setup_cmd` runs if given.
-2. The package manager is detected in `working_directory`. A `.yarnrc` file selects Yarn, and
-   its absence selects NPM - the same rule
-   [`install-packages`](actions/install-packages.md) uses, so the tool that installed the
-   dependencies is the tool that runs the scripts. **A missing `package.json` fails the run
+2. `package.json` in `working_directory` is read. **A missing or unreadable one fails the run
    here**, since there is nothing for this workflow to check; point it at the right
    `working_directory`, or don't call it for that repository.
 3. Environment variables from `env_variables` are prepared.
-4. Dependencies are installed, with caching. **Composer is deliberately not touched.**
-5. The `lint` script runs, then `test` - each only if `package.json` actually defines it.
+4. Dependencies are installed, with caching - Yarn where there is a `.yarnrc`, NPM otherwise.
+   **Composer is deliberately not touched.**
+5. `npm run lint` runs, then `npm run test` - each only if `package.json` defines the script, and
+   with `npm run` whichever package manager installed.
 
 This workflow runs on a single `ubuntu-latest` runner. There is no version matrix: the CI
 environment file describes PHP jobs only, so the Node version comes from the `node_version`

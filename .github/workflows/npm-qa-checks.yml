@@ -51,23 +51,11 @@ jobs:
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
 
-      # Detection has to match uniquesca/ci/install-packages, so that the package manager
-      # running the scripts is the same one that installed the dependencies
-      - name: Check if we have NPM or Yarn
-        id: detect
+      # Without this, a missing package.json takes the "no script found" branch in both checks
+      # below and the run is green having checked nothing
+      - name: Fail if there is no package to check
         working-directory: ${{ inputs.working_directory }}
-        run: |
-          # A missing or unreadable package.json is a misconfiguration for this workflow, so
-          # let jq fail the job here rather than skipping every check further down
-          jq -e . package.json > /dev/null
-
-          if [[ -f ".yarnrc" ]]; then
-            echo "runner=yarn" >> $GITHUB_OUTPUT
-            echo "Yarn found, will run Yarn checks."
-          else
-            echo "runner=npm run" >> $GITHUB_OUTPUT
-            echo "NPM found, will run NPM checks."
-          fi
+        run: jq -e . package.json > /dev/null
 
       - name: Set up environment
         uses: uniquesca/ci/prepare-environment@main

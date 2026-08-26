@@ -61,6 +61,10 @@ jobs:
     uses: uniquesca/ci/.github/workflows/ai-plan.yml@main
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Both agents work from this project's dependencies. Pass whichever of the two
+      # ecosystems this repository has private packages in
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
 
   ai-implement:
     permissions:
@@ -71,6 +75,8 @@ jobs:
     uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
       # The planner needs no app of its own - it only comments. This one pushes
       AI_IMPLEMENT_APP_ID: ${{ secrets.AI_IMPLEMENT_APP_ID }}
       AI_IMPLEMENT_PRIVATE_KEY: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
@@ -211,6 +217,8 @@ free, though only a revision moves the pull request's copy of the QA criteria.
 | Secret | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI planning agent |
+| `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent plans against [the source of what this project depends on](#what-the-agent-can-and-cannot-do). A repository whose dependencies are all public installs without it; one with private dependencies is planned without them |
+| `NPM_ACCESS_TOKEN` | no | Token for `npm.pkg.github.com`, where the `@uniquesca` NPM scope is served from. The Composer token's counterpart for a JavaScript repository, on the same terms |
 
 ## Inputs
 
@@ -221,7 +229,9 @@ free, though only a revision moves the pull request's copy of the QA criteria.
 | `model` | string | `claude-opus-4-8` | Model used to produce the plan |
 | `max_turns` | number | `50` | How many turns the agent may spend reading the repository before it has to plan with what it found |
 | `agent_timeout_minutes` | number | `30` | How long the planning agent itself may run before it is given up on |
-| `timeout_minutes` | number | `35` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes` |
+| `timeout_minutes` | number | `45` | How long the whole job may run. Keep it above `agent_timeout_minutes` plus what installing this project's dependencies costs |
+| `install_dependencies` | boolean | `true` | Install this project's Composer and NPM dependencies before the agent starts, so it plans against [what the project really depends on](#what-the-agent-can-and-cannot-do). Detected from the repository - a manifest is what decides |
+| `node_version` | number | `20` | Node version the JavaScript dependencies are installed under. The same default as [`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow) |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch [`ai-implement`](ai-implement.md) pushes to, used to find the pull request already implementing this issue. Keep the two the same |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
@@ -248,6 +258,11 @@ It has **no shell and no network**. The workflow writes the issue and its commen
 checkout with [`ai-stage-issue`](../actions/ai-stage-issue.md) first and the agent only ever reads
 files, which is also what keeps issue text out of the workflow file - nothing written by whoever
 opened the issue is expanded into YAML.
+
+The dependencies reach it the same way: a `composer.json` gets `vendor/` and a `package.json` gets
+`node_modules`, installed before the agent starts, and it is told to open a package it has a
+question about rather than grep across the tree. An install that fails leaves a warning and a plan
+written from the code alone, the same as `install_dependencies: false`.
 
 The plan step is read-only in two independent ways. The job holds `contents: read`, so nothing the
 agent does to the checkout can be pushed, and the editing, writing and shell tools are switched off

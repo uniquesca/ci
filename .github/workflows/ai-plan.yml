@@ -6,6 +6,12 @@ on:
       ANTHROPIC_API_KEY:
         description: 'Anthropic API key used to call the AI planning agent'
         required: true
+      COMPOSER_ACCESS_TOKEN:
+        description: 'Access token for cloning Uniques private Composer repositories, so that the agent plans against the source of what this project depends on rather than against an assumption about it. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies is planned without them'
+        required: false
+      NPM_ACCESS_TOKEN:
+        description: 'Access token for the Uniques private NPM registry on npm.pkg.github.com, which is where the `@uniquesca` scope is served from. The Composer token''s counterpart for a JavaScript repository, and it buys the same thing. Optional, on the same terms'
+        required: false
     inputs:
       command:
         description: 'Comment command that triggers the planning, has to be at the very beginning of the comment'
@@ -18,9 +24,9 @@ on:
         default: 'admin write'
         type: string
       timeout_minutes:
-        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so on the issue'
+        description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so on the issue - and above what installing this project''s dependencies costs on top of that, which on a cold cache is the larger of the two'
         required: false
-        default: 35
+        default: 45
         type: number
       agent_timeout_minutes:
         description: 'How long the planning agent itself may run before it is given up on'
@@ -42,6 +48,16 @@ on:
         required: false
         default: 'ai-feature/'
         type: string
+      install_dependencies:
+        description: 'Install this project''s Composer and NPM dependencies before the agent starts, so that it plans against the source of what the project depends on - the signature a library actually exposes, and whether the thing the plan was about to ask for already exists in one. Detected from the repository rather than configured: a manifest is what decides. Turn it off for a repository where the install is slow enough not to be worth it, and the agent plans from the code alone'
+        required: false
+        default: true
+        type: boolean
+      node_version:
+        description: 'Node version the JavaScript dependencies are installed under. The same default as the NPM QA checks workflow, so the two agree unless both are changed. `_ci_environment.json` describes only PHP, so there is nothing in the repository to read this from'
+        required: false
+        default: 20
+        type: number
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -292,6 +308,190 @@ jobs:
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # What a plan is worth comes down to what the agent could read while writing it, and a bare
+      # checkout stops at this repository's own files. `vendor/` and `node_modules` are where the
+      # source of everything it depends on lives - the signature a private library actually
+      # exposes, the helper that already does what the plan was about to ask somebody to write -
+      # and a question answered there is a question the implementing agent does not answer wrongly
+      # a day later.
+      #
+      # A manifest is what decides, and the two ecosystems are answered independently: a PHP
+      # application with an Angular front end is both, and gets both.
+      #
+      # Deliberately a looser test than the implementing workflow makes. That one installs so the
+      # agent can *run* something and asks whether there is anything to run; this one installs so
+      # the agent can *read* something, and a manifest means there is.
+      - name: Work out what to install
+        id: deps
+        if: ${{ steps.task.outputs.has_task == 'true' && inputs.install_dependencies }}
+        run: |
+          php='false'
+          [[ -f 'composer.json' ]] && php='true'
+
+          # A lock file is installed from rather than resolved against - not because anything here
+          # is committed, but because it is faster and it is the tree CI would have had.
+          node='false'
+          npm_cmd='npm install --ignore-scripts'
+          yarn_cmd='yarn install --production=false --ignore-scripts'
+          if [[ -f 'package.json' ]]; then
+            node='true'
+
+            # Yarn is chosen by `.yarnrc`, which is the test install-packages and npm-qa-checks
+            # both make.
+            if [[ -f '.yarnrc' ]]; then
+              [[ -f 'yarn.lock' ]] && yarn_cmd='yarn install --frozen-lockfile --production=false --ignore-scripts'
+            else
+              [[ -f 'package-lock.json' ]] && npm_cmd='npm ci --ignore-scripts'
+            fi
+          fi
+
+          {
+            printf 'php=%s\n' "$php"
+            printf 'node=%s\n' "$node"
+            printf 'npm_cmd=%s\n' "$npm_cmd"
+            printf 'yarn_cmd=%s\n' "$yarn_cmd"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$php" == 'false' && "$node" == 'false' ]]; then
+            echo "No composer.json and no package.json - there is nothing to install, and the agent plans from the code alone"
+          else
+            echo "Installing for php=$php node=$node"
+          fi
+
+      # Which PHP the install runs under, read from the same `_ci_environment.json` the QA matrix
+      # is built from. Without it the agent gets whatever `ubuntu-latest` happens to ship, which
+      # need not satisfy `composer.json`'s platform constraint - and the install then fails on the
+      # platform rather than on anything about this repository.
+      - name: Work out the PHP version to install under
+        id: php
+        if: ${{ steps.deps.outputs.php == 'true' }}
+        uses: uniquesca/ci/get-default-ci-environment@main
+
+      - name: Set up PHP
+        if: ${{ steps.deps.outputs.php == 'true' }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ fromJSON(steps.php.outputs.env)[0].php.version }}
+          extensions: ${{ fromJSON(steps.php.outputs.env)[0].php.extensions }}
+
+      # `_ci_environment.json` describes PHP and nothing else, so unlike the version above this one
+      # is an input rather than something read out of the repository. `package-manager-cache` is
+      # off because install-packages does the caching, keyed on the lock file.
+      - name: Set up Node
+        if: ${{ steps.deps.outputs.node == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
+
+      # One call for both ecosystems: the action installs whichever manifest is there, and the skip
+      # flags keep it to the ones detected above.
+      #
+      # Nothing here runs an install script. Composer's `--no-scripts` is what php-qa-checks uses,
+      # because they are arbitrary code out of the repository and this job has ANTHROPIC_API_KEY in
+      # it; NPM's `--ignore-scripts` is here for the same reason and costs nothing, because the
+      # agent below has no shell and so never runs the binaries a post-install script would have
+      # finished putting in place. It only reads what was unpacked.
+      #
+      # `continue-on-error`, because a plan written without the dependencies is what this workflow
+      # produced before it installed any - so a registry that refuses is a thinner plan rather than
+      # an issue that hears nothing at all.
+      - name: Install the dependencies
+        id: install
+        if: >-
+          ${{ steps.deps.outputs.php == 'true' || steps.deps.outputs.node == 'true' }}
+        continue-on-error: true
+        uses: uniquesca/ci/install-packages@main
+        with:
+          skip_composer: ${{ steps.deps.outputs.php != 'true' }}
+          composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+          composer_cmd: 'composer install --no-scripts'
+          skip_npm_yarn: ${{ steps.deps.outputs.node != 'true' }}
+          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
+          npm_install_cmd: ${{ steps.deps.outputs.npm_cmd }}
+          yarn_install_cmd: ${{ steps.deps.outputs.yarn_cmd }}
+
+      # The install writes each registry's credentials into the working tree while it runs and takes
+      # them back out itself, whether it succeeded or not. This is a net under that, and it is here
+      # rather than anywhere else because this is the job where a leftover token would be read by a
+      # model: the agent below reads this working tree, and the tool list is what stops it writing,
+      # not what stops it looking.
+      #
+      # `always()` so a failed install does not skip it, and idempotent so the ordinary run costs
+      # nothing. A file the repository itself commits is put back under its own name by the action,
+      # so what is left here to find is only ever generated.
+      - name: Take the registry credentials back out of the working tree
+        if: >-
+          ${{ always() && steps.task.outputs.has_task == 'true'
+          && (steps.deps.outputs.php == 'true' || steps.deps.outputs.node == 'true') }}
+        run: |
+          for leftover in auth.json .npmrc; do
+            if [[ -f "$leftover" ]]; then
+              echo "::warning title=The install left a credential file behind::$leftover was still in the working tree after the install, so it was deleted before the agent could read it. The install step's log has why it did not clean up after itself"
+              rm -f "$leftover"
+            fi
+          done
+
+      # The install is allowed to fail, so somewhere has to say that it did. A warning and not an
+      # error: the run goes on, and what it lost is depth in the plan rather than the plan.
+      #
+      # Reads the step's own outcome, because `continue-on-error` leaves the job successful - there
+      # is nothing in the job's state to notice.
+      - name: Say the dependencies could not be installed
+        if: ${{ steps.install.outcome == 'failure' }}
+        run: |
+          echo "::warning title=The dependencies could not be installed::The agent plans from this repository's own code, without the source of what it depends on - so expect a thinner plan, and an assumption where it would have read a signature. The step's log has why: a private registry with no token configured, a token that has expired, and a lock file the branch itself broke, are the three to look at first"
+
+      # What the agent is told about the dependency directories, and it has to be the truth: an
+      # agent told to read a `vendor/` that is not there spends turns finding out, and one not told
+      # about the one that is there plans from a guess instead.
+      #
+      # Read off the disk rather than from the install's outcome, because those are not the same
+      # answer. A partial install, a repository that commits its dependencies, and one where the
+      # install was never asked for all end up here, and what is on the disk is what the agent can
+      # read in every one of them.
+      #
+      # Runs whether or not anything was installed - the paragraph for a tree without dependencies
+      # is as necessary as the one for a tree with them, and both come out of here.
+      - name: Tell the agent what it can read
+        id: deps_prompt
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        run: |
+          installed=()
+          [[ -d 'vendor' ]] && installed+=('`vendor/`')
+          [[ -d 'node_modules' ]] && installed+=('`node_modules`')
+
+          {
+            echo 'instructions<<PROMPT'
+
+            if [[ ${#installed[@]} -gt 0 ]]; then
+              echo "This project's dependencies are installed for you, under $(printf '%s and ' "${installed[@]}" | sed 's/ and $//')."
+              echo 'That is the source of everything this project depends on. Read a library'
+              echo 'there when the task turns on what it actually does - the signature it'
+              echo 'exposes, what it returns, whether the helper you were about to plan already'
+              echo 'exists in one. A plan built on the library as it is beats one built on the'
+              echo 'library as its call sites make it look.'
+              echo
+              echo 'None of it is this repository, though, and the difference matters twice:'
+              echo 'never plan a change in there, and never search across it. A grep through a'
+              echo 'dependency tree is thousands of matches belonging to somebody else, and the'
+              echo 'turns it costs are the ones you had for the code that is actually yours. Open'
+              echo 'a specific package because you have a specific question about it. The same'
+              echo 'goes for `dist` and `build`.'
+            else
+              echo 'This repository may commit its dependencies. Ignore `node_modules`, `vendor`,'
+              echo '`dist` and `build` unless the task is specifically about one of them.'
+            fi
+
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ ${#installed[@]} -gt 0 ]]; then
+            echo "The agent is told it can read: ${installed[*]}"
+          else
+            echo "There are no dependency directories in the working tree, and the agent is told to ignore them"
+          fi
+
       # The agent reads the issue itself rather than having its body interpolated into
       # this file - issue text is written by whoever opened it, and it has no business
       # being expanded into the workflow. Only the issue number and the commenter's
@@ -364,8 +564,7 @@ jobs:
             stale. A plan built on what the code actually does is worth far more than one
             built on assumptions about what it probably does.
 
-            This repository may commit its dependencies. Ignore `node_modules`, `vendor`,
-            `dist` and `build` unless the task is specifically about one of them.
+            ${{ steps.deps_prompt.outputs.instructions }}
 
             Do the investigation yourself, in this run. You have no helpers to delegate to
             and nothing is arriving later, so never end a turn saying you are waiting on

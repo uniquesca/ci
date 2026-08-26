@@ -166,9 +166,13 @@ Nothing to configure. It reads the repository and works out what applies:
 | What it finds | What happens |
 |---|---|
 | `task.sh`, or a compose file | The application is brought up, which renders `_ci_environment.json`'s `configs` from the tokens you pass and keeps them out of the round's commit. With a `task.sh`, the agent is given whichever of `cs-fix`, `code-quality`, `cs-check`, `psalm` and `test` it supports |
-| `composer.json` and a `phpcs.xml` or `psalm.xml`, or either one's `.dist` | Dependencies installed, and the agent is given `phpcbf`, `phpcs` and `psalm` as they are configured here |
-| `composer.json` and neither | Nothing to install dependencies for |
-| Neither | Nothing - the agent works out what it can run for itself |
+| `composer.json` and a `phpcs.xml` or `psalm.xml`, or either one's `.dist` | Composer dependencies installed, and the agent is given `phpcbf`, `phpcs` and `psalm` as they are configured here |
+| `composer.json` and neither | Nothing to install Composer dependencies for |
+| `package.json` | NPM or Yarn dependencies installed, so this project's own toolchain under `node_modules/.bin` runs. The agent is given whichever of `npm run lint` and `npm run test` the package declares |
+| Neither manifest | Nothing - the agent works out what it can run for itself |
+
+A repository that is both a PHP application and a JavaScript one is treated as both, and gets one
+merged list of commands.
 
 Configuration tokens go in as a secret, and the agent has a shell, so **give it a test
 environment's and never production's**:
@@ -189,8 +193,9 @@ jobs:
 ```
 
 Images need no secret: `ghcr.io` is logged into with the run's own token, which is what
-[`packages: read`](#pulling-the-images) is for. Add `COMPOSER_ACCESS_TOKEN` if any Composer
-dependencies are private. Everything the agent is told to run is in
+[`packages: read`](#pulling-the-images) is for. Add `COMPOSER_ACCESS_TOKEN` and `NPM_ACCESS_TOKEN`
+for whichever of the two ecosystems has private dependencies. Everything the agent is told to run
+is in
 [Dig deeper](#what-the-agent-is-given-to-check-with).
 
 Tests that need a browser, and anything else no `task.sh` task covers, are still the artifact
@@ -255,6 +260,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `AI_IMPLEMENT_PRIVATE_KEY` | yes | Private key for the AI Implement app. Used only to mint a short-lived installation token; never passed to the agent |
 | `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with. Read only when the application is brought up, which is what renders the templates. **The agent can read them**, so make them a test environment's |
 | `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#checking-its-own-work) against installed dependencies. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports |
+| `NPM_ACCESS_TOKEN` | no | Token for `npm.pkg.github.com`, where the `@uniquesca` NPM scope is served from. The Composer token's counterpart for a JavaScript repository, on the same terms - and it buys more there, because `node_modules` is where the type checker, the framework CLI and the test runner live |
 
 ## Inputs
 
@@ -277,6 +283,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [checking its own work](#checking-its-own-work). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
+| `node_version` | number | `20` | Node version the JavaScript dependencies are installed under. The same default as [`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow), so the two agree unless both are changed |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
 ## Outputs
@@ -287,9 +294,11 @@ None. The result is a branch, a pull request and a round comment.
 
 ### What the agent is given to check with
 
-The commands are the ones [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) and
+The commands are the ones [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow),
+[`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow) and
 [`docker-qa-checks`](../actions/docker-qa-checks.md) run, worked out from the same configuration
-files, so the agent gets the answer CI will rather than one that differs by a flag. In a container
+files, so the agent gets the answer CI will rather than one that differs by a flag - which is also
+why the Node scripts are given as `npm run`, whichever package manager installed them. In a container
 the tasks come from `./task.sh supports`, so a task that was renamed is never offered. Each one is
 listed with what it does, since the set overlaps - `code-quality` is the fixer and both reporters in
 one call, and an agent told only the names runs it and then the three tools inside it again.
@@ -303,16 +312,21 @@ Two things end up in the commit that a reviewer may not expect:
 
 * **`phpcbf` fixes the whole repository, not the diff.** Violations that were there before the round
   are swept into it - the same thing [`cs-fix`](../actions/cs-fix.md) would have done a round later.
-* **A repository that commits `vendor/`** gets the install in the commit and in the review diff.
-  The run warns when installing changed tracked files and lists them, rather than acting on it.
+* **A repository that commits `vendor/` or `node_modules`** gets the install in the commit and in
+  the review diff. The run warns when installing changed tracked files and lists them, rather than
+  acting on it.
 
-`composer.lock` and every path in `_ci_environment.json`'s `configs` are added to
-`.git/info/exclude`, so the round does not push a lock file a library never committed, or a rendered
-config holding the credentials it was rendered from. That only hides untracked files: a repository
-that *commits* a file it renders gets a warning naming it and the file goes into the pull request,
-so either gitignore it or do not give this workflow a secret you would mind reading there. Anything
-the containers write into the checkout is swept into the commit unless the repository already ignores
-it, which is why they run as the runner's own user rather than as root.
+`composer.lock`, `package-lock.json`, `yarn.lock`, `vendor/`, `node_modules` and every path in
+`_ci_environment.json`'s `configs` are added to `.git/info/exclude`, so the round does not push a
+lock file a library never committed, a dependency tree the repository neither commits nor ignores,
+or a rendered config holding the credentials it was rendered from. That only hides untracked files:
+a repository that *commits* a file it renders gets a warning naming it and the file goes into the
+pull request, so either gitignore it or do not give this workflow a secret you would mind reading
+there. Anything the containers write into the checkout is swept into the commit unless the
+repository already ignores it, which is why they run as the runner's own user rather than as root.
+
+A lock file that *is* tracked cannot be hidden that way, so a repository with one is installed with
+`npm ci` or `yarn install --frozen-lockfile` - `npm install` would rewrite it into the pull request.
 
 Rendering is [`docker-spin-up`](../actions/docker-spin-up.md)'s and happens only as part of bringing
 the application up - there is no standalone render.
@@ -322,15 +336,18 @@ the branch itself just broke, leaves a warning on the run and the round goes on 
 container - back to the artifact reports for what CI would say. It costs time as well, inside the
 job's own limit, which is what `timeout_minutes` has to have room for.
 
-The install runs `--no-scripts`, because post-install scripts are arbitrary repository code and this
-job has `ANTHROPIC_API_KEY` in its environment. `COMPOSER_ACCESS_TOKEN` is scoped to the install step
-alone - the agent inherits a populated `vendor/`, never the credential that filled it. The one place
-repository code does run is `_ci_environment.json`'s `init_script`, which `docker-spin-up` executes
+Composer installs with `--no-scripts`, because post-install scripts are arbitrary repository code
+and this job has `ANTHROPIC_API_KEY` in its environment. **NPM's lifecycle scripts do run**, because
+`npm-qa-checks` runs them and skipping them would leave the agent a `node_modules` CI never has.
+Both tokens are scoped to the install step alone; the agent inherits a
+populated `vendor/` and `node_modules`, never the credentials that filled them. The other place
+repository code runs is `_ci_environment.json`'s `init_script`, which `docker-spin-up` executes
 before the containers start.
 
 The PHP version comes from [`_ci_environment.json`](../actions/get-default-ci-environment.md) - the
 `default` matrix entry, or the only one, or PHP 8.2 where the repository says nothing. A repository
-whose linters only pass on one leg of a matrix should name that leg `default`.
+whose linters only pass on one leg of a matrix should name that leg `default`. Node's version is the
+`node_version` input instead.
 
 Set `provision_checks: false` to skip all of it. The agent still has a shell and is still told to
 verify its own work; it just has to work out what it can run.
