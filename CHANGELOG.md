@@ -1231,3 +1231,7 @@
 * Update: AI coding agent will now install NPM dependencies as they might be important during the implementation (8291e02 by George Shestayev)
 * Update: switching AI Implement and AI review to use Github App tokens (84487ab by George Shestayev)
 * Update: introduced integration with Anthropic identity federation for AI workflows (8024dc46 by George Shestayev)
+
+## v11.1.0
+
+* Update: introduced an ability to use ai-review on non au-made PRs (3f7e625 by George Shestayev)
