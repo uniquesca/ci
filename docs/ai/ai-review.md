@@ -75,11 +75,11 @@ behaves like a review from a colleague, with the same options
 [described for a human review](ai-implement.md#what-to-do-with-a-reply) - let it run, resolve a
 thread, reply to overrule either side, or take over with `/ai-do`.
 
-**It never approves**: the verdict is either changes requested or "no blocking concerns", and
-merging is a person's decision. A changes-requested review blocks the merge until somebody deals
-with it, wherever the branch came from. It will sometimes find nothing, which ends the loop there.
-And it cannot test the QA criteria - what it can say is that the code cannot satisfy one as written,
-or that nothing in the diff addresses the steps a criterion covers.
+**It either requests changes or it does not**: it never approves, and merging is a person's
+decision. A changes-requested review blocks the merge until somebody deals with it, wherever the
+branch came from. It will sometimes find nothing, which ends the loop there. And it cannot test the
+QA criteria - what it can say is that the code cannot satisfy one as written, or that nothing in the
+diff addresses the steps a criterion covers.
 
 ### When to stop letting it run
 
