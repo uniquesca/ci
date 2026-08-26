@@ -27,10 +27,26 @@ When adding something to a section above `## Dig deeper`:
 Match the surrounding density. These docs use short declarative sentences, bold lead-ins for
 things that fail silently, and tables for enumerable outcomes.
 
-**Size a `## Dig deeper` note to the change it documents.** A small feature gets one mid-size
-paragraph, not a heading with bullets and sub-paragraphs - an oversized note misrepresents how much
-of the system the reader has to hold. Prefer extending the subsection that already covers the topic.
-The same goes for explaining the change in conversation.
+**Describe what is, not what changed** - here and in the workflow comments. Whoever reads this is
+meeting the code for the first time and never saw the state it replaced, so "now that", "no longer",
+"rather than a workaround" and "there is no second token any more" spend their attention on
+something they do not have, and read as stale the moment the next change lands. Write the sentence
+you would have written if it had always been this way. Nothing is allowed to define itself by its
+own absence: if a thing is gone, the text does not mention it. Why it changed belongs in the commit
+message, where anybody asking that is already looking.
+
+**A `## Dig deeper` note gets one paragraph, in the subsection that already covers the topic.** An
+oversized note misrepresents how much of the system the reader has to hold, so the limits are
+countable: extend an existing `###` rather than adding one, one paragraph per change, and no
+bullets, sub-headings or code blocks inside the note.
+
+**When the change is finished, read your own `docs/` diff and cut.** Docs say how a thing works
+where the code does not make that obvious; the reasoning belongs in the comment on the code it
+explains. So cut anything that argues *why*, anything the code or its comments already say, and
+anything a reader does not need in order to act - "true and useful" is not the test, and everything
+you want to keep will pass it. This is a step to take after the work, not a principle to hold during
+it: what feels load-bearing while the implementation is fresh reads as padding to somebody meeting
+the page for the first time. The same applies to explaining the change in conversation.
 
 One page per reusable workflow under `docs/workflows/` and per action under `docs/actions/`, each
 title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper`.

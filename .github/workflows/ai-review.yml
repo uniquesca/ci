@@ -3,15 +3,32 @@ name: AI Review
 on:
   workflow_call:
     secrets:
-      ANTHROPIC_API_KEY:
-        description: 'Anthropic API key used to call the AI reviewing agent'
+      AI_REVIEW_APP_ID:
+        description: 'GitHub App id for the AI Review app. The review is submitted as this app, which is what makes it a different identity from the one that opened the pull request - and Github rejects a REQUEST_CHANGES review from the identity that opened it'
         required: true
-      AI_REVIEW_TOKEN:
-        description: 'Token the review is submitted with. Optional, but without it the review cannot request changes and cannot start another round: Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and the implementing workflow opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the loop turn'
-        required: false
+      AI_REVIEW_PRIVATE_KEY:
+        description: 'Private key for the AI Review GitHub App. Used only to mint a short-lived installation token for submitting the review; never passed to the agent'
+        required: true
     inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace - a rule bound to a single workspace resolves it on its own, and naming it here is what an ambiguous rule fails for'
+        required: false
+        default: ''
+        type: string
       dispatch_type:
-        description: 'The `repository_dispatch` event type this reacts to. The implementing workflow sends this after it pushes, which is what starts a review - a `pull_request` trigger cannot do the job, because a pull request opened by `GITHUB_TOKEN` produces a run that waits for a human to approve it'
+        description: 'The `repository_dispatch` event type this reacts to. The implementing workflow sends it as the last thing it does in a round, which is what starts a review - a `pull_request` trigger would fire on the push instead, before the round comment and the thread replies the reviewer has to read are in place'
         required: false
         default: 'ai-review'
         type: string
@@ -69,11 +86,10 @@ on:
 jobs:
   review:
     name: Review the pull request
-    # Started by the implementing workflow, not by a person and not by a pull request event.
-    # `repository_dispatch` is the one kind of event `GITHUB_TOKEN` is allowed to create that
-    # still starts a workflow run - which is exactly what is needed here, because the
-    # alternative (`pull_request: opened`) produces an approval-required run when the pull
-    # request was opened by automation, and would sit there waiting for a human.
+    # Started by the implementing workflow, not by a person and not by a pull request event:
+    # `pull_request: opened` would fire on the push, before the round comment and the thread replies
+    # the reviewer is meant to read are in place. The implementing workflow dispatches this last,
+    # once they are.
     if: >-
       ${{ github.event_name == 'repository_dispatch'
           && github.event.action == inputs.dispatch_type }}
@@ -95,6 +111,11 @@ jobs:
       # Failing checks are context: a reviewer should not spend its comments on something CI
       # already said
       checks: read
+      # What lets the job ask Github for the OIDC token the agent's credential is minted from.
+      # A called workflow can only narrow the token it is given, so the caller has to grant this
+      # too - without it there is nothing to exchange and the agent step fails before it reads
+      # anything.
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -134,8 +155,8 @@ jobs:
           head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
 
           # The same gate as the implementing workflow. Nothing here checks out somebody
-          # else's code: this job holds an Anthropic key and, where one is configured, a
-          # review token with more reach than `GITHUB_TOKEN`.
+          # else's code: this job holds an Anthropic key and the AI Review app's installation
+          # token, which reaches further than `GITHUB_TOKEN` does.
           reason=''
           if [[ "$head_repo" != "$GH_REPO" ]]; then
             reason="its branch lives in $head_repo rather than in this repository"
@@ -167,6 +188,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           echo "Reviewing #$PAYLOAD_PR on $head_ref, implementing issue #$issue"
+
+      # Minted once and used only to submit the review. The reviewing agent writes review.json on
+      # disk and never receives this token, so it cannot post, edit or request changes itself.
+      - name: Create AI Review app token
+        id: ai_review
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AI_REVIEW_APP_ID }}
+          private-key: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
 
       # The branch itself, at full depth so the base branch is there to diff against
       - name: Check out the pull request branch
@@ -252,7 +283,13 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action exchanges this job's Github OIDC token for a short-lived Anthropic one,
+          # against the rule named here. Nothing static is passed in, and the credential it does
+          # get expires on its own
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
           # The action refuses to run for a bot actor unless the bot is listed here, and a
@@ -432,10 +469,10 @@ jobs:
 
           echo "::warning title=The reviewing agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The review is complete, so it was submitted anyway - raise max_turns if this keeps happening."
 
-      # This is where the loop turns. A review submitted with a token that is not
-      # `GITHUB_TOKEN` creates a `pull_request_review` event, and that event is what starts the
-      # next implementing round - so the token matters more here than anywhere else in these
-      # workflows.
+      # This is where the loop turns. The app's review creates a `pull_request_review` event, and
+      # that event is what starts the next implementing round - which is why the review is submitted
+      # on an installation token and not on this job's own. Github raises no event for a review made
+      # with `GITHUB_TOKEN`, so one submitted that way would block a merge and start nothing.
       - name: Submit the review
         id: submit
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -443,7 +480,7 @@ jobs:
         with:
           pull_request: ${{ steps.pull_request.outputs.number }}
           repository: ${{ github.repository }}
-          token: ${{ secrets.AI_REVIEW_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.ai_review.outputs.token }}
           head_sha: ${{ steps.pull_request.outputs.head_sha }}
           marker: ${{ env.REVIEW_MARKER }}
           max_comments: ${{ inputs.max_comments }}
@@ -464,7 +501,6 @@ jobs:
           ROUND: ${{ steps.stage_pr.outputs.round }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
-          HAS_TOKEN: ${{ secrets.AI_REVIEW_TOKEN != '' }}
         run: |
           if [[ "$SUBMITTED" == 'true' ]]; then
             {
@@ -473,7 +509,7 @@ jobs:
               printf ' - submitted as `%s`.' "$EVENT"
               [[ "$DROPPED" != '0' ]] && printf ' %s comment(s) could not be placed on a line the diff contains; see the run log.' "$DROPPED"
               if [[ "$VERDICT" == 'changes_requested' && "$EVENT" != 'REQUEST_CHANGES' ]]; then
-                printf '\n\n**The agent wanted to request changes and could not.** Github does not allow it from the identity that opened this pull request, so this landed as a comment: it does not block merging, and it will not start another round on its own. Run `/ai-do` here to act on it, or configure an `AI_REVIEW_TOKEN`.'
+                printf '\n\n**The agent wanted to request changes and could not.** Github does not allow it from the identity that opened this pull request, so this landed as a comment: it does not block merging, and it will not start another round on its own. Run `/ai-do` here to act on it, and check that the reviewing app is a different app from the implementing one.'
               fi
               [[ -n "$USAGE" ]] && printf '\n\n%s.' "$USAGE"
               printf '\n'
@@ -491,7 +527,6 @@ jobs:
               printf '\n\n'
               printf -- '---\n\n'
               printf 'Round %s.' "$ROUND"
-              [[ "$HAS_TOKEN" != 'true' ]] && printf ' No `AI_REVIEW_TOKEN` is configured.'
               [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
               printf '\n'
             } > "$RUNNER_TEMP/outcome.md"

@@ -6,8 +6,7 @@ This repository is Uniques CI framework. It is heavily based on Github Actions p
 * Base docker images for Uniques projects
 
 Start here:
-* AI assisted development: [Plan](docs/ai/ai-plan.md), [Implement](docs/ai/ai-implement.md),
-  [Review](docs/ai/ai-review.md)
+* [AI assisted development](docs/ai.md)
 * [QA Checks](docs/qa-checks.md)
 * [Prepare Environment](docs/actions/prepare-environment.md)
 

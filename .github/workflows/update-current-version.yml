@@ -27,7 +27,7 @@ jobs:
 
       - name: Merge main into the current version branch
         env:
-          VERSION_BRANCH: v9
+          VERSION_BRANCH: v11
         run: |
           git fetch origin "$VERSION_BRANCH:$VERSION_BRANCH"
           git checkout "$VERSION_BRANCH"

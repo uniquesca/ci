@@ -11,7 +11,7 @@ Used by [`ai-review`](../ai/ai-review.md).
   with:
     pull_request: ${{ steps.pr.outputs.number }}
     repository: ${{ github.repository }}
-    token: ${{ secrets.AI_REVIEW_TOKEN }}
+    token: ${{ steps.app_token.outputs.token }}
     head_sha: ${{ steps.pr.outputs.head_sha }}
 ```
 
@@ -21,7 +21,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 |---|---|---|---|
 | `pull_request` | yes | | Number of the pull request to review |
 | `repository` | yes | | Repository the pull request belongs to, in `owner/name` form |
-| `token` | yes | | Github token the review is submitted with. **Usually not `GITHUB_TOKEN`** - see below |
+| `token` | yes | | Github token the review is submitted with. **Neither `GITHUB_TOKEN` nor the app that opened the pull request** - see below |
 | `head_sha` | yes | | Commit the review is submitted against |
 | `review_file` | no | `.ai-review/review.json` | File the agent wrote: an object with `verdict`, `summary` and `comments` |
 | `diff_file` | no | `.ai-review/diff.patch` | The unified diff the agent reviewed. Every inline comment is checked against it |
@@ -41,12 +41,18 @@ Used by [`ai-review`](../ai/ai-review.md).
 
 ## Dig deeper
 
-### The token, and why `GITHUB_TOKEN` is the wrong choice here
+### The token, and the two things it must not be
 
-Github **rejects `REQUEST_CHANGES` from the identity that opened the pull request**, and
-[`ai-implement`](../ai/ai-implement.md) opens its pull requests as `github-actions[bot]`. So a review
-submitted with the run's own token can never request changes, and therefore never starts another
-implementing round. Supply a machine user PAT with `repo` scope, or a Github App installation token.
+Supply an installation token for a Github App, which is
+what [`ai-review`](../ai/ai-review.md) mints and passes in. Two identities cannot do this job, and
+they fail differently:
+
+* **The app that opened the pull request.** Github **rejects `REQUEST_CHANGES` from the identity
+  that opened it**, so the verdict is refused outright - and handled, by the downgrade below.
+* **`GITHUB_TOKEN`.** This one is accepted: the run's own token did not open the pull request, so
+  the review is submitted and does block the merge. Github simply raises no `pull_request_review`
+  event for it, so **nothing starts the next implementing round**, and there is no error anywhere to
+  say so.
 
 When it happens anyway the verdict is downgraded to a comment rather than lost, with a warning
 saying so - the inline comments survive a comment review perfectly well.
@@ -80,5 +86,6 @@ outdated rather than silently misplaced.
 
 `marker` is how [`ai-implement`](../ai/ai-implement.md) tells a review an agent wrote from one a
 person wrote, which is what keeps its
-[unattended round cap](../ai/ai-implement.md#the-round-cap) honest when the review token belongs to a
-machine user account. Change it in one place and you have to change it in both.
+[unattended round cap](../ai/ai-implement.md#the-round-cap) honest. Identity cannot answer that on
+its own: which login the reviewer arrives as is the caller's to configure. Change the marker in one
+place and you have to change it in both.

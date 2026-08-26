@@ -1,6 +1,6 @@
 # AI Review
 
-AI workflows: [Plan](ai-plan.md) · [Implement](ai-implement.md) · **Review**
+Part of [AI assisted development](../ai.md).
 
 Reviews what [AI Implement](ai-implement.md) pushed, as a real Github review with real inline
 comments. When it requests changes, that starts the next implementing round - so with this wired
@@ -12,20 +12,12 @@ workflow has to be told to hand its work over.
 ## Integrating a repository
 
 **First, the thing that will otherwise waste your afternoon.** Github will not let an identity
-request changes on a pull request it opened. AI Implement opens its pull requests as
-`github-actions[bot]`, so a review submitted with the built-in `GITHUB_TOKEN` is a self-review and
-the API only allows a plain comment - which blocks nothing and starts no round. So you need a
-**second identity**:
+request changes on a pull request it opened. So the review is submitted as the
+AI Review app, which is a second identity from the one
+[AI Implement](ai-implement.md) opens pull requests with. That is what buys a real
+`changes_requested` review: it blocks the merge, and it starts the next round by itself.
 
-| What you configure | What you get |
-|--------------------|--------------|
-| `AI_REVIEW_TOKEN` — a machine user PAT with `repo` scope, or a Github App installation token | A real `changes_requested` review that blocks the merge and starts the next round automatically |
-| Nothing | The same review with the same inline comments, as a plain comment. Nothing is blocked, nothing starts. Somebody runs `/ai-do` to act on it |
-
-The second row is handled rather than hidden - the review still posts with its comments intact, and
-the pull request gets a comment saying the agent wanted to request changes and could not.
-
-Then add a **second workflow file**, because this one runs on a different event:
+Add a **second workflow file**, because this one runs on a different event:
 
 ```yaml
 name: AI Review
@@ -41,81 +33,68 @@ jobs:
       pull-requests: write
       issues: write
       checks: read
+      # Mints the agent's Claude credential from this run's own identity
+      id-token: write
     uses: uniquesca/ci/.github/workflows/ai-review.yml@main
-    secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      AI_REVIEW_TOKEN: ${{ secrets.AI_REVIEW_TOKEN }}
-```
-
-And turn the hand-off on where [AI Implement](ai-implement.md) is called:
-
-```yaml
-  ai-implement:
-    uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
     with:
-      dispatch_review: true
-    # permissions and secrets as before
+      # Identifiers, not secrets - the same three the other two jobs are passed
+      anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+      anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+      anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+    secrets:
+      AI_REVIEW_APP_ID: ${{ secrets.AI_REVIEW_APP_ID }}
+      AI_REVIEW_PRIVATE_KEY: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
 ```
 
-Two more things that fail silently:
+And make sure [AI Implement](ai-implement.md#integrating-a-repository) is called with
+`dispatch_review: true`, or nothing ever reaches this workflow.
+
+Three more things that fail silently:
 
 * **`repository_dispatch` only ever runs the default-branch copy of the file**, same as
   `issue_comment`. There is no testing it from a branch.
 * **`dispatch_review` and the `types:` above have to agree.** Both default to `ai-review`; change
   one and the dispatch lands with nothing to answer it.
+* **The implementing workflow's `allowed_bots` has to name this app's bot login.** It defaults to
+  `github-actions[bot] ai-review[bot]`; if the app's slug is anything else, the review lands
+  happily and starts no round.
 
 Keep `branch_prefix` and `max_unattended_rounds` the same as the implementing workflow's.
 
 ## Using it
 
-You do not trigger this one. AI Implement hands every push to it, and a review appears on the pull
-request a few minutes later - inline comments on the lines it has something to say about, and a
-summary at the top.
+You do not trigger this one. Every implementing round hands its push over, and a review appears on
+the pull request a few minutes later. From there it behaves like a review from a colleague, with the
+same options [described for a human review](ai-implement.md#what-to-do-with-a-reply) - let it run,
+resolve a thread, reply to overrule either side, or take over with `/ai-do`.
 
-From there it behaves exactly like a review from a colleague, and you have the same options
-[described for a human review](ai-implement.md#what-to-do-with-a-reply):
-
-* **Let it run.** If it requested changes, the next implementing round has already started. It will
-  push, reply to each of the review's own threads, and get reviewed again. This repeats up to
-  `max_unattended_rounds` times (default 5) and then stops and asks for a person.
-* **Resolve a thread** you think has been dealt with, or that you disagree with. Resolution is
-  always yours - nothing here resolves anything.
-* **Reply to a thread** to overrule either side. Your reply puts the thread back in play for the
-  next round, and it carries more weight than the agent's own argument.
-* **Take over.** Comment `/ai-do` with what you actually want, and that round counts as attended,
-  which resets the round cap.
-
-Three things to expect:
-
-**It will sometimes find nothing.** A change that implements the plan and reads like the surrounding
-code gets a plain comment review saying so, and the loop ends there.
-
-**It cannot test the QA criteria**, and it is told not to treat that as a finding. What it can say
-is that the code cannot satisfy one as written, or that nothing in the diff addresses the steps a
-criterion covers, or that a criterion needs a person - which is the note to look for when deciding
-what to hand to QA.
-
-**It never approves.** The verdict is either "changes requested" or "no blocking concerns" -
-merging is a person's decision. Approve and merge yourself.
+**It never approves**: the verdict is either changes requested or "no blocking concerns", and
+merging is a person's decision. It will sometimes find nothing, which ends the loop there. And it
+cannot test the QA criteria - what it can say is that the code cannot satisfy one as written, or
+that nothing in the diff addresses the steps a criterion covers.
 
 ### When to stop letting it run
 
 Read the round comments rather than the individual replies. If two or three rounds have gone by
 with a lot of activity and little diff, the reviewer and the implementer are talking past each
 other, and the fastest fix is a sentence from you. If the *plan* turns out to be wrong rather than
-the code, go back to [`/ai-plan` on the issue](ai-plan.md#changing-direction).
+the code, go back to [`/ai-plan` on the issue](ai-plan.md#adjusting-the-plan).
 
 ## Secrets
 
 | Secret | Required | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | yes | Anthropic API key used to call the AI reviewing agent |
-| `AI_REVIEW_TOKEN` | no | Token the review is submitted with. **Without it the review cannot request changes and cannot start another round** - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and [`ai-implement`](ai-implement.md) opens its pull requests as `github-actions[bot]`. A machine user PAT with `repo` scope, or a Github App installation token |
+| `AI_REVIEW_APP_ID` | yes | Numeric id of the AI Review Github App. The review is submitted as this app, which is the second identity the loop needs - Github rejects `REQUEST_CHANGES` from the identity that opened the pull request, and that is the implementing app |
+| `AI_REVIEW_PRIVATE_KEY` | yes | Private key for the AI Review app. Used only to mint a short-lived installation token for submitting the review; never passed to the agent |
 
 ## Inputs
 
 | Input | Type | Default | Description |
 |---|---|---|---|
+| `anthropic_federation_rule_id` | string | *required* | Identity federation rule the job authenticates against. The agent is called with a token minted from this run's own Github OIDC identity, and the rule is what decides which repositories and branches may mint one. An identifier rather than a secret |
+| `anthropic_organization_id` | string | *required* | Anthropic organization the rule belongs to. In the Claude Console under **Settings → Organization** |
+| `anthropic_service_account_id` | string | *required* | Service account the minted token acts as. Usage and rate limits are attributed to it |
+| `anthropic_workspace_id` | string | *(none)* | Workspace the minted token is scoped to. Only needed when the rule covers more than one workspace - a rule bound to a single workspace resolves it on its own |
 | `dispatch_type` | string | `ai-review` | The `repository_dispatch` event type this reacts to. [`ai-implement`](ai-implement.md) sends it after it pushes |
 | `branch_prefix` | string | `ai-feature/` | Only pull requests whose branch lives in this repository and starts with this prefix are reviewed. Keep it the same as the implementing workflow's |
 | `model` | string | `claude-opus-4-8` | Model used to review |
@@ -134,70 +113,34 @@ None. The result is a Github review on the pull request.
 
 ## Dig deeper
 
-### Why `repository_dispatch` and not a `pull_request` trigger
-
-Because a pull request opened or updated by `GITHUB_TOKEN` produces a workflow run that **waits for
-somebody to click "Approve workflows to run"**. Events made with `GITHUB_TOKEN` do not start
-workflow runs at all, normally; dispatch events are
-[the documented exception](https://docs.github.com/en/actions/concepts/security/github_token). So
-the implementing workflow can start the reviewer itself, with no extra token, and it does that as
-the very last thing in a round - after the replies and the round comment are in place, so the
-reviewer sees the whole of what it is reviewing.
-
-Nothing is dispatched for a round that changed no file, since reviewing the same commit again
-produces the same review.
-
-The dispatch payload is arbitrary JSON that anybody with `contents: write` could send, so the pull
-request number is validated and then checked against the same boundary the implementing workflow
-uses: branch in this repository, carrying the configured prefix, still open.
-
 ### What the review is built from
 
-The agent gets the change and the intent behind it:
-
-* the diff of the branch against its base - three dots, so it is what this branch changed rather
-  than everything that has happened on the base since
-* the **plan and the issue**, because a review that does not know what the change was *meant* to do
-  is a style check. The plan's [ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff
-  against and what it cites when something is missing - `(S6, QA2)` after the point, never on its
-  own, since the plan is on the issue and the review is not
-* the review history and the failing checks, with **answered threads included** - unlike the
-  implementing agent, this one needs to read the reply where its own last concern was addressed or
-  argued with, before deciding whether to raise it again
-
-The working tree is the branch, and the agent is told to open the files around each hunk rather
-than review the diff in isolation.
+The agent gets the diff of the branch against its base (three dots, so it is what this branch
+changed rather than everything on the base since), the **plan and the issue** - a review that does
+not know what the change was *meant* to do is a style check, and the plan's
+[ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff against - and the review
+history with **answered threads included**, so it can read the reply where its own last concern was
+addressed before deciding whether to raise it again. The working tree is the branch, and it is told
+to open the files around each hunk rather than review the diff in isolation.
 
 ### Inline comments, and why some go missing
 
-Github rejects an **entire** review - summary, verdict, every comment - if one comment names a line
-the diff does not contain. So the workflow works out from the diff which lines a comment may
-anchor to (every added and every context line inside a hunk, numbered in the new file), drops the
-ones that do not fit, and names them in the run log.
-
-If Github still refuses the review it degrades rather than disappears: retry without the inline
-comments, then as a plain comment review, and failing all of that the summary is posted as an
-ordinary comment. The summary is never lost.
+Github rejects an **entire** review - summary, verdict and every comment - if one comment names a
+line the diff does not contain, so the workflow drops comments that cannot anchor to an added or
+context line inside a hunk, and names them in the run log. If Github still refuses, the review
+degrades rather than disappears: without inline comments, then as a plain comment review, then as
+an ordinary comment. The summary is never lost.
 
 ### Making the loop terminate
 
-A reviewer that always finds something never lets the loop end, and every turn costs money. Four
-things work against that:
-
-* **The cap** - [`max_unattended_rounds`](ai-implement.md#the-round-cap), enforced in the
-  implementing workflow, which is the only place it lives.
-* **A round that changes nothing does not dispatch a review**, so a stalled loop stops rather than
-  spinning on one commit.
-* **A "no blocking concerns" verdict starts nothing.** Only a changes-requested review does.
-* **The agent is told, at length, that finding nothing is a valid outcome** - not to manufacture a
-  concern to justify the review, and not to request changes over a preference. It is also told what
-  to do with a concern the implementing agent answered with a reasoned refusal: accept the argument,
-  or say in the summary that a person should settle it, and **not** to repeat it. It is told as well
-  that a missing `CHANGELOG.md` entry is never a finding, since the release generates that file from
-  the git log - and that a pull request editing it is worth a comment the other way.
-
-If the cap is reached while the reviewer still wants changes, the pull request is left with a
-blocking review and a comment asking for a person.
+A reviewer that always finds something never lets the loop end. Four things work against that: the
+[`max_unattended_rounds`](ai-implement.md#the-round-cap) cap, enforced in the implementing workflow;
+a round that changes nothing dispatching no review, so a stalled loop stops rather than spinning on
+one commit; a "no blocking concerns" verdict starting nothing, since only a changes-requested review
+does; and the agent being told at length that finding nothing is a valid outcome - not to manufacture
+a concern, not to request changes over a preference, and to accept a reasoned refusal rather than
+repeat the concern. If the cap is reached while it still wants changes, the pull request is left with
+a blocking review and a comment asking for a person.
 
 ### What the agent can and cannot do
 
@@ -213,13 +156,3 @@ It **may not**, and cannot:
   discarded with the runner.
 * **Approve, merge, or comment directly.** It has no token at all. The review is submitted on its
   behalf, from a file it wrote, after that file has been validated.
-
-### Costs
-
-One review per push, on top of one implementing run per round. With the loop running unattended
-that is up to `max_unattended_rounds` of both before anybody looks, so the cap is a spending
-control as much as a correctness one.
-
-`max_turns` is not the other half of that control: the SDK holds a short run to it exactly and lets
-a long one run past it. A review the agent finished over the limit is submitted with a warning on the
-run rather than discarded - see [when a run goes wrong](ai-plan.md#when-a-run-goes-wrong).

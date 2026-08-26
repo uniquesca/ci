@@ -3,19 +3,39 @@ name: AI Implement
 on:
   workflow_call:
     secrets:
-      ANTHROPIC_API_KEY:
-        description: 'Anthropic API key used to call the AI implementing agent'
+      AI_IMPLEMENT_APP_ID:
+        description: 'GitHub App id for the AI Implement app. The app pushes branches and opens or updates pull requests, so QA workflows start from a real app event and the pull request author is distinct from the reviewer'
         required: true
-      PUSH_ACCESS_TOKEN:
-        description: 'Token the branch is pushed with. Optional, but without it a finished QA workflow cannot start another round: Github refuses to start a workflow run from an event made with `GITHUB_TOKEN`, so a push from it produces a `pull_request` run that waits for somebody to approve it, and that run completing cannot trigger anything either - `workflow_run` inherits the same suppression. A machine user PAT with `repo` scope, or a Github App installation token, is what makes the checks trigger work. Add `workflow` scope only if the agent should be allowed to change files under .github/workflows'
-        required: false
+      AI_IMPLEMENT_PRIVATE_KEY:
+        description: 'Private key for the AI Implement GitHub App. Used only to mint a short-lived installation token; never passed to the agent'
+        required: true
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private Composer repositories, so that the agent can run this project''s checks against installed dependencies rather than guessing at what they would have said. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies falls back to the artifact reports as before'
+        required: false
+      NPM_ACCESS_TOKEN:
+        description: 'Access token for the Uniques private NPM registry on npm.pkg.github.com, which is where the `@uniquesca` scope is served from. The Composer token''s counterpart for a JavaScript repository, and it buys the same thing: `node_modules` is where `tsc`, the framework CLI and the test runners live, so an agent without it has nothing to run. Optional, on the same terms'
         required: false
       ENV_VARIABLES:
         description: 'JSON object of configuration tokens this repository''s config templates are rendered with. Read only when the application is brought up, which is what renders the templates. These reach a shell the agent controls, so give it a test environment''s credentials and never production''s'
         required: false
     inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace - a rule bound to a single workspace resolves it on its own, and naming it here is what an ambiguous rule fails for'
+        required: false
+        default: ''
+        type: string
       command:
         description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work - or runs a round on the pull request already implementing it, when the plan has been revised since that work last read it; on the pull request it always runs a round'
         required: false
@@ -27,9 +47,9 @@ on:
         default: 'admin write'
         type: string
       allowed_bots:
-        description: 'Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back'
+        description: 'Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back, so it has to carry the AI Review app''s own bot login - `<app-slug>[bot]`, which is the app name lowercased and hyphenated. A review from a login that is not here starts no round, and says so on the pull request'
         required: false
-        default: 'github-actions[bot]'
+        default: 'github-actions[bot] ai-review[bot]'
         type: string
       timeout_minutes:
         description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so'
@@ -101,6 +121,11 @@ on:
         required: false
         default: ''
         type: string
+      node_version:
+        description: 'Node version the JavaScript dependencies are installed under, and the one the agent runs this project''s Node tooling with. The same default as the NPM QA checks workflow, so the two agree unless both are changed. `_ci_environment.json` describes only PHP, so there is nothing in the repository to read this from'
+        required: false
+        default: 20
+        type: number
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -218,26 +243,28 @@ jobs:
       # is linked to no repository, and `GITHUB_TOKEN` is refused for it until that package grants
       # this repository the Read role under Package settings, Manage Actions access.
       packages: read
+      # What lets the job ask Github for the OIDC token the agent's credential is minted from.
+      # Without it there is nothing to exchange and the agent step fails before it reads anything.
+      # The same caller rule applies as above.
+      id-token: write
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      # Deliberately a second token, and not a replacement for the one above. Git operations are
-      # what the next trigger hangs off: Github will not start a workflow run from an event made
-      # with `GITHUB_TOKEN`, and `workflow_run` inherits that from the run it chains to - so a
-      # branch pushed by `GITHUB_TOKEN` produces a `pull_request` run parked at `action_required`
-      # whose completion then starts nothing. Pushing as a real identity is what makes the QA
-      # trigger fire at all.
+      # Everything that pushes, or that opens the pull request, runs on the AI Implement app's
+      # installation token instead. It is minted in a step rather than here, because job env cannot
+      # call an action: the two git steps and the pull request step read it out of
+      # `steps.ai_implement`.
       #
-      # The API calls stay on `GITHUB_TOKEN` on purpose. They open the pull request, and moving
-      # them here would change who authored it - which is what `ai-review.yml` reads to decide
-      # whether it may request changes, and a pull request opened by the same identity that
-      # reviews it cannot be. One token for git, one for the API, and neither is the other's
-      # business.
-      GIT_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN || secrets.GITHUB_TOKEN }}
-      # Read by the push step, which says different things about workflow files and about the
-      # trigger depending on whether it is pushing as a real identity or as the bot
-      HAS_PUSH_TOKEN: ${{ secrets.PUSH_ACCESS_TOKEN != '' }}
+      # Why the app and not this job's own token. Github will not start a workflow run from an event
+      # made with `GITHUB_TOKEN`, and `workflow_run` inherits that from the run it chains to - so a
+      # branch pushed by `GITHUB_TOKEN` produces a `pull_request` run parked at `action_required`
+      # whose completion then starts nothing. An app is a real identity, so the QA trigger fires.
+      #
+      # It is also what keeps the review loop legal. Github rejects `REQUEST_CHANGES` from the
+      # identity that opened the pull request, so the implementing app opens it and a *second* app
+      # reviews it. Two apps, never one.
+
       # Any guard below can set this to false in $GITHUB_ENV, and every step after it stands
       # down. A job cannot stop itself early without failing, and failing is wrong for most
       # of what the guards catch - running the command too early, or on the wrong pull
@@ -265,12 +292,28 @@ jobs:
       QA_MARKER: '<!-- ai-qa-criteria -->'
       QA_END_MARKER: '<!-- /ai-qa-criteria -->'
       # First line of a review the reviewing workflow submitted. Identity is not enough to
-      # recognise one: requesting changes needs a token that is not `GITHUB_TOKEN`, and if that
-      # token belongs to a machine *user* account Github reports the review as authored by a
-      # `User`. Keying off the marker as well is what keeps the unattended round cap working
-      # whatever kind of token the reviewer was given.
+      # recognise one: which login the reviewer arrives as is the caller's to decide - the AI
+      # Review app is named per repository, and a caller still on a machine user's token reads
+      # as a `User` rather than a `Bot` at all. Keying off the marker as well is what keeps the
+      # unattended round cap working whatever the reviewer was configured with.
       REVIEW_MARKER: '<!-- ai-review -->'
     steps:
+      # Minted once and used only by workflow-owned git and API steps. The agent never receives it,
+      # and the checkout still persists no credentials, so the app can push and open the pull
+      # request without giving the agent a way to do either itself.
+      #
+      # Unconditional, and first. Both secrets are `required: true`, so there is nothing to guard
+      # against - and a guard here would be worse than none: a skipped step still leaves its
+      # outputs readable as empty strings, which is how the commit identity below would end up
+      # being the literal `[bot]` and the push would quietly fall back to a token that triggers
+      # nothing. Failing loudly on an app that is not installed on this repository is the point.
+      - name: Create AI Implement app token
+        id: ai_implement
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+          private-key: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
+
       # Both of these run before anything else, because `Work out what this run is` needs their
       # answers to say what this run is: the command on an issue whose work is already open and
       # whose plan has moved is a round, and a round has to be one from the start - the mode, the
@@ -524,8 +567,8 @@ jobs:
       # A round works on a branch this workflow pushed, and on no other. Both broad triggers
       # fire on pull requests nobody here created - including pull requests from forks, which
       # `issue_comment` and `pull_request_review` run with a write token and full access to
-      # secrets. Checking out fork code and handing it a shell with ANTHROPIC_API_KEY in the
-      # environment is exactly what this step exists to prevent.
+      # secrets. Checking out fork code and handing it a shell that can mint a Claude API token
+      # from this job's Github OIDC identity is exactly what this step exists to prevent.
       #
       # Deliberately in front of the permission gate, and read-only because of it. "Is this even
       # our pull request" has to be settled before "may this person run the command", or the
@@ -1099,6 +1142,10 @@ jobs:
         id: branch
         if: ${{ success() && env.PROCEED == 'true' }}
         env:
+          GIT_TOKEN: ${{ steps.ai_implement.outputs.token }}
+          # Who the commits are authored by, resolved below into the app's bot login and the
+          # noreply address that login is linked to
+          APP_SLUG: ${{ steps.ai_implement.outputs.app-slug }}
           BRANCH: ${{ steps.pull_request.outputs.branch || format('{0}issue-{1}', inputs.branch_prefix, steps.event.outputs.issue) }}
           # Which branch the work is cut from, and which one the pull request will target. This
           # is the only place either question is answered, and the three candidates are ranked
@@ -1182,8 +1229,19 @@ jobs:
           # replies can end up in the branch however it leaves the working tree
           printf '/.ai-plan/\n/.ai-review/\n/.ai-reports/\n' >> .git/info/exclude
 
-          git config --local user.name 'github-actions[bot]'
-          git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # The app's own identity, so a commit is attributed to whatever pushed it. Github resolves
+          # the address to an account, so one belonging to anybody else shows the commit against
+          # somebody who did not make it.
+          #
+          # The numeric id is what links the address to the account, and it has to be looked up:
+          # `create-github-app-token` reports the slug but not the user behind it. A lookup that
+          # fails costs the avatar and nothing else, so the address is still written without it
+          # rather than turning a good round red - `${var:+...}` is what keeps a bare `+` out of it.
+          app_login="${APP_SLUG}[bot]"
+          app_user_id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq '.id' 2> /dev/null || echo '')
+
+          git config --local user.name "$app_login"
+          git config --local user.email "${app_user_id:+${app_user_id}+}${app_login}@users.noreply.github.com"
 
           {
             printf 'compare_ref=%s\n' "$compare_ref"
@@ -1326,45 +1384,96 @@ jobs:
       # `./task.sh cs-check` execs into the app service - so nothing installed on the runner could
       # run it. Its commands are worked out further down instead, once the container it needs is
       # actually up.
+      #
+      # The two ecosystems are answered independently, because a repository can be either or both -
+      # a PHP application with an Angular front end is both, and gets both installs and one merged
+      # list of commands.
       - name: Work out what the agent can check its work with
         id: verify
         if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
         run: |
           if [[ -f 'task.sh' ]]; then
-            echo "kind=task-sh" >> "$GITHUB_OUTPUT"
+            {
+              printf 'php=false\n'
+              printf 'node=false\n'
+            } >> "$GITHUB_OUTPUT"
             echo "This repository drives its checks through task.sh, which runs them inside its container - nothing to install on the runner"
-            exit 0
-          fi
-
-          if [[ ! -f 'composer.json' ]]; then
-            echo "kind=none" >> "$GITHUB_OUTPUT"
-            echo "Neither task.sh nor composer.json - the agent works out what it can run, as before"
             exit 0
           fi
 
           # Built here and handed to the agent verbatim, so that what it runs and what CI runs
           # cannot drift apart in a prompt somebody edited later.
           #
-          # The fixer comes before the checker, for the same reason php-qa-checks runs it first:
-          # what a tool can fix should never reach a reviewer, and what is left after it is what
-          # the check will actually report.
+          # One list across both ecosystems, in the order the agent should work through it: the
+          # fixer before the checker, for the same reason php-qa-checks runs it first - what a
+          # tool can fix should never reach a reviewer, and what is left after it is what the
+          # check will actually report.
           commands=()
-          if [[ -f 'phpcs.xml' || -f 'phpcs.xml.dist' ]]; then
-            commands+=('./vendor/bin/phpcbf' './vendor/bin/phpcs')
+
+          # `vendor/` is installed only where there is something in it to run. A repository with a
+          # `composer.json` and no linter configuration is left alone: the install would cost the
+          # round a minute and buy the agent nothing it is told about.
+          php='false'
+          if [[ -f 'composer.json' ]]; then
+            if [[ -f 'phpcs.xml' || -f 'phpcs.xml.dist' ]]; then
+              commands+=('./vendor/bin/phpcbf' './vendor/bin/phpcs')
+            fi
+
+            # `--config` for the `.dist` name only. Psalm finds `psalm.xml` by itself and stops
+            # with "Could not locate a config file" on the other one.
+            if [[ -f 'psalm.xml' ]]; then
+              commands+=('./vendor/bin/psalm')
+            elif [[ -f 'psalm.xml.dist' ]]; then
+              commands+=('./vendor/bin/psalm --config=psalm.xml.dist')
+            fi
+
+            if [[ ${#commands[@]} -gt 0 ]]; then
+              php='true'
+            else
+              echo "composer.json is here but there is no phpcs or psalm configuration - nothing to install Composer dependencies for"
+            fi
           fi
 
-          # `--config` for the `.dist` name only. Psalm finds `psalm.xml` by itself and stops with
-          # "Could not locate a config file" on the other one.
-          if [[ -f 'psalm.xml' ]]; then
-            commands+=('./vendor/bin/psalm')
-          elif [[ -f 'psalm.xml.dist' ]]; then
-            commands+=('./vendor/bin/psalm --config=psalm.xml.dist')
-          fi
+          # `package.json` alone is enough, and deliberately a looser test than the PHP one above.
+          # A JavaScript project keeps its whole toolchain in `node_modules` - the type checker,
+          # the framework CLI, the test runner are all binaries under `./node_modules/.bin` - so
+          # there is always something for the agent to run, whether or not the package declares a
+          # script this workflow knows the name of.
+          node='false'
+          npm_cmd='npm install'
+          yarn_cmd='yarn install --production=false'
+          if [[ -f 'package.json' ]]; then
+            node='true'
 
-          if [[ ${#commands[@]} -eq 0 ]]; then
-            echo "kind=none" >> "$GITHUB_OUTPUT"
-            echo "composer.json is here but there is no phpcs or psalm configuration - nothing to install dependencies for"
-            exit 0
+            # Yarn is chosen by `.yarnrc`, which is the test install-packages and npm-qa-checks
+            # both make - so the tool that installs is the tool CI installs with.
+            #
+            # A lock file is installed from rather than resolved against, because this round
+            # commits its working tree: `npm install` rewrites `package-lock.json`, and where the
+            # repository tracks that file the rewrite goes into the pull request as a change
+            # nobody asked for.
+            if [[ -f '.yarnrc' ]]; then
+              [[ -f 'yarn.lock' ]] && yarn_cmd='yarn install --frozen-lockfile --production=false'
+              echo "Yarn is what this package is installed with: $yarn_cmd"
+            else
+              [[ -f 'package-lock.json' ]] && npm_cmd='npm ci'
+              echo "NPM is what this package is installed with: $npm_cmd"
+            fi
+
+            # `npm run`, whichever package manager installed, because that is what npm-qa-checks
+            # runs the scripts with - and the agent has to be told what CI does rather than what
+            # the repository's own convention is.
+            #
+            # Only these two names. A script this workflow invented would be one CI never runs,
+            # which is the one thing the agent must not be told.
+            #
+            # `jq`'s stderr is left alone: a `package.json` it cannot parse says so in the log
+            # rather than looking like a package that declares no scripts.
+            for script in lint test; do
+              if jq -e ".scripts.\"$script\"" package.json > /dev/null; then
+                commands+=("npm run $script")
+              fi
+            done
           fi
 
           # The prompt reads this as one block rather than assembling it from several outputs, so
@@ -1375,22 +1484,60 @@ jobs:
           # both prompts, and a second meaning for it here is how an agent ends up reporting `C2`
           # as discharged because a linter came back clean.
           {
-            echo 'kind=composer'
+            printf 'php=%s\n' "$php"
+            printf 'node=%s\n' "$node"
+            printf 'npm_cmd=%s\n' "$npm_cmd"
+            printf 'yarn_cmd=%s\n' "$yarn_cmd"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$php" == 'false' && "$node" == 'false' ]]; then
+            echo "Nothing to install on the runner - the agent works out what it can run, as before"
+            exit 0
+          fi
+
+          # Named by directory rather than by ecosystem, because a repository can have a
+          # `composer.json` this workflow installs nothing for and a `package.json` it does - and
+          # "your dependencies are installed" would then be a claim about a `vendor/` that is not
+          # there.
+          installed=()
+          [[ "$php" == 'true' ]] && installed+=('`vendor/`')
+          [[ "$node" == 'true' ]] && installed+=('`node_modules`')
+
+          {
             echo 'instructions<<PROMPT'
-            echo "This project's dependencies are installed for you, and these commands are what"
-            echo 'CI runs on whatever you push - whether or not the plan mentions them:'
-            echo
-            printf -- '- `%s`\n' "${commands[@]}"
-            echo
-            echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
-            echo 'what nobody should have to review, and what survives it is what CI reports.'
-            echo
-            echo 'Having these clean is the floor rather than the whole of it: they are what CI'
-            echo 'will say about your work, not everything that has to be true of it.'
+            echo "This project's dependencies are installed for you, under $(printf '%s and ' "${installed[@]}" | sed 's/ and $//')."
+
+            # Worth its own sentence, because the binaries are not on the `PATH` a shell starts
+            # with and an agent that does not know they are there reaches for a global install.
+            if [[ "$node" == 'true' ]]; then
+              echo
+              echo "This project's own JavaScript tooling is among them: its type checker, its"
+              echo 'framework CLI and its test runner are binaries under `./node_modules/.bin`,'
+              echo 'and running one from there is what runs the version this project pins.'
+            fi
+
+            if [[ ${#commands[@]} -gt 0 ]]; then
+              echo
+              echo 'These commands are what CI runs on whatever you push - whether or not the'
+              echo 'plan mentions them:'
+              echo
+              printf -- '- `%s`\n' "${commands[@]}"
+              echo
+              echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
+              echo 'what nobody should have to review, and what survives it is what CI reports.'
+              echo
+              echo 'Having these clean is the floor rather than the whole of it: they are what CI'
+              echo 'will say about your work, not everything that has to be true of it.'
+            fi
+
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
 
-          echo "The agent can run: ${commands[*]}"
+          if [[ ${#commands[@]} -gt 0 ]]; then
+            echo "The agent can run: ${commands[*]}"
+          else
+            echo "The dependencies are installed, and there is no command this workflow can name for the agent to check itself with"
+          fi
 
       # Which PHP the checks run under, read from the same `_ci_environment.json` the QA matrix is
       # built from. Without it the agent gets whatever `ubuntu-latest` happens to ship, which need
@@ -1403,57 +1550,87 @@ jobs:
         id: php
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.kind == 'composer' }}
+          && steps.verify.outputs.php == 'true' }}
         uses: uniquesca/ci/get-default-ci-environment@main
 
       - name: Set up PHP
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.kind == 'composer' }}
+          && steps.verify.outputs.php == 'true' }}
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ fromJSON(steps.php.outputs.env)[0].php.version }}
           extensions: ${{ fromJSON(steps.php.outputs.env)[0].php.extensions }}
 
-      # `composer install` with no lock file writes one, and a library here does not commit one -
-      # so without this the round's `git add -A` picks up a `composer.lock` the agent never asked
-      # for and pushes it as part of the change.
+      # `_ci_environment.json` describes PHP and nothing else, so unlike the version above this
+      # one is an input rather than something read out of the repository. `package-manager-cache`
+      # is off because install-packages does the caching, keyed on the lock file.
+      - name: Set up Node
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.node == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
+
+      # Installing with no lock file writes one, and a library here does not commit one - so
+      # without this the round's `git add -A` picks up a `composer.lock` or a `package-lock.json`
+      # the agent never asked for and pushes it as part of the change. The dependency directories
+      # are here for the repository that neither commits nor gitignores them, where the round
+      # would otherwise push every file the install wrote.
       #
       # `.git/info/exclude` only hides what git is not already tracking, so a repository that does
-      # commit its lock file still commits a real change to it. The trade is that a plan asking for
-      # a lock file to be *added* needs it added by hand - the rarer of the two, and the one that
-      # is obvious from the diff.
+      # commit its lock file still commits a real change to it - which is why the install is given
+      # a command that installs from the lock file rather than resolving against it. The trade is
+      # that a plan asking for a lock file to be *added* needs it added by hand - the rarer of the
+      # two, and the one that is obvious from the diff.
       - name: Keep the install out of the commit
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.kind == 'composer' }}
-        run: printf '/composer.lock\n' >> .git/info/exclude
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
+        run: |
+          {
+            printf '/composer.lock\n'
+            printf '/vendor/\n'
+            printf '/package-lock.json\n'
+            printf '/yarn.lock\n'
+            printf '/node_modules/\n'
+          } >> .git/info/exclude
 
-      # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
-      # are arbitrary code out of the repository, and this job has ANTHROPIC_API_KEY in it.
+      # One call for both ecosystems: the action installs whichever manifest is there, and the
+      # skip flags keep it to the ones detected above.
       #
-      # The token is scoped to this step, and `env:` in Actions is per-step - so the agent below
-      # inherits a populated `vendor/` and not the credential that filled it. Same property as
-      # `persist-credentials: false` on the checkout.
+      # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
+      # are arbitrary code out of the repository, and this job can mint a Claude API token from its
+      # own Github OIDC identity. NPM's lifecycle scripts have no such flag here, because
+      # npm-qa-checks runs them and half a JavaScript toolchain arrives as a platform binary a
+      # post-install script puts in place - an install that skipped them would leave the agent
+      # with a `node_modules` CI never has.
+      #
+      # Both tokens are scoped to this step, and `env:` in Actions is per-step - so the agent below
+      # inherits a populated `vendor/` and `node_modules`, and neither credential that filled them.
+      # Same property as `persist-credentials: false` on the checkout.
       #
       # No `--prefer-lowest` and no alternative lock file. The matrix legs that need those are
       # CI's business; this installs what the branch says it depends on.
       - name: Install the dependencies
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.kind == 'composer' }}
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
         uses: uniquesca/ci/install-packages@main
         with:
+          skip_composer: ${{ steps.verify.outputs.php != 'true' }}
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
           composer_cmd: 'composer install --no-scripts'
-          # phpcs and psalm want `vendor/`, not `node_modules`. Node linters are not among the
-          # checks above, and installing for them would put a lock file in the working tree for
-          # `git add -A` to commit.
-          skip_npm_yarn: true
+          skip_npm_yarn: ${{ steps.verify.outputs.node != 'true' }}
+          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
+          npm_install_cmd: ${{ steps.verify.outputs.npm_cmd }}
+          yarn_install_cmd: ${{ steps.verify.outputs.yarn_cmd }}
 
       # Whether installing changed anything git already tracks. A repository that commits its
-      # `vendor/` is the case that matters: the install then turns up inside the agent's commit,
-      # and in the diff somebody has to review.
+      # `vendor/` or its `node_modules` is the case that matters: the install then turns up inside
+      # the agent's commit, and in the diff somebody has to review.
       #
       # Reported rather than acted on. A repository that commits its dependencies arguably wants
       # the install committed, and quietly reverting it here would break exactly those - so this
@@ -1461,7 +1638,7 @@ jobs:
       - name: Say what installing changed
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.kind == 'composer' }}
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
         run: |
           if ! git diff --quiet; then
             echo "::warning title=Installing the dependencies changed tracked files::This repository commits files the install writes to, so they will be part of this round's commit. The run log lists them."
@@ -1739,7 +1916,13 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action exchanges this job's Github OIDC token for a short-lived Anthropic one,
+          # against the rule named here. Nothing static is passed in, and the credential it does
+          # get expires on its own
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           # Passed explicitly so the workflow works without the Claude Github App
           # installed, and so the agent is bound by this job's permissions
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -1783,8 +1966,11 @@ jobs:
             handled, how things are tested. Match them. A change that works but reads
             like it came from somewhere else is a change that gets rewritten.
 
-            This repository may commit its dependencies. Ignore `node_modules`, `vendor`,
-            `dist` and `build` unless the plan is specifically about one of them.
+            This repository may commit its dependencies. Nothing under `node_modules`,
+            `vendor`, `dist` or `build` is yours to change, and none of it is worth
+            searching, unless the plan is specifically about one of them. Reading a
+            dependency to see what it actually does is another matter, and so is running
+            the binaries it installed.
 
             You have a shell. Use it to verify your own work: find how this project runs
             its tests and linters, run them, and fix what you broke. The plan's `C` checks
@@ -1856,7 +2042,10 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
           # This is the step a reviewing agent hands work back to, so the actor here is a bot
@@ -2034,6 +2223,7 @@ jobs:
         id: push
         if: ${{ success() && env.PROCEED == 'true' }}
         env:
+          GIT_TOKEN: ${{ steps.ai_implement.outputs.token }}
           COMPARE_REF: ${{ steps.branch.outputs.compare_ref }}
           BRANCH: ${{ steps.branch.outputs.branch }}
           # Which branch the work sits on, and where that branch stood when this run read it.
@@ -2053,9 +2243,6 @@ jobs:
           TITLE: ${{ steps.stage_issue.outputs.title }}
           ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
-          # Named in the notice about a missing push token, so that what still works is spelled
-          # out as the thing somebody would actually type
-          COMMAND: ${{ inputs.command }}
         run: |
           git add -A
 
@@ -2204,15 +2391,14 @@ jobs:
           cat "$RUNNER_TEMP/push-facts.txt"
           echo "::endgroup::"
 
-          # Called out before the attempt rather than after it. Github refuses a push from
-          # `GITHUB_TOKEN` that creates or updates anything under .github/workflows, and names
-          # only the first file it objects to - so the full list is worth having whether the
-          # push then succeeds or not.
+          # Called out before the attempt rather than after it. Github refuses a push that creates
+          # or updates anything under .github/workflows unless the identity behind it holds the
+          # `workflows` permission, and names only the first file it objects to - so the full list
+          # is worth having whether the push then succeeds or not.
           #
-          # Whether it is refused at all now depends on the token. A `PUSH_ACCESS_TOKEN` carrying
-          # `workflow` scope is allowed through, so this reports rather than predicts: the list is
-          # what Github will be looking at, and the wording below says which of the two cases the
-          # push is in.
+          # Which is why this reports rather than predicts. Whether the AI Implement app was granted
+          # that permission is the caller's decision and not something this run can read, so the
+          # list is what Github will be looking at and the push itself settles the question.
           #
           # Two lists, because they are two different problems with two different answers.
           # First, what the commits themselves changed: the agent's own doing, and something only
@@ -2262,11 +2448,7 @@ jobs:
           workflow_files=''
           if [[ -s "$RUNNER_TEMP/workflow-files.txt" ]]; then
             workflow_files=$(paste -sd, "$RUNNER_TEMP/workflow-files.txt" | sed 's/,/, /g')
-            if [[ "$HAS_PUSH_TOKEN" == 'true' ]]; then
-              echo "::warning title=This push changes workflow files::$workflow_files - Github allows these only from a token with \`workflow\` scope, so this push fails unless PUSH_ACCESS_TOKEN has it"
-            else
-              echo "::warning title=This push changes workflow files::$workflow_files - Github refuses these from GITHUB_TOKEN, whatever this workflow's permissions say. A PUSH_ACCESS_TOKEN with \`workflow\` scope is what pushes them"
-            fi
+            echo "::warning title=This push changes workflow files::$workflow_files - Github allows these only from an identity holding the \`workflows\` permission, so this push fails unless the AI Implement app was granted it"
           fi
 
           stale_files=''
@@ -2289,10 +2471,10 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             if [[ -n "$workflow_files" ]]; then
-              printf 'reason=%s\n' "this branch changes $workflow_files, and Github does not let this workflow's token create or update anything under .github/workflows/" >> "$GITHUB_OUTPUT"
+              printf 'reason=%s\n' "this branch changes $workflow_files, and the AI Implement app does not hold the \`workflows\` permission Github requires to push them. Grant it only if you want an agent editing CI." >> "$GITHUB_OUTPUT"
               echo "::error title=Push refused, and it changes workflow files::$workflow_files"
             elif [[ -n "$stale_files" ]]; then
-              printf 'reason=%s\n' "the branch is still carrying an older copy of $stale_files, which Github reads as this push updating a workflow file - something this workflow's token is never allowed to do. The base moved on while the agent was working and the work would not replay on top of it. Running the command again starts from the base as it stands now." >> "$GITHUB_OUTPUT"
+              printf 'reason=%s\n' "the branch is still carrying an older copy of $stale_files, which Github reads as this push updating a workflow file. The base moved on while the agent was working and the work would not replay on top of it. Running the command again starts from the base as it stands now." >> "$GITHUB_OUTPUT"
               echo "::error title=Push refused over workflow files the branch is behind on::$stale_files"
             fi
 
@@ -2300,15 +2482,6 @@ jobs:
           fi
 
           echo "pushed=true" >> "$GITHUB_OUTPUT"
-
-          # The one failure mode of this workflow that is completely silent otherwise. Everything
-          # here succeeds - the work lands, the pull request updates, the round reports itself -
-          # and the next trigger simply never arrives, which reads as the checks trigger being
-          # broken rather than as a token that was never configured. Said on the successful path
-          # on purpose: this is not a failure, it is a capability the caller has not turned on.
-          if [[ "$HAS_PUSH_TOKEN" != 'true' ]]; then
-            echo "::notice title=Pushed as github-actions[bot]::No PUSH_ACCESS_TOKEN is configured, so Github will not start a workflow run from this push - the QA run it produces waits for approval, and a finished QA workflow cannot start another round. Reviews and $COMMAND still work"
-          fi
 
       # One pull request per issue, opened by the first run and reused by every round after.
       # A round never reaches this - it already has one.
@@ -2319,6 +2492,7 @@ jobs:
           && steps.event.outputs.mode == 'initial'
           && steps.push.outputs.pushed == 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           BRANCH: ${{ steps.branch.outputs.branch }}
           TITLE: ${{ steps.stage_issue.outputs.title }}
           # Resolved where the branch was, so the pull request targets whatever the work was
@@ -2609,10 +2783,11 @@ jobs:
       # replies are already in place - the reviewer reads both, and a review that arrived
       # before them would be reviewing a round it cannot see the end of.
       #
-      # `repository_dispatch` rather than letting a `pull_request` trigger notice the push:
-      # events made with `GITHUB_TOKEN` do not start workflow runs, and dispatch events are the
-      # documented exception. A `pull_request` run for a branch automation pushed would sit
-      # waiting for somebody to approve it, which is the opposite of what this is for.
+      # `repository_dispatch` rather than letting a `pull_request` trigger notice the push. Such a
+      # run does start - the app's push is a real event - but it starts on the push, and there is no
+      # holding it until the paragraph above is true. Dispatching last is what orders the two, and it
+      # keeps whether to review at all in `dispatch_review` rather than in a trigger the caller has
+      # to remember to remove.
       #
       # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
       # produces the same review, and the loop would turn without moving.

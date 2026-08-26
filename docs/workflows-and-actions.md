@@ -42,6 +42,8 @@ below. Reach for an action when your pipeline does something the workflows do no
 
 ### AI assisted development
 
+How the three fit together, and the setup they share: [AI assisted development](ai.md).
+
 | Workflow | What it does |
 |---|---|
 | [`ai-plan.yml`](ai/ai-plan.md) | Turns an issue into an implementation plan, on `/ai-plan` |
