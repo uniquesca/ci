@@ -1766,6 +1766,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Every compose file in this organisation declares the `infrastructure` network and the
+      # `composer_cache` and `npm_cache` volumes as external, because on a developer's machine one
+      # of each is shared by every project that is up at once and so belongs to none of them. A
+      # runner starts with none of the three, and Docker refuses to bring a stack up against an
+      # external resource it cannot find, so this is what stands in for the machine that already
+      # had them. `|| true` because a repository whose compose file declares none of them still
+      # gets all three, and because a second round on the same runner finds them already there -
+      # neither is a reason not to bring the application up.
+      - name: Create the shared Docker network and caches
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && inputs.provision_checks
+          && steps.setup.outputs.docker == 'true' && inputs.spin_up_docker }}
+        run: |
+          docker network create infrastructure || true
+          docker volume create composer_cache || true
+          docker volume create npm_cache || true
+
       # This is what makes a repository whose checks live inside its container checkable at all.
       # Until it, `./task.sh cs-check` had nothing to exec into, and the agent's only account of
       # what CI would say was an artifact from an hour earlier.
