@@ -49,7 +49,7 @@ on:
       allowed_bots:
         description: 'Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. This is what a reviewing agent has to be named to hand work back, so it has to carry the AI Review app''s own bot login - `<app-slug>[bot]`, which is the app name lowercased and hyphenated. A review from a login that is not here starts no round, and says so on the pull request'
         required: false
-        default: 'github-actions[bot] ai-review[bot]'
+        default: 'github-actions[bot] uniques-ai-review[bot] uniques-ai-implement[bot]'
         type: string
       timeout_minutes:
         description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes, so that a run the agent overruns still has time to say so'
