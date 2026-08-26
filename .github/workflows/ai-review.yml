@@ -591,7 +591,8 @@ jobs:
             ```
 
             - `verdict` - `changes_requested` or `comment`. Nothing else. You cannot approve;
-              merging is a person's decision.
+              merging is a person's decision. `comment` says nothing in the diff has to change, so
+              anything you left inline under it reads as a note rather than a demand.
             - `summary` - what you looked at, what you concluded, and anything that does not
               belong on one line. If your verdict is `comment` because it is fine, say that in
               a sentence or two rather than padding it.
@@ -706,13 +707,23 @@ jobs:
           fi
 
           if [[ "$SUBMITTED" == 'true' ]]; then
+            # `REQUEST_CHANGES` and `COMMENT` are how Github names what was submitted, and
+            # `COMMENT` reads like the review reached no conclusion. Say the verdict instead -
+            # and the verdict rather than the event, because a changes-requested review Github
+            # would only take as a comment still requests changes, which is what the paragraph
+            # below is about.
+            if [[ "$VERDICT" == 'changes_requested' ]]; then
+              outcome='changes are requested'
+            else
+              outcome='no changes needed'
+            fi
             {
               printf 'Reviewed %s' "$what"
               [[ "$POSTED" != '0' ]] && printf ' with %s inline comment(s)' "$POSTED"
-              printf ' - submitted as `%s`.' "$EVENT"
+              printf ' - %s.' "$outcome"
               [[ "$DROPPED" != '0' ]] && printf ' %s comment(s) could not be placed on a line the diff contains; see the run log.' "$DROPPED"
               if [[ "$VERDICT" == 'changes_requested' && "$EVENT" != 'REQUEST_CHANGES' ]]; then
-                printf '\n\n**The agent wanted to request changes and could not.** Github does not allow it from the identity that opened this pull request, so this landed as a comment and it does not block merging.'
+                printf '\n\n**Github would not take this as a changes-requested review.** It does not allow one from the identity that opened this pull request, so this landed as a comment and it does not block merging.'
                 if [[ "$AI_AUTHORED" == 'true' ]]; then
                   printf ' It will not start another round on its own either - run `/ai-do` here to act on it, and check that the reviewing app is a different app from the implementing one.'
                 else
