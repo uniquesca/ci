@@ -3,9 +3,6 @@ name: AI Plan
 on:
   workflow_call:
     secrets:
-      ANTHROPIC_API_KEY:
-        description: 'Anthropic API key used to call the AI planning agent'
-        required: true
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private Composer repositories, so that the agent plans against the source of what this project depends on rather than against an assumption about it. Optional: without it a repository whose dependencies are all public still installs, and one with private dependencies is planned without them'
         required: false
@@ -13,6 +10,23 @@ on:
         description: 'Access token for the Uniques private NPM registry on npm.pkg.github.com, which is where the `@uniquesca` scope is served from. The Composer token''s counterpart for a JavaScript repository, and it buys the same thing. Optional, on the same terms'
         required: false
     inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace - a rule bound to a single workspace resolves it on its own, and naming it here is what an ambiguous rule fails for'
+        required: false
+        default: ''
+        type: string
       command:
         description: 'Comment command that triggers the planning, has to be at the very beginning of the comment'
         required: false
@@ -88,6 +102,11 @@ jobs:
       # follows the resource rather than the endpoint, though, so `issues: write` does not
       # cover it and `read` here fails that step.
       pull-requests: write
+      # What lets the job ask Github for the OIDC token the agent's credential is minted from.
+      # A called workflow can only narrow the token it is given, so the caller has to grant this
+      # too - without it there is nothing to exchange and the agent step fails before it reads
+      # anything.
+      id-token: write
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -388,10 +407,11 @@ jobs:
       # flags keep it to the ones detected above.
       #
       # Nothing here runs an install script. Composer's `--no-scripts` is what php-qa-checks uses,
-      # because they are arbitrary code out of the repository and this job has ANTHROPIC_API_KEY in
-      # it; NPM's `--ignore-scripts` is here for the same reason and costs nothing, because the
-      # agent below has no shell and so never runs the binaries a post-install script would have
-      # finished putting in place. It only reads what was unpacked.
+      # because they are arbitrary code out of the repository and this job can mint a Claude API
+      # token from its own Github OIDC identity; NPM's `--ignore-scripts` is here for the same
+      # reason and costs nothing, because the agent below has no shell and so never runs the
+      # binaries a post-install script would have finished putting in place. It only reads what
+      # was unpacked.
       #
       # `continue-on-error`, because a plan written without the dependencies is what this workflow
       # produced before it installed any - so a registry that refuses is a thinner plan rather than
@@ -507,7 +527,13 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action exchanges this job's Github OIDC token for a short-lived Anthropic one,
+          # against the rule named here. Nothing static is passed in, and the credential it does
+          # get expires on its own
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           # Passed explicitly so the workflow works without the Claude Github App
           # installed, and so the agent is bound by this job's `contents: read`
           github_token: ${{ secrets.GITHUB_TOKEN }}

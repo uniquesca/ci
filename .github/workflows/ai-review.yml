@@ -3,9 +3,6 @@ name: AI Review
 on:
   workflow_call:
     secrets:
-      ANTHROPIC_API_KEY:
-        description: 'Anthropic API key used to call the AI reviewing agent'
-        required: true
       AI_REVIEW_APP_ID:
         description: 'GitHub App id for the AI Review app. The review is submitted as this app, which is what makes it a different identity from the one that opened the pull request - and Github rejects a REQUEST_CHANGES review from the identity that opened it'
         required: true
@@ -13,6 +10,23 @@ on:
         description: 'Private key for the AI Review GitHub App. Used only to mint a short-lived installation token for submitting the review; never passed to the agent'
         required: true
     inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace - a rule bound to a single workspace resolves it on its own, and naming it here is what an ambiguous rule fails for'
+        required: false
+        default: ''
+        type: string
       dispatch_type:
         description: 'The `repository_dispatch` event type this reacts to. The implementing workflow sends it as the last thing it does in a round, which is what starts a review - a `pull_request` trigger would fire on the push instead, before the round comment and the thread replies the reviewer has to read are in place'
         required: false
@@ -97,6 +111,11 @@ jobs:
       # Failing checks are context: a reviewer should not spend its comments on something CI
       # already said
       checks: read
+      # What lets the job ask Github for the OIDC token the agent's credential is minted from.
+      # A called workflow can only narrow the token it is given, so the caller has to grant this
+      # too - without it there is nothing to exchange and the agent step fails before it reads
+      # anything.
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -264,7 +283,13 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action exchanges this job's Github OIDC token for a short-lived Anthropic one,
+          # against the rule named here. Nothing static is passed in, and the credential it does
+          # get expires on its own
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
           # The action refuses to run for a bot actor unless the bot is listed here, and a

@@ -43,7 +43,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 
 ### The token, and the two things it must not be
 
-Supply an installation token for a [Github App](../ai/ai-implement.md#the-github-apps), which is
+Supply an installation token for a Github App, which is
 what [`ai-review`](../ai/ai-review.md) mints and passes in. Two identities cannot do this job, and
 they fail differently:
 
