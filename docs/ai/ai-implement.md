@@ -29,6 +29,8 @@ jobs:
       pull-requests: write
       # Without this, failing CI checks are simply not part of the feedback
       checks: read
+      # Required: without it the check reports cannot be listed or downloaded
+      actions: read
       # Needed for pulling the application's Docker images
       packages: read
       # Mints the agent's Claude credential from this run's own identity
@@ -173,11 +175,6 @@ on:
     workflows: [ 'PHP QA Checks' ]   # the QA workflow's `name:`, not its filename
     types: [ completed ]
     branches: [ 'ai-feature/**' ]    # optional, must match `branch_prefix`
-
-jobs:
-  ai-implement:
-    permissions:
-      actions: read     # without this the reports cannot be listed or downloaded
 ```
 
 Your QA workflows run on the agent's commits because the implementing app pushes them, not
