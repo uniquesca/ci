@@ -1224,3 +1224,10 @@
 ## v10.11.1
 
 * Fix: fixed an ability to revise a plan and re-trigger coding agent (7a8f872 by George Shestayev)
+
+## v11.0.0
+
+* Update: AI Planning agent will now install dependencies to do better planning (8291e02 by George Shestayev)
+* Update: AI coding agent will now install NPM dependencies as they might be important during the implementation (8291e02 by George Shestayev)
+* Update: switching AI Implement and AI review to use Github App tokens (84487ab by George Shestayev)
+* Update: introduced integration with Anthropic identity federation for AI workflows (8024dc46 by George Shestayev)

@@ -3,9 +3,6 @@ name: AI Implement
 on:
   workflow_call:
     secrets:
-      ANTHROPIC_API_KEY:
-        description: 'Anthropic API key used to call the AI implementing agent'
-        required: true
       AI_IMPLEMENT_APP_ID:
         description: 'GitHub App id for the AI Implement app. The app pushes branches and opens or updates pull requests, so QA workflows start from a real app event and the pull request author is distinct from the reviewer'
         required: true
@@ -22,6 +19,23 @@ on:
         description: 'JSON object of configuration tokens this repository''s config templates are rendered with. Read only when the application is brought up, which is what renders the templates. These reach a shell the agent controls, so give it a test environment''s credentials and never production''s'
         required: false
     inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace - a rule bound to a single workspace resolves it on its own, and naming it here is what an ambiguous rule fails for'
+        required: false
+        default: ''
+        type: string
       command:
         description: 'Comment command that triggers the implementation, has to be at the very beginning of the comment. On an issue it starts the work - or runs a round on the pull request already implementing it, when the plan has been revised since that work last read it; on the pull request it always runs a round'
         required: false
@@ -229,6 +243,10 @@ jobs:
       # is linked to no repository, and `GITHUB_TOKEN` is refused for it until that package grants
       # this repository the Read role under Package settings, Manage Actions access.
       packages: read
+      # What lets the job ask Github for the OIDC token the agent's credential is minted from.
+      # Without it there is nothing to exchange and the agent step fails before it reads anything.
+      # The same caller rule applies as above.
+      id-token: write
     env:
       # Set for every `gh` call below - no checkout is needed to resolve the repository this way
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -549,8 +567,8 @@ jobs:
       # A round works on a branch this workflow pushed, and on no other. Both broad triggers
       # fire on pull requests nobody here created - including pull requests from forks, which
       # `issue_comment` and `pull_request_review` run with a write token and full access to
-      # secrets. Checking out fork code and handing it a shell with ANTHROPIC_API_KEY in the
-      # environment is exactly what this step exists to prevent.
+      # secrets. Checking out fork code and handing it a shell that can mint a Claude API token
+      # from this job's Github OIDC identity is exactly what this step exists to prevent.
       #
       # Deliberately in front of the permission gate, and read-only because of it. "Is this even
       # our pull request" has to be settled before "may this person run the command", or the
@@ -1584,10 +1602,11 @@ jobs:
       # skip flags keep it to the ones detected above.
       #
       # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
-      # are arbitrary code out of the repository, and this job has ANTHROPIC_API_KEY in it. NPM's
-      # lifecycle scripts have no such flag here, because npm-qa-checks runs them and half a
-      # JavaScript toolchain arrives as a platform binary a post-install script puts in place - an
-      # install that skipped them would leave the agent with a `node_modules` CI never has.
+      # are arbitrary code out of the repository, and this job can mint a Claude API token from its
+      # own Github OIDC identity. NPM's lifecycle scripts have no such flag here, because
+      # npm-qa-checks runs them and half a JavaScript toolchain arrives as a platform binary a
+      # post-install script puts in place - an install that skipped them would leave the agent
+      # with a `node_modules` CI never has.
       #
       # Both tokens are scoped to this step, and `env:` in Actions is per-step - so the agent below
       # inherits a populated `vendor/` and `node_modules`, and neither credential that filled them.
@@ -1897,7 +1916,13 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action exchanges this job's Github OIDC token for a short-lived Anthropic one,
+          # against the rule named here. Nothing static is passed in, and the credential it does
+          # get expires on its own
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           # Passed explicitly so the workflow works without the Claude Github App
           # installed, and so the agent is bound by this job's permissions
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -2017,7 +2042,10 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           show_full_output: ${{ inputs.debug }}
           # This is the step a reviewing agent hands work back to, so the actor here is a bot
