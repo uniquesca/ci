@@ -206,6 +206,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
 | `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch the work is pushed to - the branch is this plus `issue-<number>`. Only branches carrying it are ever worked on |
+| `allow_workflow_changes` | boolean | `false` | Let the agent change this repository's own workflow files. Off by default, and then a change it wants to `.github/workflows/` is [reported as a patch](#what-the-agent-can-and-cannot-do) instead of pushed. Turning it on needs the AI Implement app to hold the `workflows` permission, which means an agent editing your CI |
 | `max_unattended_rounds` | number | `5` | How many rounds in a row a bot may trigger before a person has to look. A round a person asked for resets this to zero |
 | `ignore_check_patterns` | string | `(ai.implement\|ai.plan\|ai.review)` | Case-insensitive regular expression matching check runs to leave out of the feedback, so a run does not read its own red status back as a code defect |
 | `dispatch_review` | boolean | `false` | Ask [`ai-review`](ai-review.md) to look at the work as soon as it is pushed, with a `repository_dispatch` event. Turn it on only once a workflow is subscribed to that event |
@@ -292,8 +293,9 @@ executes. It **may not**:
   git credential on disk while the agent is working - the workflow supplies one per command, before
   the agent starts and after it finishes.
 * **Change a workflow file.** Github refuses a push touching `.github/workflows/` from an identity
-  without the `workflows` permission, which the implementing app does not hold. The push warns about
-  the files by name before it tries.
+  without the `workflows` permission, and a refusal loses the rest of the round with it - so the
+  change arrives as a `git apply`-able patch appended to the run's report, to apply by hand. Set
+  `allow_workflow_changes` where the app holds that permission and you want an agent editing CI.
 * **Change the plan or the feedback it was given.** Both are excluded from git. Its replies to your
   threads are the one thing it writes back, and a reply to a thread that was not part of this round
   is discarded.
