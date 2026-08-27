@@ -1247,3 +1247,7 @@
 ## v11.1.3
 
 * Update: AI coding agent will be prevented from updating workflows, but can be altered through an input + permission change (9d81edd by George Shestayev)
+
+## v11.1.4
+
+* Update: fixed a process of deploying a sandbox for a coding agent to install dependencies properly (e8e82f5 by George Shestayev)
