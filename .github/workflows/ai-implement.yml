@@ -76,6 +76,11 @@ on:
         required: false
         default: 'ai-feature/'
         type: string
+      allow_workflow_changes:
+        description: 'Let the agent change this repository''s own workflow files. Github refuses a push that creates or updates anything under `.github/workflows/` unless the identity behind it holds the `workflows` permission, so this is only ever half the answer - granting that permission to the AI Implement app is the other half, and it means an agent editing your CI. Off by default, and then the agent is told to describe such a change rather than make it: an edit it makes to one anyway is taken back out before the commit and reported as a patch on the pull request for somebody to apply by hand, which costs the change a person''s attention instead of costing the run a refused push'
+        required: false
+        default: false
+        type: boolean
       max_unattended_rounds:
         description: 'How many rounds in a row a bot may trigger before a person has to look. Rounds a person asked for are not counted and reset this to zero. Without a bound, a reviewing agent and this one can hand work back and forth until the API key runs dry'
         required: false
@@ -1919,6 +1924,40 @@ jobs:
             echo "The application is up, and without a task.sh there is nothing to ask about what it can check - the agent is told only that it is running"
           fi
 
+      # What the agent is told about this repository's own workflow files. Built here rather
+      # than written into each prompt, so the rule and the step that enforces it below are read
+      # from one place.
+      #
+      # Github refuses a push that creates or updates anything under `.github/workflows/` from
+      # an identity without the `workflows` permission, and the work is finished by the time the
+      # push finds that out. An hour of it is thrown away over a file a plan may have asked for
+      # in a single line, so the agent is asked to describe the change instead of making it, and
+      # its report is where the description goes - in front of the person who can apply it.
+      #
+      # It is told what happens to an edit it makes anyway, because the step below makes one:
+      # an agent that thinks the edit reached the branch writes a report saying it did.
+      #
+      # Empty where the app holds that permission and the caller wants CI edited, which leaves
+      # both prompts reading as they do without this.
+      - name: Tell the agent what to do about workflow files
+        id: workflow_files
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && !inputs.allow_workflow_changes }}
+        run: |
+          {
+            echo 'instructions<<PROMPT'
+            echo '- Do not change any file under `.github/workflows/`. Github refuses a push'
+            echo '  touching one from the identity this work is pushed with, so the edit cannot'
+            echo '  reach the branch. Where the work needs one - including where the plan or'
+            echo '  the feedback asks for it - do the rest around it, and in your final message'
+            echo '  say which file, what it should say and what it is for, so that somebody can'
+            echo '  apply it by hand.'
+            echo '  Anything you do edit there is taken back out before the commit and reported'
+            echo '  as a patch, so do not describe it as something you changed.'
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
+
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
       # workflow. Only the issue number goes in, which Github restricts to digits.
@@ -2009,7 +2048,7 @@ jobs:
             pull request at all. Where something is still unresolved, finish everything
             that does not depend on it and say what you left and why in your final message.
 
-            Three things you must not do:
+            What you must not do:
 
             - Do not commit, push, create a branch, open a pull request, or comment
               anywhere. The workflow does all of that after you finish, and doing it
@@ -2020,6 +2059,7 @@ jobs:
               log when it releases, so an entry written by hand is overwritten or left
               conflicting. This holds even where the plan asks for one - note that you left
               it out and why.
+            ${{ steps.workflow_files.outputs.instructions }}
 
             Leave your work in the working tree as uncommitted changes. That is what gets
             committed for you.
@@ -2152,7 +2192,7 @@ jobs:
             nobody. Where something is still unresolved, finish the rest and say what you left
             and why.
 
-            Three things you must not do:
+            What you must not do:
 
             - Do not commit, push, or comment anywhere. The workflow does all of that after
               you finish, including posting your replies.
@@ -2161,6 +2201,7 @@ jobs:
             - Do not touch `CHANGELOG.md`. Every repository here generates it from the git log
               when it releases, so an entry written by hand is overwritten or left conflicting.
               This holds even where the feedback asks for one - reply saying so.
+            ${{ steps.workflow_files.outputs.instructions }}
 
             Leave your work in the working tree as uncommitted changes.
 
@@ -2235,6 +2276,101 @@ jobs:
           fi
 
           echo "::warning title=The implementing agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The work is complete, so it was pushed anyway - raise max_turns if this keeps happening."
+
+      # The edit the agent was told not to make, taken back out of the working tree before it
+      # is committed - Github refuses a push carrying it, and a refusal here loses everything
+      # else the run did as well. What the agent wanted is not lost with it: the patch is
+      # appended to its own report, which is the body of the pull request on a first run and the
+      # round comment on a round, so it arrives in front of the person who can apply it.
+      #
+      # Measured here rather than taken from the agent's final message. `git diff` describes the
+      # edit as it actually stands, with context and line numbers `git apply` will accept, and a
+      # diff written out from memory in a closing summary is neither.
+      #
+      # Against `HEAD` rather than the index, because the agent may have staged its edit - the
+      # push commits with `git add -A` and would carry a staged file a bare `git diff` never
+      # mentions. `--intent-to-add` first for the same completeness at the other end: a workflow
+      # file the agent created is one git has never seen, and without it that file appears in no
+      # diff here, is reported to nobody, and is then deleted by the clean below.
+      - name: Hold back the changes to the workflow files
+        id: workflow_changes
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && !inputs.allow_workflow_changes }}
+        env:
+          # The agent's final message, which this appends to. Empty on a run that produced none
+          REPORT_FILE: ${{ steps.report.outputs.result_file }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git add --intent-to-add -- .github/workflows/ 2> /dev/null || true
+
+          if git diff HEAD --quiet -- .github/workflows/; then
+            # Which is the ordinary outcome: the agent read the rule and described the change
+            git reset --quiet -- .github/workflows/ 2> /dev/null || true
+            echo "The workflow files are untouched"
+            exit 0
+          fi
+
+          held=$(git diff HEAD --name-only -- .github/workflows/ | paste -sd, | sed 's/,/, /g')
+          git diff HEAD -- .github/workflows/ > "$RUNNER_TEMP/held-workflow-changes.patch"
+
+          # Unstage the intent-to-add, put back what was edited or deleted, then remove what was
+          # created. `git clean` is deliberately without `-x`: an ignored file that happens to
+          # live here is not the agent's doing and is left where it is.
+          #
+          # The checkout is allowed to fail. A repository with no `.github/workflows/` of its own
+          # has nothing under that path in `HEAD`, so there is nothing to restore and everything
+          # to clean.
+          git reset --quiet -- .github/workflows/
+          git checkout --quiet -- .github/workflows/ 2> /dev/null || true
+          git clean --quiet -fd -- .github/workflows/
+
+          echo "::warning title=Workflow changes held back::$held - the agent was told to describe a change to these rather than make one, so the edits are reported as a patch instead of being pushed"
+
+          # The full patch, whatever its size, in the one place with no length limit on it
+          {
+            printf '## The workflow changes were held back\n\n'
+            printf '````diff\n'
+            cat "$RUNNER_TEMP/held-workflow-changes.patch"
+            printf '````\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A run that produced no final message has no file to append to, and gets one of its
+          # own - the section below reads on its own, and the alternative is the one report that
+          # says nothing about the only thing the run did.
+          report="$REPORT_FILE"
+          if [[ -z "$report" ]]; then
+            report="$RUNNER_TEMP/ai-run-report/held-workflow-changes.md"
+            mkdir -p "$(dirname "$report")"
+            : > "$report"
+          fi
+
+          {
+            printf '\n### Workflow changes held back - apply these by hand\n\n'
+            printf 'This work edited %s, and Github refuses a push touching ' "$held"
+            printf '`.github/workflows/` from the identity this branch is pushed with. The edits '
+            printf 'were taken back out, so they are not on the branch and nothing below has been '
+            printf 'reviewed by anybody.\n\n'
+
+            # A comment Github rejects is a patch nobody reads, so a long one is named rather
+            # than pasted. 20000 leaves the agent's own message its room under the 65536
+            # characters a comment body is allowed.
+            if [[ "$(wc -c < "$RUNNER_TEMP/held-workflow-changes.patch")" -gt 20000 ]]; then
+              printf 'The patch is too long to post here - it is under **The workflow changes '
+              printf 'were held back** in the [run summary](%s).\n' "$RUN_URL"
+            else
+              # Four backticks. A workflow file is allowed to contain a three-backtick fence,
+              # and one in the patch would end the block early and spill the rest as prose.
+              printf '````diff\n'
+              cat "$RUNNER_TEMP/held-workflow-changes.patch"
+              printf '````\n'
+            fi
+          } >> "$report"
+
+          {
+            printf 'held_back=%s\n' "$held"
+            printf 'report_file=%s\n' "$report"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Commit and push the work
         id: push
@@ -2517,7 +2653,9 @@ jobs:
           BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
-          SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          # The agent's own final message, carrying the held-back workflow patch where the
+          # step that held it back appended one
+          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
           COMMAND: ${{ inputs.command }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
           # What the pull request being revived used to target. Only differs from BASE when its
@@ -2661,8 +2799,27 @@ jobs:
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # Set where the only thing the agent changed was a workflow file, which is a run with
+          # nothing to push and something to say. "It changed no files" is the wrong thing to
+          # tell somebody whose CI edit is sitting in a patch on a runner that is about to go
+          HELD_BACK: ${{ steps.workflow_changes.outputs.held_back }}
+          REPORT_FILE: ${{ steps.workflow_changes.outputs.report_file }}
         run: |
-          gh issue comment "$ISSUE" --body "@$ACTOR the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: $RUN_URL"
+          if [[ -z "$HELD_BACK" ]]; then
+            gh issue comment "$ISSUE" --body "@$ACTOR the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: $RUN_URL"
+            exit 0
+          fi
+
+          # The report rather than a summary of it: it holds whatever the agent said about the
+          # run as well as the patch, and this comment is the only place either of them lands
+          {
+            printf '@%s the implementing agent changed nothing outside %s, and that cannot be pushed from here - so there is no pull request for this issue.\n\n' "$ACTOR" "$HELD_BACK"
+            [[ -f "$REPORT_FILE" ]] && cat "$REPORT_FILE"
+            printf '\nThe run log has the rest of what it did: %s\n' "$RUN_URL"
+          } > "$RUNNER_TEMP/empty-comment.md"
+
+          cat "$RUNNER_TEMP/empty-comment.md" >> "$GITHUB_STEP_SUMMARY"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/empty-comment.md"
 
       # Answering each thread is how a review loop closes. Posted after the push, so a reply
       # can talk about work that is actually on the branch, and only for a round - the first
@@ -2695,7 +2852,9 @@ jobs:
           CHECK_COUNT: ${{ steps.stage_pr.outputs.check_count }}
           PUSHED: ${{ steps.push.outputs.pushed }}
           POSTED: ${{ steps.replies.outputs.posted }}
-          SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          # The agent's own final message, carrying the held-back workflow patch where the
+          # step that held it back appended one
+          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
           REVISED: ${{ steps.revision.outputs.revised }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
