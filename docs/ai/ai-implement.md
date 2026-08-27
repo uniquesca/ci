@@ -236,6 +236,11 @@ configuration files [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) an
 reporter. `phpcbf` fixes the whole repository rather than the diff, so a round can sweep in
 violations that were already there. `provision_checks: false` skips all of it.
 
+The dependencies those commands come out of are installed where they run: through `./task.sh
+composer install` and `./task.sh yarn install` for a repository whose application is up, and on the
+runner for one without a container task for that ecosystem. Either way they land in the working
+tree, and an install that fails costs the round its checks rather than the round.
+
 ### What starts a round, and what it reads
 
 After a round pushes, your QA workflows and the reviewing agent run in parallel and finish in either
