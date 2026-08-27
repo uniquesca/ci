@@ -1243,3 +1243,7 @@
 ## v11.1.2
 
 * Fix: fixed default allowed bots for ai-implement round (afeec0d by George Shestayev)
+
+## v11.1.3
+
+* Update: AI coding agent will be prevented from updating workflows, but can be altered through an input + permission change (9d81edd by George Shestayev)
