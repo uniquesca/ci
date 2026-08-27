@@ -1373,295 +1373,11 @@ jobs:
             echo "Staged $found report file(s) for $HEAD_SHA:"
             find .ai-reports -type f -printf '  %p (%s bytes)\n'
           fi
-
-      # Which checks the agent can run on itself before it pushes, and whether anything has to
-      # be installed for it to. A red linter found here costs the agent a few turns; found after
-      # the push it costs a whole round - a second agent run, on a fresh context, working from an
-      # artifact instead of from the tool.
+      # The application first, and the toolchain below it: `./task.sh composer install` needs
+      # something to exec into.
       #
-      # **Detection is deliberately the same tests php-qa-checks makes** - a config file's
-      # presence, and for Psalm which of the two names it has. The two have to agree: an agent
-      # that checks a different set than CI reports itself clean and then goes red on the push,
-      # which is worse than not checking at all, because the round that would have caught it has
-      # already been spent.
-      #
-      # A repository with `task.sh` installs nothing here. Its tooling lives inside the container -
-      # `./task.sh cs-check` execs into the app service - so nothing installed on the runner could
-      # run it. Its commands are worked out further down instead, once the container it needs is
-      # actually up.
-      #
-      # The two ecosystems are answered independently, because a repository can be either or both -
-      # a PHP application with an Angular front end is both, and gets both installs and one merged
-      # list of commands.
-      - name: Work out what the agent can check its work with
-        id: verify
-        if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
-        run: |
-          if [[ -f 'task.sh' ]]; then
-            {
-              printf 'php=false\n'
-              printf 'node=false\n'
-            } >> "$GITHUB_OUTPUT"
-            echo "This repository drives its checks through task.sh, which runs them inside its container - nothing to install on the runner"
-            exit 0
-          fi
-
-          # Built here and handed to the agent verbatim, so that what it runs and what CI runs
-          # cannot drift apart in a prompt somebody edited later.
-          #
-          # One list across both ecosystems, in the order the agent should work through it: the
-          # fixer before the checker, for the same reason php-qa-checks runs it first - what a
-          # tool can fix should never reach a reviewer, and what is left after it is what the
-          # check will actually report.
-          commands=()
-
-          # `vendor/` is installed only where there is something in it to run. A repository with a
-          # `composer.json` and no linter configuration is left alone: the install would cost the
-          # round a minute and buy the agent nothing it is told about.
-          php='false'
-          if [[ -f 'composer.json' ]]; then
-            if [[ -f 'phpcs.xml' || -f 'phpcs.xml.dist' ]]; then
-              commands+=('./vendor/bin/phpcbf' './vendor/bin/phpcs')
-            fi
-
-            # `--config` for the `.dist` name only. Psalm finds `psalm.xml` by itself and stops
-            # with "Could not locate a config file" on the other one.
-            if [[ -f 'psalm.xml' ]]; then
-              commands+=('./vendor/bin/psalm')
-            elif [[ -f 'psalm.xml.dist' ]]; then
-              commands+=('./vendor/bin/psalm --config=psalm.xml.dist')
-            fi
-
-            if [[ ${#commands[@]} -gt 0 ]]; then
-              php='true'
-            else
-              echo "composer.json is here but there is no phpcs or psalm configuration - nothing to install Composer dependencies for"
-            fi
-          fi
-
-          # `package.json` alone is enough, and deliberately a looser test than the PHP one above.
-          # A JavaScript project keeps its whole toolchain in `node_modules` - the type checker,
-          # the framework CLI, the test runner are all binaries under `./node_modules/.bin` - so
-          # there is always something for the agent to run, whether or not the package declares a
-          # script this workflow knows the name of.
-          node='false'
-          npm_cmd='npm install'
-          yarn_cmd='yarn install --production=false'
-          if [[ -f 'package.json' ]]; then
-            node='true'
-
-            # Yarn is chosen by `.yarnrc`, which is the test install-packages and npm-qa-checks
-            # both make - so the tool that installs is the tool CI installs with.
-            #
-            # A lock file is installed from rather than resolved against, because this round
-            # commits its working tree: `npm install` rewrites `package-lock.json`, and where the
-            # repository tracks that file the rewrite goes into the pull request as a change
-            # nobody asked for.
-            if [[ -f '.yarnrc' ]]; then
-              [[ -f 'yarn.lock' ]] && yarn_cmd='yarn install --frozen-lockfile --production=false'
-              echo "Yarn is what this package is installed with: $yarn_cmd"
-            else
-              [[ -f 'package-lock.json' ]] && npm_cmd='npm ci'
-              echo "NPM is what this package is installed with: $npm_cmd"
-            fi
-
-            # `npm run`, whichever package manager installed, because that is what npm-qa-checks
-            # runs the scripts with - and the agent has to be told what CI does rather than what
-            # the repository's own convention is.
-            #
-            # Only these two names. A script this workflow invented would be one CI never runs,
-            # which is the one thing the agent must not be told.
-            #
-            # `jq`'s stderr is left alone: a `package.json` it cannot parse says so in the log
-            # rather than looking like a package that declares no scripts.
-            for script in lint test; do
-              if jq -e ".scripts.\"$script\"" package.json > /dev/null; then
-                commands+=("npm run $script")
-              fi
-            done
-          fi
-
-          # The prompt reads this as one block rather than assembling it from several outputs, so
-          # that what the agent is told about these commands lives next to the detection that
-          # found them. Both agent steps interpolate the same value.
-          #
-          # Deliberately never called "checks". That word already means the plan's `C` items in
-          # both prompts, and a second meaning for it here is how an agent ends up reporting `C2`
-          # as discharged because a linter came back clean.
-          {
-            printf 'php=%s\n' "$php"
-            printf 'node=%s\n' "$node"
-            printf 'npm_cmd=%s\n' "$npm_cmd"
-            printf 'yarn_cmd=%s\n' "$yarn_cmd"
-          } >> "$GITHUB_OUTPUT"
-
-          if [[ "$php" == 'false' && "$node" == 'false' ]]; then
-            echo "Nothing to install on the runner - the agent works out what it can run, as before"
-            exit 0
-          fi
-
-          # Named by directory rather than by ecosystem, because a repository can have a
-          # `composer.json` this workflow installs nothing for and a `package.json` it does - and
-          # "your dependencies are installed" would then be a claim about a `vendor/` that is not
-          # there.
-          installed=()
-          [[ "$php" == 'true' ]] && installed+=('`vendor/`')
-          [[ "$node" == 'true' ]] && installed+=('`node_modules`')
-
-          {
-            echo 'instructions<<PROMPT'
-            echo "This project's dependencies are installed for you, under $(printf '%s and ' "${installed[@]}" | sed 's/ and $//')."
-
-            # Worth its own sentence, because the binaries are not on the `PATH` a shell starts
-            # with and an agent that does not know they are there reaches for a global install.
-            if [[ "$node" == 'true' ]]; then
-              echo
-              echo "This project's own JavaScript tooling is among them: its type checker, its"
-              echo 'framework CLI and its test runner are binaries under `./node_modules/.bin`,'
-              echo 'and running one from there is what runs the version this project pins.'
-            fi
-
-            if [[ ${#commands[@]} -gt 0 ]]; then
-              echo
-              echo 'These commands are what CI runs on whatever you push - whether or not the'
-              echo 'plan mentions them:'
-              echo
-              printf -- '- `%s`\n' "${commands[@]}"
-              echo
-              echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
-              echo 'what nobody should have to review, and what survives it is what CI reports.'
-              echo
-              echo 'Having these clean is the floor rather than the whole of it: they are what CI'
-              echo 'will say about your work, not everything that has to be true of it.'
-            fi
-
-            echo 'PROMPT'
-          } >> "$GITHUB_OUTPUT"
-
-          if [[ ${#commands[@]} -gt 0 ]]; then
-            echo "The agent can run: ${commands[*]}"
-          else
-            echo "The dependencies are installed, and there is no command this workflow can name for the agent to check itself with"
-          fi
-
-      # Which PHP the checks run under, read from the same `_ci_environment.json` the QA matrix is
-      # built from. Without it the agent gets whatever `ubuntu-latest` happens to ship, which need
-      # not satisfy `composer.json`'s platform constraint - and the install then fails on the
-      # platform rather than on anything the agent did.
-      #
-      # One version, not the matrix. Proving every leg green stays CI's job; this is here so the
-      # agent can check itself before it pushes.
-      - name: Work out the PHP version to check under
-        id: php
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.php == 'true' }}
-        uses: uniquesca/ci/get-default-ci-environment@main
-
-      - name: Set up PHP
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.php == 'true' }}
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ fromJSON(steps.php.outputs.env)[0].php.version }}
-          extensions: ${{ fromJSON(steps.php.outputs.env)[0].php.extensions }}
-
-      # `_ci_environment.json` describes PHP and nothing else, so unlike the version above this
-      # one is an input rather than something read out of the repository. `package-manager-cache`
-      # is off because install-packages does the caching, keyed on the lock file.
-      - name: Set up Node
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && steps.verify.outputs.node == 'true' }}
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ inputs.node_version }}
-          package-manager-cache: false
-
-      # Installing with no lock file writes one, and a library here does not commit one - so
-      # without this the round's `git add -A` picks up a `composer.lock` or a `package-lock.json`
-      # the agent never asked for and pushes it as part of the change. The dependency directories
-      # are here for the repository that neither commits nor gitignores them, where the round
-      # would otherwise push every file the install wrote.
-      #
-      # `.git/info/exclude` only hides what git is not already tracking, so a repository that does
-      # commit its lock file still commits a real change to it - which is why the install is given
-      # a command that installs from the lock file rather than resolving against it. The trade is
-      # that a plan asking for a lock file to be *added* needs it added by hand - the rarer of the
-      # two, and the one that is obvious from the diff.
-      - name: Keep the install out of the commit
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
-        run: |
-          {
-            printf '/composer.lock\n'
-            printf '/vendor/\n'
-            printf '/package-lock.json\n'
-            printf '/yarn.lock\n'
-            printf '/node_modules/\n'
-          } >> .git/info/exclude
-
-      # One call for both ecosystems: the action installs whichever manifest is there, and the
-      # skip flags keep it to the ones detected above.
-      #
-      # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
-      # are arbitrary code out of the repository, and this job can mint a Claude API token from its
-      # own Github OIDC identity. NPM's lifecycle scripts have no such flag here, because
-      # npm-qa-checks runs them and half a JavaScript toolchain arrives as a platform binary a
-      # post-install script puts in place - an install that skipped them would leave the agent
-      # with a `node_modules` CI never has.
-      #
-      # Both tokens are scoped to this step, and `env:` in Actions is per-step - so the agent below
-      # inherits a populated `vendor/` and `node_modules`, and neither credential that filled them.
-      # Same property as `persist-credentials: false` on the checkout.
-      #
-      # No `--prefer-lowest` and no alternative lock file. The matrix legs that need those are
-      # CI's business; this installs what the branch says it depends on.
-      - name: Install the dependencies
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
-        uses: uniquesca/ci/install-packages@main
-        with:
-          skip_composer: ${{ steps.verify.outputs.php != 'true' }}
-          composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-          composer_cmd: 'composer install --no-scripts'
-          skip_npm_yarn: ${{ steps.verify.outputs.node != 'true' }}
-          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
-          npm_install_cmd: ${{ steps.verify.outputs.npm_cmd }}
-          yarn_install_cmd: ${{ steps.verify.outputs.yarn_cmd }}
-
-      # Whether installing changed anything git already tracks. A repository that commits its
-      # `vendor/` or its `node_modules` is the case that matters: the install then turns up inside
-      # the agent's commit, and in the diff somebody has to review.
-      #
-      # Reported rather than acted on. A repository that commits its dependencies arguably wants
-      # the install committed, and quietly reverting it here would break exactly those - so this
-      # says what happened and leaves it.
-      - name: Say what installing changed
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
-        run: |
-          if ! git diff --quiet; then
-            echo "::warning title=Installing the dependencies changed tracked files::This repository commits files the install writes to, so they will be part of this round's commit. The run log lists them."
-            echo "::group::Tracked files the install changed"
-            git diff --name-status
-            echo "::endgroup::"
-          fi
-
-      # Everything from here to the agent is about the application rather than the toolchain: its
-      # configuration rendered from the repository's own templates, and its containers brought up.
-      #
-      # Deliberately after the install and its diff above, which asks whether installing changed
-      # anything git tracks. Rendering a config file first would put it in that answer and report
-      # the install for a file it never touched.
-      #
-      # Detection rather than configuration, on the same terms as the step above: what the
-      # repository has is what decides. Two independent things are being looked for, and a
-      # repository can have either, both or neither.
+      # Detection rather than configuration: what the repository has is what decides. Two
+      # independent things are being looked for, and a repository can have either, both or neither.
       - name: Work out how this application is set up
         id: setup
         if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
@@ -1818,6 +1534,415 @@ jobs:
           && steps.docker_up.outcome == 'failure' }}
         run: |
           echo "::warning title=The application could not be brought up::Docker did not come up, so the agent has no container to run this project's checks in and is back to the artifact reports for what CI says. The step's log has why - an unresolvable token in a config template, an image on ghcr.io this repository has not been granted access to, and a compose file the branch itself broke, are the three to look at first"
+
+      # Which checks the agent can run on itself before it pushes, and whether anything has to
+      # be installed for it to. A red linter found here costs the agent a few turns; found after
+      # the push it costs a whole round - a second agent run, on a fresh context, working from an
+      # artifact instead of from the tool.
+      #
+      # **Detection is deliberately the same tests php-qa-checks makes** - a config file's
+      # presence, and for Psalm which of the two names it has. The two have to agree: an agent
+      # that checks a different set than CI reports itself clean and then goes red on the push,
+      # which is worse than not checking at all, because the round that would have caught it has
+      # already been spent.
+      #
+      # Where the install runs is the other half of the answer, and the container decides it: a
+      # `vendor/` resolved against the runner's PHP is not the one the image would have. The
+      # compose files bind-mount the working tree, so either route lands on the disk the agent
+      # reads from.
+      #
+      # The two ecosystems are answered independently, and route independently - a PHP application
+      # with an Angular front end is both, and `task.sh` carries the tasks it carries.
+      - name: Work out what the agent can check its work with
+        id: verify
+        if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
+        env:
+          DOCKER_UP: ${{ steps.docker_up.outcome }}
+        run: |
+          # `task.sh`'s own answer about itself, so a repository that has renamed or dropped a
+          # task is never handed one it cannot run. Nothing is up, nothing is supported, and
+          # everything below falls back to the runner.
+          supports() {
+            [[ -f 'task.sh' && "$DOCKER_UP" == 'success' ]] || return 1
+            ./task.sh supports "$1" > /dev/null 2>&1
+          }
+
+          # Handed to the agent verbatim by the step below, so that what it runs and what CI runs
+          # cannot drift apart in a prompt somebody edited later.
+          #
+          # One list across both ecosystems, in the order the agent should work through it: the
+          # fixer before the checker, for the same reason php-qa-checks runs it first - what a
+          # tool can fix should never reach a reviewer, and what is left after it is what the
+          # check will actually report.
+          commands=()
+
+          php='false'
+          php_runner='false'
+          composer_cmd='composer install --no-scripts'
+          if [[ -f 'composer.json' ]]; then
+            if supports composer; then
+              # No linter configuration is consulted here: the container's tasks and the
+              # application itself both run out of `vendor/`, recognised config or not.
+              php='true'
+              composer_cmd='./task.sh composer install --no-scripts'
+              echo "Composer dependencies are installed in the container: $composer_cmd"
+            else
+              # On the runner, `vendor/` is installed only where there is something in it to run.
+              # A repository with a `composer.json` and no linter configuration is left alone: the
+              # install would cost the round a minute and buy the agent nothing it is told about.
+              php_commands=()
+              if [[ -f 'phpcs.xml' || -f 'phpcs.xml.dist' ]]; then
+                php_commands+=('./vendor/bin/phpcbf' './vendor/bin/phpcs')
+              fi
+
+              # `--config` for the `.dist` name only. Psalm finds `psalm.xml` by itself and stops
+              # with "Could not locate a config file" on the other one.
+              if [[ -f 'psalm.xml' ]]; then
+                php_commands+=('./vendor/bin/psalm')
+              elif [[ -f 'psalm.xml.dist' ]]; then
+                php_commands+=('./vendor/bin/psalm --config=psalm.xml.dist')
+              fi
+
+              if [[ ${#php_commands[@]} -gt 0 ]]; then
+                php='true'
+                php_runner='true'
+                commands+=("${php_commands[@]}")
+                echo "Composer dependencies are installed on the runner: $composer_cmd"
+              else
+                echo "composer.json is here but there is no phpcs or psalm configuration - nothing to install Composer dependencies for"
+              fi
+            fi
+          fi
+
+          # `package.json` alone is enough, and deliberately a looser test than the runner's PHP
+          # one above. A JavaScript project keeps its whole toolchain in `node_modules` - the type
+          # checker, the framework CLI, the test runner are all binaries it unpacks - so there is
+          # always something for the agent to run, whether or not the package declares a script
+          # this workflow knows the name of.
+          node='false'
+          node_runner='false'
+          npm_cmd='npm install'
+          yarn_cmd='yarn install --production=false'
+          if [[ -f 'package.json' ]]; then
+            node='true'
+
+            # Yarn is chosen by `.yarnrc`, which is the test install-packages and npm-qa-checks
+            # both make - so the tool that installs is the tool CI installs with.
+            #
+            # A lock file is installed from rather than resolved against, because this round
+            # commits its working tree: `npm install` rewrites `package-lock.json`, and where the
+            # repository tracks that file the rewrite goes into the pull request as a change
+            # nobody asked for.
+            if [[ -f '.yarnrc' ]]; then
+              manager='yarn'
+              [[ -f 'yarn.lock' ]] && yarn_cmd='yarn install --frozen-lockfile --production=false'
+            else
+              manager='npm'
+              [[ -f 'package-lock.json' ]] && npm_cmd='npm ci'
+            fi
+
+            # The same package manager either way, run where this project's toolchain is:
+            # `node_modules` holds platform binaries, and the two machines cannot use each other's.
+            if supports "$manager"; then
+              if [[ "$manager" == 'yarn' ]]; then
+                yarn_cmd="./task.sh $yarn_cmd"
+                echo "Yarn is what this package is installed with, in the container: $yarn_cmd"
+              else
+                npm_cmd="./task.sh $npm_cmd"
+                echo "NPM is what this package is installed with, in the container: $npm_cmd"
+              fi
+            else
+              node_runner='true'
+              if [[ "$manager" == 'yarn' ]]; then
+                echo "Yarn is what this package is installed with, on the runner: $yarn_cmd"
+              else
+                echo "NPM is what this package is installed with, on the runner: $npm_cmd"
+              fi
+            fi
+
+            # `npm run`, whichever package manager installed, because that is what npm-qa-checks
+            # runs the scripts with - and the agent has to be told what CI does rather than what
+            # the repository's own convention is. In the container the script is reached through
+            # the manager `task.sh` supports, which is the only place its `node_modules` exists.
+            #
+            # Only these two names. A script this workflow invented would be one CI never runs,
+            # which is the one thing the agent must not be told.
+            #
+            # `jq`'s stderr is left alone: a `package.json` it cannot parse says so in the log
+            # rather than looking like a package that declares no scripts.
+            for script in lint test; do
+              if jq -e ".scripts.\"$script\"" package.json > /dev/null; then
+                if [[ "$node_runner" == 'true' ]]; then
+                  commands+=("npm run $script")
+                else
+                  commands+=("./task.sh $manager run $script")
+                fi
+              fi
+            done
+          fi
+
+          # A container install fills the container's cache volume, leaving the runner directory
+          # actions/cache is pointed at empty - so the container route is namespaced away from the
+          # key php-qa-checks reads, which would otherwise restore that empty cache.
+          cache_key=''
+          if [[ "$php" == 'true' && "$php_runner" == 'false' ]] \
+              || [[ "$node" == 'true' && "$node_runner" == 'false' ]]; then
+            cache_key='ai-container'
+          fi
+
+          # The commands leave as an output rather than as prose, because what the agent is told
+          # is the business of the step that knows whether their install worked.
+          #
+          # Deliberately never called "checks". That word already means the plan's `C` items in
+          # both prompts, and a second meaning for it here is how an agent ends up reporting `C2`
+          # as discharged because a linter came back clean.
+          {
+            printf 'php=%s\n' "$php"
+            printf 'php_runner=%s\n' "$php_runner"
+            printf 'node=%s\n' "$node"
+            printf 'node_runner=%s\n' "$node_runner"
+            printf 'composer_cmd=%s\n' "$composer_cmd"
+            printf 'npm_cmd=%s\n' "$npm_cmd"
+            printf 'yarn_cmd=%s\n' "$yarn_cmd"
+            printf 'cache_key=%s\n' "$cache_key"
+            echo 'commands<<COMMANDS'
+            [[ ${#commands[@]} -gt 0 ]] && printf '%s\n' "${commands[@]}"
+            echo 'COMMANDS'
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$php" == 'false' && "$node" == 'false' ]]; then
+            echo "There is nothing here to install, and the agent works out what it can run for itself"
+          fi
+
+      # Which PHP the checks run under, read from the same `_ci_environment.json` the QA matrix is
+      # built from. Without it the agent gets whatever `ubuntu-latest` happens to ship, which need
+      # not satisfy `composer.json`'s platform constraint - and the install then fails on the
+      # platform rather than on anything the agent did.
+      #
+      # One version, not the matrix. Proving every leg green stays CI's job; this is here so the
+      # agent can check itself before it pushes.
+      #
+      # The runner's install only. A container install runs under the image's PHP.
+      - name: Work out the PHP version to check under
+        id: php
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.php_runner == 'true' }}
+        uses: uniquesca/ci/get-default-ci-environment@main
+
+      - name: Set up PHP
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.php_runner == 'true' }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ fromJSON(steps.php.outputs.env)[0].php.version }}
+          extensions: ${{ fromJSON(steps.php.outputs.env)[0].php.extensions }}
+
+      # `_ci_environment.json` describes PHP and nothing else, so unlike the version above this
+      # one is an input rather than something read out of the repository. `package-manager-cache`
+      # is off because install-packages does the caching, keyed on the lock file.
+      - name: Set up Node
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.node_runner == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
+
+      # Installing with no lock file writes one, and a library here does not commit one - so
+      # without this the round's `git add -A` picks up a `composer.lock` or a `package-lock.json`
+      # the agent never asked for and pushes it as part of the change. The dependency directories
+      # are here for the repository that neither commits nor gitignores them, where the round
+      # would otherwise push every file the install wrote.
+      #
+      # `.git/info/exclude` only hides what git is not already tracking, so a repository that does
+      # commit its lock file still commits a real change to it - which is why the install is given
+      # a command that installs from the lock file rather than resolving against it. The trade is
+      # that a plan asking for a lock file to be *added* needs it added by hand - the rarer of the
+      # two, and the one that is obvious from the diff.
+      - name: Keep the install out of the commit
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
+        run: |
+          {
+            printf '/composer.lock\n'
+            printf '/vendor/\n'
+            printf '/package-lock.json\n'
+            printf '/yarn.lock\n'
+            printf '/node_modules/\n'
+          } >> .git/info/exclude
+
+          # What the install is measured against below. Bringing the application up renders this
+          # repository's config templates, and those are not the install's doing.
+          git diff --name-only | sort > "$RUNNER_TEMP/tracked-before-install"
+
+      # One call for both ecosystems: the action installs whichever manifest is there, the skip
+      # flags keep it to the ones detected above, and each command carries its own route - the
+      # container's through `task.sh`, the runner's not.
+      #
+      # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
+      # are arbitrary code out of the repository, and this job can mint a Claude API token from its
+      # own Github OIDC identity. NPM's lifecycle scripts have no such flag here, because
+      # npm-qa-checks runs them and half a JavaScript toolchain arrives as a platform binary a
+      # post-install script puts in place - an install that skipped them would leave the agent
+      # with a `node_modules` CI never has.
+      #
+      # Both tokens are scoped to this step, and `env:` in Actions is per-step - so the agent below
+      # inherits a populated `vendor/` and `node_modules`, and neither credential that filled them.
+      # Same property as `persist-credentials: false` on the checkout. Either route reads them out
+      # of the working tree the action writes them to, which is what the step below is a net under.
+      #
+      # No `--prefer-lowest` and no alternative lock file. The matrix legs that need those are
+      # CI's business; this installs what the branch says it depends on.
+      #
+      # `continue-on-error`, because a round the agent cannot check itself in is worth more than
+      # an issue that hears nothing at all.
+      - name: Install the dependencies
+        id: install
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
+        continue-on-error: true
+        uses: uniquesca/ci/install-packages@main
+        with:
+          skip_composer: ${{ steps.verify.outputs.php != 'true' }}
+          composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+          composer_cmd: ${{ steps.verify.outputs.composer_cmd }}
+          skip_npm_yarn: ${{ steps.verify.outputs.node != 'true' }}
+          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
+          npm_install_cmd: ${{ steps.verify.outputs.npm_cmd }}
+          yarn_install_cmd: ${{ steps.verify.outputs.yarn_cmd }}
+          cache_key: ${{ steps.verify.outputs.cache_key }}
+
+      # The install writes each registry's credentials into the working tree while it runs and
+      # takes them back out itself. This is a net under that: the agent below has a shell, and the
+      # round commits its working tree with `git add -A` - so a token left behind is a token pushed
+      # to a branch.
+      #
+      # `always()` so a failed install does not skip it. A file the repository itself commits is
+      # put back under its own name by the action, so what is left here to find is only ever
+      # generated.
+      - name: Take the registry credentials back out of the working tree
+        if: >-
+          ${{ always() && env.PROCEED == 'true'
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
+        run: |
+          for leftover in auth.json .npmrc; do
+            if [[ -f "$leftover" ]]; then
+              echo "::warning title=The install left a credential file behind::$leftover was still in the working tree after the install, so it was deleted before the agent could read it or the round could commit it. The install step's log has why it did not clean up after itself"
+              rm -f "$leftover"
+            fi
+          done
+
+      # The install is allowed to fail, so somewhere has to say that it did. A warning and not an
+      # error: what the round lost is the agent's way of checking itself rather than the work.
+      # Reads the step's own outcome, because `continue-on-error` leaves the job successful.
+      - name: Say the dependencies could not be installed
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.install.outcome == 'failure' }}
+        run: |
+          echo "::warning title=The dependencies could not be installed::The agent implements without them, so it is back to the artifact reports for what CI says about its work and it is told nothing it cannot run. The step's log has why - a private registry with no token configured, a token that has expired, and a lock file the branch itself broke, are the three to look at first"
+
+      # Whether installing changed anything git already tracks. A repository that commits its
+      # `vendor/` or its `node_modules` is the case that matters: the install then turns up inside
+      # the agent's commit, and in the diff somebody has to review.
+      #
+      # Against the baseline taken before the install rather than against `HEAD`, so a rendered
+      # config is not read back as something the install wrote.
+      #
+      # Reported rather than acted on. A repository that commits its dependencies arguably wants
+      # the install committed, and quietly reverting it here would break exactly those - so this
+      # says what happened and leaves it.
+      - name: Say what installing changed
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
+        run: |
+          git diff --name-only | sort > "$RUNNER_TEMP/tracked-after-install"
+
+          mapfile -t changed < <(comm -13 \
+            "$RUNNER_TEMP/tracked-before-install" "$RUNNER_TEMP/tracked-after-install")
+
+          if [[ ${#changed[@]} -gt 0 ]]; then
+            echo "::warning title=Installing the dependencies changed tracked files::This repository commits files the install writes to, so they will be part of this round's commit. The run log lists them."
+            echo "::group::Tracked files the install changed"
+            git diff --name-status -- "${changed[@]}"
+            echo "::endgroup::"
+          fi
+
+      # What the agent is told about its dependencies, and it has to be the truth: an agent told
+      # to run a linter out of a `vendor/` that is not there spends turns finding out.
+      #
+      # Read off the disk rather than from the install's outcome, because those are not the same
+      # answer - a partial install and a repository that commits its dependencies both end up here.
+      - name: Tell the agent what it can check its work with
+        id: verify_prompt
+        if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
+        env:
+          COMMANDS: ${{ steps.verify.outputs.commands }}
+        run: |
+          # Named by directory rather than by ecosystem, because a repository can have a
+          # `composer.json` this workflow installs nothing for and a `package.json` it does - and
+          # "your dependencies are installed" would then be a claim about a `vendor/` that is not
+          # there.
+          installed=()
+          [[ -d 'vendor' ]] && installed+=('`vendor/`')
+          [[ -d 'node_modules' ]] && installed+=('`node_modules`')
+
+          # A command is only worth naming where the install behind it is on the disk.
+          commands=()
+          if [[ ${#installed[@]} -gt 0 ]]; then
+            while IFS= read -r command; do
+              [[ -n "$command" ]] && commands+=("$command")
+            done <<< "$COMMANDS"
+          fi
+
+          {
+            echo 'instructions<<PROMPT'
+
+            if [[ ${#installed[@]} -gt 0 ]]; then
+              echo "This project's dependencies are installed for you, under $(printf '%s and ' "${installed[@]}" | sed 's/ and $//')."
+
+              # Worth its own sentence, because the binaries are not on the `PATH` a shell starts
+              # with and an agent that does not know they are there reaches for a global install.
+              # Unplaced deliberately: `./node_modules/.bin` is a container install's binaries
+              # named on the machine that cannot execute them.
+              if [[ -d 'node_modules' ]]; then
+                echo
+                echo "This project's own JavaScript tooling is among them: its type checker, its"
+                echo 'framework CLI and its test runner are binaries it unpacked, and running one'
+                echo 'of those is what runs the version this project pins.'
+              fi
+
+              if [[ ${#commands[@]} -gt 0 ]]; then
+                echo
+                echo 'These commands are what CI runs on whatever you push - whether or not the'
+                echo 'plan mentions them:'
+                echo
+                printf -- '- `%s`\n' "${commands[@]}"
+                echo
+                echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
+                echo 'what nobody should have to review, and what survives it is what CI reports.'
+                echo
+                echo 'Having these clean is the floor rather than the whole of it: they are what CI'
+                echo 'will say about your work, not everything that has to be true of it.'
+              fi
+            fi
+
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ ${#installed[@]} -eq 0 ]]; then
+            echo "There are no dependency directories in the working tree, and the agent is told nothing about any"
+          elif [[ ${#commands[@]} -gt 0 ]]; then
+            echo "The agent can run: ${commands[*]}"
+          else
+            echo "The dependencies are installed, and there is no command this workflow can name for the agent to check itself with"
+          fi
 
       # What the agent can run now that there is a container to run it in - the tasks
       # `docker-qa-checks` runs, asked about the same way, so that what the agent checks and what
@@ -2033,7 +2158,7 @@ jobs:
             are yours to execute, not to list. If you cannot get one passing, say so in
             your final message rather than leaving it quietly broken.
 
-            ${{ steps.verify.outputs.instructions }}
+            ${{ steps.verify_prompt.outputs.instructions }}
 
             ${{ steps.container.outputs.instructions }}
 
@@ -2178,7 +2303,7 @@ jobs:
             run this project's tests and linters, and fix what you break. A failing check in
             the feedback is yours to make pass, not to explain.
 
-            ${{ steps.verify.outputs.instructions }}
+            ${{ steps.verify_prompt.outputs.instructions }}
 
             ${{ steps.container.outputs.instructions }}
 
