@@ -3,13 +3,18 @@ import assert from 'node:assert/strict';
 import { applyFallbacks, resolveReferences } from '../src/environment.js';
 
 /**
- * Runs a callback with stdout captured, so that @actions/core annotations can be asserted on.
+ * Runs a callback with stdout captured, so that its warnings can be asserted on.
+ *
+ * GITHUB_ACTIONS is forced either way, so that the warning format does not depend on where the
+ * test suite itself runs.
  *
  * @param {() => any} callback
+ * @param {boolean} [underActions] - Whether to run as if inside a GitHub Actions runner.
  * @returns {{result: any, output: string}}
  */
-function captureOutput(callback) {
+function captureOutput(callback, underActions = false) {
     const original = process.stdout.write;
+    const originalEnv = process.env.GITHUB_ACTIONS;
     let output = '';
 
     process.stdout.write = (chunk) => {
@@ -17,10 +22,22 @@ function captureOutput(callback) {
         return true;
     };
 
+    if (underActions) {
+        process.env.GITHUB_ACTIONS = 'true';
+    } else {
+        delete process.env.GITHUB_ACTIONS;
+    }
+
     try {
         return { result: callback(), output };
     } finally {
         process.stdout.write = original;
+
+        if (originalEnv === undefined) {
+            delete process.env.GITHUB_ACTIONS;
+        } else {
+            process.env.GITHUB_ACTIONS = originalEnv;
+        }
     }
 }
 
@@ -65,10 +82,19 @@ test('deprecated "$name" fallback reference emits a deprecation warning', () => 
         { 'cache.host': '$db.host' }
     ));
 
-    assert.match(output, /::warning::/);
+    assert.match(output, /Warning: /);
     assert.match(output, /cache\.host/);
     assert.match(output, /\$\(db\.host\)/);
     assert.match(output, /removed in v11/);
+});
+
+test('the deprecation warning is a workflow annotation on a GitHub Actions runner', () => {
+    const { output } = captureOutput(() => prepare(
+        { 'db.host': '127.0.0.1' },
+        { 'cache.host': '$db.host' }
+    ), true);
+
+    assert.match(output, /::warning::Token fallback "cache\.host"/);
 });
 
 test('current "$(name)" fallback syntax resolves without a deprecation warning', () => {
@@ -78,7 +104,7 @@ test('current "$(name)" fallback syntax resolves without a deprecation warning',
     ));
 
     assert.equal(result['cache.host'], '127.0.0.1');
-    assert.doesNotMatch(output, /::warning::/);
+    assert.doesNotMatch(output, /[Ww]arning/);
 });
 
 test('deprecated "$name" syntax is not applied to provided variables', () => {
@@ -89,7 +115,7 @@ test('deprecated "$name" syntax is not applied to provided variables', () => {
     }));
 
     assert.equal(result['db.password'], '$2y$10$abcdefghijklmnopqrstuv');
-    assert.doesNotMatch(output, /::warning::/);
+    assert.doesNotMatch(output, /[Ww]arning/);
 });
 
 test('references are resolved inside provided variables, not only fallbacks', () => {
