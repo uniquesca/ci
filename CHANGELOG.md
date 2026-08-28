@@ -1251,3 +1251,7 @@
 ## v11.1.4
 
 * Update: fixed a process of deploying a sandbox for a coding agent to install dependencies properly (e8e82f5 by George Shestayev)
+
+## v11.1.5
+
+* Update: AI review agent will now respect things that have been settled before (3976e96 by George Shestayev)
