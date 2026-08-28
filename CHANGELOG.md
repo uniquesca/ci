@@ -1255,3 +1255,7 @@
 ## v11.1.5
 
 * Update: AI review agent will now respect things that have been settled before (3976e96 by George Shestayev)
+
+## v11.1.6
+
+* Fix: fixed usage of @actions/core in js that becomes part of the docker files (8472738 by George Shestayev)
