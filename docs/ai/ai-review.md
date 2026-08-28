@@ -133,6 +133,13 @@ history with **answered threads included**, so it can read the reply where its o
 addressed before deciding whether to raise it again. The working tree is the branch, and it is told
 to open the files around each hunk rather than review the diff in isolation.
 
+It also gets **what has already been decided**, separately from the open feedback: threads somebody
+resolved, and every review delivered on the branch before this round, its own included. A resolved
+thread stands whatever the agent makes of the code. Only the code under it moving reopens one, and
+the inline comment then has to say what moved. An approval is a baseline: the reviewer still runs,
+but it is handed the diff since the approved commit. A finding inside code already accepted has to
+be a real defect, and the summary has to say it is raised against an approval.
+
 Where there is no plan, the pull request's own title and description are the specification, and a
 closing keyword in that description is followed to the issue behind it - so one saying `Closes
 #4217` is still reviewed against why the work was wanted, while a number naming a pull request or an
@@ -149,14 +156,15 @@ an ordinary comment. The summary is never lost.
 
 ### Making the loop terminate
 
-A reviewer that always finds something never lets the loop end. Four things work against that: the
+A reviewer that always finds something never lets the loop end. Five things work against that: the
 [`max_unattended_rounds`](ai-implement.md#the-round-cap) cap, enforced in the implementing workflow;
 a round that changes nothing dispatching no review, so a stalled loop stops rather than spinning on
 one commit; a "no blocking concerns" verdict starting nothing, since only a changes-requested review
-does; and the agent being told at length that finding nothing is a valid outcome - not to manufacture
-a concern, not to request changes over a preference, and to accept a reasoned refusal rather than
-repeat the concern. If the cap is reached while it still wants changes, the pull request is left with
-a blocking review and a comment asking for a person.
+does; the settled record, so a concern somebody closed cannot come back as a fresh finding; and the
+agent being told at length that finding nothing is a valid outcome - not to manufacture a concern,
+not to request changes over a preference, and to accept a reasoned refusal rather than repeat the
+concern. If the cap is reached while it still wants changes, the pull request is left with a
+blocking review and a comment asking for a person.
 
 ### What the agent can and cannot do
 
