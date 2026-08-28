@@ -1,9 +1,27 @@
-import core from '@actions/core';
 import fs from 'fs';
 import path from 'path';
 
 /** Matches a value that consists of nothing but a single "$(name)" reference. */
 const WHOLE_REFERENCE_PATTERN = /^\$\(([^)]+)\)$/;
+
+/**
+ * Emits a warning.
+ *
+ * This module also runs inside Docker images, so @actions/core is deliberately not used here.
+ * Under GitHub Actions the message is written as a workflow annotation, elsewhere as a plain line.
+ *
+ * @param {string} message - The warning message.
+ * @returns {void}
+ */
+function warn(message) {
+    if (!process.env.GITHUB_ACTIONS) {
+        console.log(`Warning: ${message}`);
+        return;
+    }
+
+    const escaped = message.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+    console.log(`::warning::${escaped}`);
+}
 
 /**
  * Converts dot-notation keys to nested objects.
@@ -96,7 +114,7 @@ function normalizeLegacyReference(key, fallback) {
     }
 
     const reference = fallback.slice(1);
-    core.warning(
+    warn(
         `Token fallback "${key}" uses the deprecated "$name" reference syntax. `
         + `Use "$(${reference})" instead — the old syntax will be removed in v11.`
     );
