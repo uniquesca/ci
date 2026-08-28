@@ -461,7 +461,40 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           head_sha: ${{ steps.pull_request.outputs.head_sha }}
           include_answered_threads: true
+          settled_record: true
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
+
+      # An approval is a person saying the change was fine as it stood, and the review record
+      # carries the commit they said it on. That turns "respect the approval" into something the
+      # agent can see: the part of the branch nobody has looked at yet.
+      #
+      # Two dots, not three. The question here is what moved between the commit somebody read and
+      # the one under review, and both are on this branch - a merge base has nothing to do with it.
+      #
+      # The sha can be gone. A force-push rewrites the commits an approval was left on, and while
+      # Github keeps the review pointing at the old one, the branch no longer contains it. The
+      # approval still stands in `settled.json` either way; only the diff is unavailable, so this
+      # warns and moves on rather than failing a review over it.
+      - name: Stage what changed since the approval
+        id: approval_diff
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.stage_pr.outputs.approved_sha != '' }}
+        env:
+          SHA: ${{ steps.stage_pr.outputs.approved_sha }}
+          AT: ${{ steps.stage_pr.outputs.approved_at }}
+        run: |
+          if ! git cat-file -e "$SHA^{commit}" 2>/dev/null; then
+            echo "staged=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Approved commit is gone::The branch was approved at $AT on $SHA, which this branch no longer contains - it was force-pushed since. Staging the whole diff instead"
+            exit 0
+          fi
+
+          git diff "$SHA..HEAD" > .ai-review/since-approval.patch
+
+          echo "staged=true" >> "$GITHUB_OUTPUT"
+          echo "Staged what changed since $SHA was approved at $AT:" \
+               "$(git diff --shortstat "$SHA..HEAD")"
 
       - name: Review the change
         id: agent
@@ -516,7 +549,11 @@ jobs:
             - `.ai-review/feedback.json` - what has already been said on this pull request, and
               what CI currently thinks. Each entry has a `source` (`thread` for an inline
               comment, `review`, `comment`, `check` for a failing check), an `anchor`, a
-              `state`, and for a thread an `answered` flag.
+              `state`, and for a thread an `answered` flag. Everything in it is open.
+            - `.ai-review/settled.json` - what has already been **decided**: threads somebody
+              resolved, and the reviews delivered on this branch before this round, yours and
+              a person's. Same shape, and the two files never overlap. Nothing in it is open.
+            ${{ steps.approval_diff.outputs.staged == 'true' && format('- `.ai-review/since-approval.patch` - what changed after this branch was approved at {0}. That is the part nobody has read.', steps.stage_pr.outputs.approved_at) || '' }}
 
             **The working tree is the branch.** Do not review the diff in isolation - open the
             files it touches and read around each hunk. A comment that misses the function
@@ -527,7 +564,28 @@ jobs:
 
             ${{ steps.pull_request.outputs.trigger == 'command' && 'Somebody asked for this review by commenting on the pull request, and their comment is in the feedback below. If it names something to look at, look at that first - it is the closest thing you have to being briefed.' || '' }}
 
-            Before you raise anything, read `.ai-review/feedback.json` properly:
+            **A decision already taken is not yours to retake.** Read
+            `.ai-review/settled.json` before you raise anything:
+
+            - A thread with `state: "resolved"` was closed by a person. That is them saying it
+              is finished, and it stands whatever you make of the code. Do not raise it again.
+              The one thing that reopens it is the code under it having moved since - and then
+              say in the comment that you are reopening a resolved thread and what changed, so
+              whoever closed it can see why it is back.
+            - A `review` entry is a verdict already delivered on this branch. Where it is one of
+              yours, you have said this before and it has been acted on; where its concern now
+              sits in a resolved or answered thread, it is finished. Read what you
+              said last time before deciding you have found something, because the most likely
+              explanation for a problem you can see in round three is that you raised it in
+              round one.
+            - A review with `state: "approved"` is a person saying the change was fine as it
+              stood.
+              ${{ steps.approval_diff.outputs.staged == 'true' && 'Treat everything they read as settled and review `.ai-review/since-approval.patch` - what changed after it - as the change in front of you. You may still raise something inside the approved code, but only for a real defect they plainly missed, never a preference or a style point, and say in your summary that you are raising it against an approval.' || 'Treat the code as it stood then as settled, and confine yourself to what has changed since. You may still raise something inside it, but only for a real defect they plainly missed, and say in your summary that you are raising it against an approval.' }}
+
+            Finding nothing new since the last review is the ordinary outcome of a late round,
+            not a sign you have not looked hard enough.
+
+            Then read `.ai-review/feedback.json` properly:
 
             - A thread with `answered: true` is one where
               ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }}

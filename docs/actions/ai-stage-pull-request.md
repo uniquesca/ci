@@ -1,7 +1,8 @@
 # AI stage pull request
 
 Writes a pull request and everything asking for changes on it - review threads, review bodies,
-conversation comments and failing checks - into the checkout as one normalised feedback list.
+conversation comments and failing checks - into the checkout as one normalised feedback list, and
+what has already been decided on it as another.
 
 Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and by
 [`ai-review`](../ai/ai-review.md), which reads it to see what has already been said.
@@ -28,6 +29,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `round_marker` | no | `<!-- ai-implement-round -->` | First line of the round comment the caller posts. Used to count rounds and find the watermark |
 | `reply_marker` | no | `<!-- ai-implement-reply -->` | First line of a reply the implementing agent already posted |
 | `include_answered_threads` | no | `false` | Keep threads the implementing agent has already answered |
+| `settled_record` | no | `false` | Also write `settled.json` - the decisions already taken, where `feedback.json` is what is still open |
 | `ignore_check_patterns` | no | `(ai.implement\|ai.plan)` | Case-insensitive regular expression matching check runs to leave out |
 | `max_annotations` | no | `20` | How many annotations of a failing check to stage |
 
@@ -39,6 +41,9 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `feedback_count` | How many feedback items were staged, across every source |
 | `thread_count` | How many unresolved review threads were staged |
 | `check_count` | How many failing check runs were staged |
+| `settled_count` | How many items were written to `settled.json`. Zero when `settled_record` is off |
+| `approved_at` | When the newest approval by a person was submitted, empty when nobody has approved |
+| `approved_sha` | Commit that approval was submitted against - what the person actually read |
 | `checks_pending` | How many check runs had not finished yet |
 | `round` | Which round this run is, counting from 1 |
 | `unattended_rounds` | How many rounds in a row were triggered by a bot, counting back from the most recent |
@@ -54,6 +59,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 |---|---|
 | `pull-request.json` | Number, title, state, draft, body, head and base branch, url and size |
 | `feedback.json` | Every item asking for changes, one shape, oldest first |
+| `settled.json` | Every settled item, same shape, oldest first. Only with `settled_record` |
 
 A feedback item is `{id, source, author, is_bot, created_at, url, anchor, state, answered,
 reply_target, text}`, where `source` is `thread`, `review`, `comment` or `check`. A `thread` carries
@@ -76,6 +82,12 @@ A thread whose newest comment carries `reply_marker` has been answered and is le
 round would re-address the same comment forever. A human replying after the bot puts the thread back
 in play. `include_answered_threads` turns the exception off, which is what a reviewing agent wants -
 those threads are where its own last concern was met or argued with.
+
+`settled_record` writes what those rules leave out. `settled.json` is the exact complement of
+`feedback.json`: resolved threads, threads answered where `include_answered_threads` is off, and
+reviews from before the watermark. An approval is kept whatever its age, and even when its body is
+empty. Nothing appears in both files. `approved_at` and `approved_sha` name the newest approval by a
+person and the commit it was left on; a bot approving is not counted.
 
 Only the first 100 review threads are staged, with a warning when there are more.
 

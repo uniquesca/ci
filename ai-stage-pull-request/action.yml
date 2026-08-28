@@ -1,6 +1,6 @@
 name: AI stage pull request
 
-description: Write a pull request and everything asking for changes on it - review threads, review bodies, conversation comments and failing checks - into the checkout as one normalised feedback list
+description: Write a pull request and everything asking for changes on it - review threads, review bodies, conversation comments and failing checks - into the checkout as one normalised feedback list, and what has already been decided on it as another
 
 inputs:
   pull_request:
@@ -31,6 +31,10 @@ inputs:
     description: 'Keep threads the implementing agent has already answered. Off for an implementing agent, which would otherwise redo the same work every round; on for a reviewing agent, to which an answered thread is the most interesting kind - it is where its own last concern was addressed or argued with'
     required: false
     default: false
+  settled_record:
+    description: 'Also write `settled.json` - the decisions already taken on this pull request, where the feedback is what is still open. Resolved threads and reviews from before the watermark are dropped from the feedback by design, and an agent that cannot see them re-raises a concern somebody closed, or acts on one re-raised at it. The two files never overlap, so nothing is counted as work twice'
+    required: false
+    default: false
   ignore_check_patterns:
     description: 'Case-insensitive regular expression matching check runs to leave out. The AI workflows own check runs live on the same commit, and feeding a run its own red status back as a code defect sends it in circles'
     required: false
@@ -53,6 +57,15 @@ outputs:
   check_count:
     description: 'How many failing check runs were staged'
     value: ${{ steps.stage.outputs.check_count }}
+  settled_count:
+    description: 'How many items were written to settled.json. Zero when settled_record is off, and when nothing has been decided yet'
+    value: ${{ steps.stage.outputs.settled_count }}
+  approved_at:
+    description: 'When the newest approval by a person was submitted, empty when nobody has approved. An approval by a bot does not count - which login an agent reviews as is the caller''s to configure, so only a person approving means a person looked'
+    value: ${{ steps.stage.outputs.approved_at }}
+  approved_sha:
+    description: 'Commit that approval was submitted against - what the person actually read. Diffing it against the head separates the accepted part of the change from the part nobody has seen'
+    value: ${{ steps.stage.outputs.approved_sha }}
   checks_pending:
     description: 'How many check runs had not finished yet. Anything above zero means the commit is not known to be green, it is only not known to be red'
     value: ${{ steps.stage.outputs.checks_pending }}
@@ -92,6 +105,7 @@ runs:
         ROUND_MARKER: ${{ inputs.round_marker }}
         REPLY_MARKER: ${{ inputs.reply_marker }}
         INCLUDE_ANSWERED: ${{ inputs.include_answered_threads }}
+        SETTLED_RECORD: ${{ inputs.settled_record }}
         IGNORE_CHECKS: ${{ inputs.ignore_check_patterns }}
         MAX_ANNOTATIONS: ${{ inputs.max_annotations }}
       run: |
@@ -215,13 +229,14 @@ runs:
         # A reviewing agent wants the opposite: an answered thread is where its own last
         # concern was either met or argued with, and it has to read the answer to judge. So
         # the exception is switchable, and the `answered` flag says which is which either way.
+        #
+        # Whichever way that switch is set, the threads it excludes are the record of what has
+        # already been decided, and an agent that cannot see them re-raises a concern somebody
+        # closed. So both halves are kept: `open` is what this caller acts on, `settled` is
+        # everything else, and no thread is in both.
         jq --arg reply_marker "$REPLY_MARKER" --argjson include_answered "$INCLUDE_ANSWERED" '
-          [ .data.repository.pullRequest.reviewThreads.nodes[]? ]
-          | map(select(.isResolved == false))
-          | map(select((.comments.nodes | length) > 0))
-          | map(. + {answered: (.comments.nodes | last | .body | startswith($reply_marker))})
-          | map(select($include_answered or (.answered | not)))
-          | map(.comments.nodes[0] as $first | {
+          def normalise:
+            map(.comments.nodes[0] as $first | {
               id: .id,
               source: "thread",
               author: ($first.author.login // "unknown"),
@@ -233,14 +248,31 @@ runs:
                 line: (.line // .originalLine),
                 diff_hunk: ($first.diffHunk // "")
               },
-              state: (if .isOutdated then "outdated" else "unresolved" end),
+              state: (if .isResolved then "resolved"
+                      elif .isOutdated then "outdated"
+                      else "unresolved" end),
               answered: .answered,
               reply_target: $first.databaseId,
               text: (.comments.nodes
                      | map("@" + (.author.login // "unknown") + " wrote:\n" + (.body // ""))
                      | join("\n\n"))
-            })
-        ' "$tmp/threads-raw.json" > "$tmp/threads.json"
+            });
+
+          [ .data.repository.pullRequest.reviewThreads.nodes[]? ]
+          | map(select((.comments.nodes | length) > 0))
+          | map(. + {answered: (.comments.nodes | last | .body | startswith($reply_marker))})
+          | {
+              open: (map(select((.isResolved | not)
+                                and ($include_answered or (.answered | not))))
+                     | normalise),
+              settled: (map(select(.isResolved
+                                   or (.answered and ($include_answered | not))))
+                        | normalise)
+            }
+        ' "$tmp/threads-raw.json" > "$tmp/threads-split.json"
+
+        jq '.open' "$tmp/threads-split.json" > "$tmp/threads.json"
+        jq '.settled' "$tmp/threads-split.json" > "$tmp/settled-threads.json"
 
         # --- Review bodies --------------------------------------------------------------
         #
@@ -252,23 +284,60 @@ runs:
         # REST reports `CHANGES_REQUESTED` - these are lowercased so a caller comparing the
         # two does not silently never match.
         gh api --paginate --slurp "repos/$GH_REPO/pulls/$PR/reviews" \
-          | jq --arg since "$since" '
-              flatten
-              | map(select(.state != "PENDING"))
-              | map(select(((.body // "") | gsub("\\s"; "") | length) > 0))
-              | map(select((.submitted_at // "") > $since))
-              | map({
-                  id: ("review-" + (.id | tostring)),
-                  source: "review",
-                  author: (.user.login // "unknown"),
-                  is_bot: ((.user.type // "") == "Bot"),
-                  created_at: .submitted_at,
-                  url: (.html_url // ""),
-                  anchor: null,
-                  state: (.state // "" | ascii_downcase),
-                  reply_target: null,
-                  text: .body
-                })' > "$tmp/reviews.json"
+          | jq 'flatten | map(select(.state != "PENDING"))' > "$tmp/reviews-raw.json"
+
+        # Split the same way the threads are, and for the same reason. A review older than the
+        # watermark has been answered by the rounds after it, so it is not work - but it is
+        # the record of what this branch has been told, and a reviewer that cannot see its own
+        # last verdict delivers it again.
+        #
+        # An approval is the one review kept whatever its age, and the one kept with no body:
+        # `approved` with nothing written is somebody saying the change was fine, and the
+        # state carries it on its own.
+        jq --arg since "$since" '
+          def normalise:
+            map({
+              id: ("review-" + (.id | tostring)),
+              source: "review",
+              author: (.user.login // "unknown"),
+              is_bot: ((.user.type // "") == "Bot"),
+              created_at: .submitted_at,
+              url: (.html_url // ""),
+              anchor: null,
+              state: (.state // "" | ascii_downcase),
+              reply_target: null,
+              text: (if .has_body then .body
+                     elif .state == "APPROVED" then "Approved this pull request with no comment."
+                     else "Submitted a review with no comment." end)
+            });
+
+          map(. + {has_body: (((.body // "") | gsub("\\s"; "") | length) > 0)})
+          | {
+              open: (map(select(.has_body and ((.submitted_at // "") > $since)))
+                     | normalise),
+              settled: (map(select(((.has_body | not) or ((.submitted_at // "") <= $since))
+                                   and (.has_body or (.state == "APPROVED"))))
+                        | normalise)
+            }
+        ' "$tmp/reviews-raw.json" > "$tmp/reviews-split.json"
+
+        jq '.open' "$tmp/reviews-split.json" > "$tmp/reviews.json"
+        jq '.settled' "$tmp/reviews-split.json" > "$tmp/settled-reviews.json"
+
+        # The newest approval a person left, and the commit they left it on. A bot approving
+        # says nothing: which login an agent reviews as is the caller's to configure, so
+        # identity cannot tell an agent's verdict from a person's, but `Bot` can.
+        #
+        # Tab-separated because both halves are read at once and neither can contain one.
+        approval=$(jq -r '
+          [ .[] | select(.state == "APPROVED" and ((.user.type // "") != "Bot")) ]
+          | sort_by(.submitted_at // "")
+          | last
+          | if . == null then "\t"
+            else ((.submitted_at // "") + "\t" + (.commit_id // "")) end
+        ' "$tmp/reviews-raw.json")
+        approved_at=${approval%%$'\t'*}
+        approved_sha=${approval##*$'\t'}
 
         # --- Conversation comments ------------------------------------------------------
         #
@@ -302,7 +371,7 @@ runs:
         # review feedback nothing - an empty check list is a worse run, not a failed one.
         if ! gh api --paginate --slurp "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" \
              | jq 'map(.check_runs) | flatten' > "$tmp/check-runs.json"; then
-          echo "::warning title=Checks unreadable::Could not read the check runs for $HEAD_SHA - continuing without them. The job needs `checks: read`"
+          echo "::warning title=Checks unreadable::Could not read the check runs for $HEAD_SHA - continuing without them. The job needs 'checks: read'"
           echo '[]' > "$tmp/check-runs.json"
         fi
 
@@ -390,6 +459,25 @@ runs:
           "$tmp/threads.json" "$tmp/reviews.json" "$tmp/comments.json" "$tmp/checks.json" \
           > "$DIR/feedback.json"
 
+        # --- The settled record ---------------------------------------------------------
+        #
+        # The complement of `feedback.json`, in the same shape and sorted the same way. Every
+        # item in it is closed: a thread somebody resolved, a reply already given, a verdict
+        # already delivered. It is written as its own file rather than as more entries in the
+        # feedback, because both agents are told to work through every feedback item - and
+        # something already done arriving in that list is how a round redoes settled work.
+        #
+        # Only when the caller asks. A missing file means no caller staged one, an empty file
+        # that nothing has been decided yet.
+        settled_count=0
+        rm -f "$DIR/settled.json"
+
+        if [[ "$SETTLED_RECORD" == 'true' ]]; then
+          jq -s 'add | sort_by(.created_at // "")' \
+            "$tmp/settled-threads.json" "$tmp/settled-reviews.json" > "$DIR/settled.json"
+          settled_count=$(jq 'length' "$DIR/settled.json")
+        fi
+
         thread_count=$(jq 'length' "$tmp/threads.json")
         check_count=$(jq 'length' "$tmp/checks.json")
         feedback_count=$(jq 'length' "$DIR/feedback.json")
@@ -403,6 +491,9 @@ runs:
           printf 'feedback_count=%s\n' "$feedback_count"
           printf 'thread_count=%s\n' "$thread_count"
           printf 'check_count=%s\n' "$check_count"
+          printf 'settled_count=%s\n' "$settled_count"
+          printf 'approved_at=%s\n' "$approved_at"
+          printf 'approved_sha=%s\n' "$approved_sha"
           printf 'checks_pending=%s\n' "$checks_pending"
           printf 'round=%s\n' "$round"
           printf 'unattended_rounds=%s\n' "$unattended_rounds"
@@ -414,4 +505,5 @@ runs:
         echo "Staged pull request #$PR round $round: $feedback_count feedback item(s)" \
              "- $thread_count unresolved thread(s), $check_count failing check(s)," \
              "$checks_pending check(s) still running. Watermark $since, $unattended_rounds" \
-             "unattended round(s) behind us."
+             "unattended round(s) behind us." \
+             "$settled_count settled item(s)${approved_sha:+, approved by a person at $approved_at on $approved_sha}."

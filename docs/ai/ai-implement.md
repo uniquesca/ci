@@ -257,6 +257,10 @@ recorded when it started reading rather than when it finished, so a review submi
 is running lands on the next one. Threads and failing checks are read by **state** instead, because
 "still unresolved" and "currently red" are not questions about when something was said.
 
+What those rules exclude is staged separately as the settled record: threads already answered or
+resolved, and earlier reviews. None of it is work. Where the feedback asks again for something the
+record shows was settled, the round replies saying where it was settled and leaves the code alone.
+
 ### The round cap
 
 The count is only ever consecutive rounds a bot started, and any round a person asks for resets it

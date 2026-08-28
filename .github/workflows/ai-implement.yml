@@ -961,6 +961,11 @@ jobs:
           head_sha: ${{ steps.pull_request.outputs.head_sha }}
           round_marker: ${{ env.ROUND_MARKER }}
           reply_marker: ${{ env.REPLY_MARKER }}
+          # The threads left out of the feedback - the ones already answered or resolved - are
+          # what a round has to be able to point at when a reviewer asks again for something
+          # that was settled three rounds ago. Staged separately, because the feedback list is
+          # the work and this is only the record of it
+          settled_record: true
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
 
       # A plan revised since the last round is work in its own right, and nothing in the feedback
@@ -2254,6 +2259,10 @@ jobs:
                 check, its conclusion.
               - `reply_target` - the identifier you answer that thread on, or null.
               - `is_bot` - whether a machine wrote it. Weigh it on its merits either way.
+            - `.ai-review/settled.json` - what has already been decided on this pull request,
+              in the same shape: threads somebody resolved, threads you have already answered,
+              and the reviews delivered before this round. **It is a record, not a task list.**
+              Nothing in it is work, and finding something in it is never a reason to act.
             - `.ai-review/pull-request.json` - the pull request itself.
             - `.ai-plan/plan.md` - the approved plan this branch implements, if the issue
               still has one. It is the specification, and it may have been revised since the
@@ -2282,10 +2291,15 @@ jobs:
             A check that is red and not in the feedback was filtered out as one of the AI
             workflows' own.
 
-            Work through every item. For each one, either make the change or decide it should
-            not be made. Both are legitimate. A round that does what it was told against its
-            own better judgement is worse than one that pushes back with a reason - you have
-            read the code and the reviewer may not have.
+            Work through every item in `.ai-review/feedback.json`, and nothing outside it. For
+            each one, either make the change or decide it should not be made. Both are
+            legitimate. A round that does what it was told against its own better judgement is
+            worse than one that pushes back with a reason - you have read the code and the
+            reviewer may not have. Where an item asks again for something
+            `.ai-review/settled.json` shows was already settled, that is the clearest case for
+            pushing back: do not do the work a second time - reply on the thread saying it was
+            settled and name where. A reviewer repeating a resolved concern is the reviewer being wrong, and
+            a round that quietly complies is how the loop stops converging.
 
             ${{ steps.revision.outputs.instruction }}
 

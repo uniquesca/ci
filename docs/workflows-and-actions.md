@@ -134,7 +134,7 @@ out.
 | Action | What it does |
 |---|---|
 | [`ai-stage-issue`](actions/ai-stage-issue.md) | Writes an issue, its comments and its latest plan into the checkout |
-| [`ai-stage-pull-request`](actions/ai-stage-pull-request.md) | Writes a pull request and everything asking for changes on it into the checkout, as one feedback list |
+| [`ai-stage-pull-request`](actions/ai-stage-pull-request.md) | Writes a pull request into the checkout: what is asking for changes on it, and what is already settled |
 | [`ai-post-review`](actions/ai-post-review.md) | Submits the review an agent wrote, with its inline comments validated against the diff |
 | [`ai-post-review-replies`](actions/ai-post-review-replies.md) | Posts an agent's answer to each review thread it was given |
 | [`ai-qa-criteria`](actions/ai-qa-criteria.md) | Copies the plan's QA acceptance criteria into the pull request body, and keeps them in step with the plan |

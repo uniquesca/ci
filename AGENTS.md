@@ -8,7 +8,22 @@ release makes. **Your commit message is the changelog entry.** Prefix it `BREAKI
 `Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
 holds for every Uniques repository, not only this one.
 
-## Documentation
+# Documentation and comments
+
+Write documentation and code comments in plain, easily readable English, and
+keep them as short as they can be while still being clear. Review anything you
+write for AI slop and cut it.
+
+Add a comment only when the code cannot speak for itself:
+
+- when the code is not obvious and a reader needs the intent behind it, or
+- to protect a sensitive or fragile place from careless change or deletion.
+
+Do not add a comment that restates what the code plainly does, explains
+something a reader can deduce from the code, or states common sense. If a
+comment does not earn its place, leave it out.
+
+# Documentation
 
 Everything under `docs/` is laid out the same way: task-oriented sections first, then a single
 `## Dig deeper` heading, then the detail.
