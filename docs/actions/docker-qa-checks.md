@@ -1,7 +1,7 @@
 # Docker QA checks
 
-Runs a Docker-based repository's tests, code style check and Psalm through `task.sh`, fixes the code
-style first, and uploads what every check printed as an artifact.
+Runs a Docker-based repository's tests, code style check and Psalm through `task.sh`, fixes what the
+code style check reports, and uploads what every check printed as an artifact.
 
 For a repository that sets up PHP on the runner instead, use the
 [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) workflow.
@@ -20,7 +20,7 @@ For a repository that sets up PHP on the runner instead, use the
 | Input | Required | Default | Description |
 |---|---|---|---|
 | `setup_cmd` | no | `''` | Command to run before the checks |
-| `auto_fix` | no | `'true'` | Run `cs-fix` and commit what it fixed before the checks |
+| `auto_fix` | no | `'true'` | Run `cs-fix` and commit what it fixed when the code style check reports something |
 | `autofix_token` | no | `''` | Token the fixes are pushed with. Empty falls back to the run's own `GITHUB_TOKEN` |
 | `report_name` | no | `ai-report-qa-checks` | Artifact name the check output is uploaded as |
 
@@ -37,9 +37,9 @@ without Psalm is not failed for missing Psalm:
 
 | `task.sh` task | What runs |
 |---|---|
-| `cs-fix` | The code style fixer, before everything else |
+| `cs-check` | The code style check, before everything else |
+| `cs-fix` | The code style fixer, when that check reported something |
 | `test` | The test suite |
-| `cs-check` | The code style check |
 | `psalm` | Static analysis |
 
 Nothing else is set up for you - no PHP, no MySQL, no dependencies. The job is expected to have the
@@ -61,9 +61,10 @@ The upload runs on `always()`, since a failed run is the only one anybody wants 
 
 ### Code style fixing
 
-The fixer runs before every check, so a failing test cannot stop a ready fix from landing, and it
-is [`cs-fix`](cs-fix.md) with `cmd: ./task.sh cs-fix`. Supply `autofix_token` and the fix commit
-starts its own checks; leave it out and the job needs `permissions: contents: write` and somebody
-has to press *Approve workflows to run*. The full behaviour - the matrix race, the circuit breaker,
-when it does nothing - is in
+The code style is checked first, and the fixer runs only when that check reported something - before
+the tests, so a failing test cannot stop a ready fix from landing. It is [`cs-fix`](cs-fix.md) with
+`cmd: ./task.sh cs-fix`, and the check runs again afterwards to report whatever is left. Supply
+`autofix_token` and the fix commit starts its own checks; leave it out and the job needs
+`permissions: contents: write` and somebody has to press *Approve workflows to run*. The full
+behaviour - the matrix race, the circuit breaker, when it does nothing - is in
 [Automatic code style fixes](../qa-checks.md#automatic-code-style-fixes).

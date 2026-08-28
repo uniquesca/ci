@@ -48,14 +48,15 @@ What happens on each run:
    entry. For an unlocked one, an alternative `composer.<php-version>.lock` is used if the
    repository has one, and `composer update` otherwise. **NPM and Yarn are deliberately not
    touched** - that is what the NPM workflow is for.
-5. PHP_CodeSniffer runs in fixing mode, and whatever it fixed is committed back to the pull
-   request branch. This happens before the tests, so a failing test cannot stop a fix that is
-   ready from landing. [Details, and what it needs](#automatic-code-style-fixes).
-6. If `use_db` is set and the repository has PHPUnit, MySQL is started, the `phpunit`
+5. If `use_db` is set and the repository has PHPUnit, MySQL is started, the `phpunit`
    database is created, `db_dump_path` is imported, and `db_migration_cmd` runs.
-7. PHPUnit runs, then PHP_CodeSniffer, then Psalm. `fail-fast` is off, so one PHP version
-   failing does not cancel the others. Xdebug is in coverage mode for PHPUnit and off for
-   everything else, which is most of what keeps Composer, PHP_CodeSniffer and Psalm quick.
+6. PHP_CodeSniffer checks the code style. If it reports something, `phpcbf` fixes what it can, the
+   fixes are committed back to the pull request branch, and the check runs again to report what is
+   left. This is before the tests, so a failing test cannot stop a fix that is ready from landing.
+   [Details, and what it needs](#automatic-code-style-fixes).
+7. PHPUnit runs, then Psalm. `fail-fast` is off, so one PHP version failing does not cancel the
+   others. Xdebug is in coverage mode for PHPUnit and off for everything else, which is most of
+   what keeps Composer, PHP_CodeSniffer and Psalm quick.
 
 The MySQL steps are skipped entirely when the repository has no PHPUnit configuration -
 there would be nothing to use the database.
@@ -104,7 +105,7 @@ jobs:
 
 | Input | Type | Default | Description |
 |---|---|---|---|
-| `auto_fix` | boolean | `true` | Whether to [fix the code style and commit it](#automatic-code-style-fixes) before the checks run |
+| `auto_fix` | boolean | `true` | Whether to [fix what the code style check reports and commit it](#automatic-code-style-fixes) |
 | `setup_cmd` | string | `''` | Command to run before the checks execute |
 | `use_db` | boolean | `false` | Whether a database is needed, for example for unit tests |
 | `mysql_version` | string | `8.0` | Version of MySQL to set up |
@@ -189,9 +190,10 @@ does not apply - build the assets in the PHP workflow's `setup_cmd` instead.
 
 ## Automatic code style fixes
 
-On a pull request, PHP_CodeSniffer runs as `phpcbf` before anything else, and whatever it fixed
-is committed back to the branch as `CI: automatic code style fixes`. Only what no tool can fix
-reaches the code style check afterwards, and therefore a person.
+On a pull request, the code style is checked before it is fixed. If the check reports nothing - the
+common case - that is the end of it. If it reports something, PHP_CodeSniffer runs as `phpcbf`,
+whatever it fixed is committed back to the branch as `CI: automatic code style fixes`, and the check
+runs again. Only what no tool can fix reaches a person.
 
 This is [`cs-fix`](actions/cs-fix.md), used by both QA entry points - `php-qa-checks` and the
 [`docker-qa-checks`](#docker-qa-checks) action.
@@ -252,6 +254,7 @@ finishing, so on the fallback it waits on that approval as well.
 | `phpcbf` is not installed | Warning, nothing is fixed |
 | The branch moved on mid-run, or the push is refused | The fixer runs again against the branch as it now is, and that is what lands - see [below](#every-php-version-fixes-its-own). Only after one attempt per matrix leg does it warn, take the fixes back out of the working tree and let the code style check report them the way it used to |
 | `auto_fix: false` | The step does not run |
+| The code style check comes back clean | Nothing is fixed, and the fixer does not run |
 
 One rule runs through all of them, and it is the invariant worth remembering: **a job is green
 only if the fixes it made are on the branch.** A fix that cannot land is undone locally first, so
@@ -290,9 +293,9 @@ the working tree; a commit about code style is not where that should turn up.
 
 ### docker-qa-checks
 
-[`docker-qa-checks`](actions/docker-qa-checks.md) runs `./task.sh cs-fix`, skipped when `task.sh`
-does not support it. It is an action rather than a workflow, so the token is an input rather than a
-secret:
+[`docker-qa-checks`](actions/docker-qa-checks.md) checks with `./task.sh cs-check` and fixes with
+`./task.sh cs-fix`, skipped when `task.sh` does not support fixing. It is an action rather than a
+workflow, so the token is an input rather than a secret:
 
 ```yaml
     steps:
@@ -306,7 +309,7 @@ approval click as above.
 
 | Input | Default | Description |
 |---|---|---|
-| `auto_fix` | `'true'` | Whether to run `cs-fix` and commit what it fixed |
+| `auto_fix` | `'true'` | Whether to fix what the code style check reports and commit it |
 | `autofix_token` | `''` | Token the fixes are pushed with. Empty falls back to the run's own `GITHUB_TOKEN` |
 
 Everything else on this page applies unchanged.
