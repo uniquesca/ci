@@ -1259,3 +1259,7 @@
 ## v11.1.6
 
 * Fix: fixed usage of @actions/core in js that becomes part of the docker files (8472738 by George Shestayev)
+
+## v11.1.7
+
+* Update: improved php-related qa-checks to save time on green runs at the expense of extra time on red ones (eca9cb1 by George Shestayev)
