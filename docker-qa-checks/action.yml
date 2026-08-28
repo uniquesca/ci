@@ -12,7 +12,7 @@ inputs:
     default: 'ai-report-qa-checks'
     type: string
   auto_fix:
-    description: 'Whether to run `cs-fix` before the checks and commit what it fixed back to the pull request branch, so that a fixable problem does not become a check a developer has to act on. The job needs `permissions: contents: write` for the commit to land'
+    description: 'Whether to fix what the code style check reports, with `cs-fix`, and commit the fixes back to the pull request branch, so that a fixable problem does not become a check a developer has to act on. Nothing is fixed when the check comes back clean. The job needs `permissions: contents: write` for the commit to land'
     required: false
     default: 'true'
     type: string
@@ -36,9 +36,6 @@ runs:
       # does not look
       run: mkdir -p "$GITHUB_WORKSPACE/.ai-reports"
 
-    # Fixing comes before every check, so that a failing test cannot stop a fix that is ready from
-    # landing. What is left after it is what the code style check below reports - the problems no
-    # tool can fix.
     - name: Check whether the code style can be fixed automatically
       id: cs_fix_support
       if: ${{ inputs.auto_fix == 'true' }}
@@ -48,34 +45,57 @@ runs:
           echo "supported=true" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: Fix the code style
-      if: ${{ steps.cs_fix_support.outputs.supported == 'true' }}
-      uses: uniquesca/ci/cs-fix@main
-      with:
-        cmd: './task.sh cs-fix'
-        token: ${{ inputs.autofix_token }}
-        report_dir: ${{ github.workspace }}/.ai-reports
-
     # Every check below tees its output to a file as well as the log, and the files go up as an
     # artifact at the end - an implementing agent cannot read job logs, and a check run on its own
     # carries nothing but `Process completed with exit code 1`.
     #
     # `set -o pipefail` so that `tee` cannot return success for a task that failed, which would
     # turn every red check green.
+
+    # A failure here is held back for the fixer below, and reported by the re-check after it.
+    # Without a fixer to run, it is reported here.
+    - name: Run code quality checks
+      id: cs_check
+      shell: bash
+      env:
+        FIXABLE: ${{ steps.cs_fix_support.outputs.supported }}
+      run: |
+        set -o pipefail
+        if ! ./task.sh supports cs-check > /dev/null; then
+          exit 0
+        fi
+
+        status=0
+        ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log" || status=$?
+        if (( status != 0 )) && [[ "$FIXABLE" == 'true' ]]; then
+          echo 'failed=true' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        exit "$status"
+
+    - name: Fix the code style
+      id: cs_fix
+      if: ${{ steps.cs_check.outputs.failed == 'true' }}
+      uses: uniquesca/ci/cs-fix@main
+      with:
+        cmd: './task.sh cs-fix'
+        token: ${{ inputs.autofix_token }}
+        report_dir: ${{ github.workspace }}/.ai-reports
+
+    # What the fixer could not fix, which is the failure the check above held back
+    - name: Re-run code quality checks
+      if: ${{ steps.cs_fix.outcome == 'success' }}
+      shell: bash
+      run: |
+        set -o pipefail
+        ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log"
+
     - name: Run tests
       shell: bash
       run: |
         set -o pipefail
         if ./task.sh supports test > /dev/null; then
           ./task.sh test 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/test.log"
-        fi
-
-    - name: Run code quality checks
-      shell: bash
-      run: |
-        set -o pipefail
-        if ./task.sh supports cs-check > /dev/null; then
-          ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log"
         fi
 
     - name: Run Psalm

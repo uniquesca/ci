@@ -11,7 +11,7 @@ on:
         required: false
     inputs:
       auto_fix:
-        description: 'Whether to run PHP_CodeSniffer in fixing mode before the checks and commit what it fixed back to the pull request branch, so that a fixable problem does not become a check a developer has to act on'
+        description: 'Whether to fix what the code style check reports and commit the fixes back to the pull request branch, so that a fixable problem does not become a check a developer has to act on. Nothing is fixed when the check comes back clean'
         required: false
         default: true
         type: boolean
@@ -151,30 +151,6 @@ jobs:
           composer_lock: ${{ steps.prep-composer-cmd.outputs.lock_file }}
           skip_npm_yarn: true
 
-      # Before the tests rather than next to the code style check below, so that a failing test
-      # cannot stop a fix that is ready from landing. What is left after this is what the check
-      # reports - the problems no tool can fix.
-      #
-      # Every leg of the matrix does this, and they sort out between themselves which one lands its
-      # fixes: the loser of a race starts over from what the winner pushed, runs the fixer again and
-      # lands whatever its own PHP version fixes on top. A leg that still cannot land reverts, so its
-      # check reports the branch as it really is - no leg is ever green on the strength of a fix that
-      # is not on the branch
-      #
-      # `AUTOFIX_ACCESS_TOKEN` is what makes this fix and report green on its own: a `pull_request`
-      # run that the run's own `GITHUB_TOKEN` triggered is held until somebody presses "Approve
-      # workflows to run", so falling back to it fixes the code but still asks for a person. Without
-      # the secret the calling job needs `contents: write` for even that much
-      - name: Fix the code style
-        if: ${{ inputs.auto_fix && hashFiles('phpcs.xml', 'phpcs.xml.dist') != '' }}
-        uses: uniquesca/ci/cs-fix@main
-        with:
-          token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
-          report_dir: ${{ env.AI_REPORT_DIR }}
-          # One attempt per leg of the matrix: that is how many jobs can be racing to land a fix,
-          # and every one that wins costs the others the attempt they were mid-way through
-          attempts: ${{ strategy.job-total }}
-
       - name: Set up MySQL
         if: inputs.use_db == true && env.phpunit == 1
         uses: shogo82148/actions-setup-mysql@v1
@@ -210,6 +186,56 @@ jobs:
       # Every check below tees its output to a file as well as the log. `set -o pipefail` is
       # there because a `run:` step that does not name its shell does not get it, and without
       # it `tee` would return success for a tool that failed - turning every red check green.
+
+      # A failure here is held back for the fixer below, and reported by the re-check after it.
+      # With `auto_fix` off nothing is going to fix it, so it is reported here.
+      - name: Run PHP Codesniffer
+        id: cs_check
+        env:
+          AUTO_FIX: ${{ inputs.auto_fix }}
+        run: |
+          set -o pipefail
+          if [[ ! -f "phpcs.xml" ]] && [[ ! -f "phpcs.xml.dist" ]]; then
+            echo "No PHP_Codesniffer configuration file found, skipping code check."
+            exit 0
+          fi
+
+          status=0
+          ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log" || status=$?
+          if (( status != 0 )) && [[ "$AUTO_FIX" == 'true' ]]; then
+            echo 'failed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          exit "$status"
+
+      # Every leg of the matrix does this, and they sort out between themselves which one lands its
+      # fixes: the loser of a race starts over from what the winner pushed, runs the fixer again and
+      # lands whatever its own PHP version fixes on top. A leg that still cannot land reverts, so its
+      # check reports the branch as it really is - no leg is ever green on the strength of a fix that
+      # is not on the branch
+      #
+      # `AUTOFIX_ACCESS_TOKEN` is what makes this fix and report green on its own: a `pull_request`
+      # run that the run's own `GITHUB_TOKEN` triggered is held until somebody presses "Approve
+      # workflows to run", so falling back to it fixes the code but still asks for a person. Without
+      # the secret the calling job needs `contents: write` for even that much
+      - name: Fix the code style
+        id: cs_fix
+        if: steps.cs_check.outputs.failed == 'true'
+        uses: uniquesca/ci/cs-fix@main
+        with:
+          token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
+          report_dir: ${{ env.AI_REPORT_DIR }}
+          # One attempt per leg of the matrix: that is how many jobs can be racing to land a fix,
+          # and every one that wins costs the others the attempt they were mid-way through
+          attempts: ${{ strategy.job-total }}
+
+      # What the fixer could not fix, which is the failure the check above held back
+      - name: Re-run PHP Codesniffer
+        if: steps.cs_fix.outcome == 'success'
+        run: |
+          set -o pipefail
+          ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log"
+
       - name: Run PHPUnit
         if: env.phpunit == 1
         # `XDEBUG_MODE` overrides the `xdebug.mode` the setup step left off, and only for this
@@ -219,15 +245,6 @@ jobs:
         run: |
           set -o pipefail
           php ./vendor/bin/phpunit 2>&1 | tee "$AI_REPORT_DIR/phpunit.log"
-
-      - name: Run PHP Codesniffer
-        run: |
-          set -o pipefail
-          if [[ -f "phpcs.xml" ]] || [[ -f "phpcs.xml.dist" ]]; then
-            ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log"
-          else
-            echo "No PHP_Codesniffer configuration file found, skipping code check."
-          fi
 
       - name: Run Psalm
         run: |
