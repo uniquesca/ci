@@ -87,6 +87,16 @@ on:
         required: false
         default: 'coverage.svg'
         type: string
+      generate_coverage_report:
+        description: 'Whether an HTML unit test coverage report needs to be generated and committed'
+        required: false
+        default: false
+        type: boolean
+      coverage_report_dir:
+        description: 'Path to the directory for the coverage report - ignored if `generate_coverage_report` is not set to `true`'
+        required: false
+        default: 'docs/coverage-report'
+        type: string
 
 jobs:
   get-environment:
@@ -254,11 +264,21 @@ jobs:
       - name: Run PHPUnit
         if: env.phpunit == 1
         # `XDEBUG_MODE` overrides the `xdebug.mode` the setup step left off, and only for this
-        # step. The coverage badge below is generated from what this run reports, so turning it
-        # on here is what keeps that badge from reading zero
+        # step. The coverage badge and the report below are both generated from what this run
+        # reports, so turning it on here is what keeps them from reading zero
         env:
           XDEBUG_MODE: coverage
-        run: php ./vendor/bin/phpunit --configuration phpunit.xml
+          COVERAGE_REPORT_DIR: ${{ (inputs.generate_coverage_report && inputs.coverage_report_dir) || '' }}
+        run: |
+          coverage_args=()
+          if [[ -n "$COVERAGE_REPORT_DIR" ]]; then
+            # PHPUnit writes into the directory without clearing it first, so a class that has
+            # been deleted keeps the page it had at the last release until the directory goes
+            rm -rf "$COVERAGE_REPORT_DIR"
+            coverage_args=(--coverage-html "$COVERAGE_REPORT_DIR")
+          fi
+
+          php ./vendor/bin/phpunit --configuration phpunit.xml "${coverage_args[@]}"
 
       - name: Generate coverage badge
         if: ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}
@@ -299,6 +319,10 @@ jobs:
           
           if ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}; then
             git add ${{ inputs.coverage_badge_file }}
+          fi
+          
+          if ${{ env.phpunit == 1 && inputs.generate_coverage_report == true }}; then
+            git add -A ${{ inputs.coverage_report_dir }}
           fi
           
           git clean -fd
