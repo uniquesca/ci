@@ -6,7 +6,7 @@ has no shell and no network of its own.
 Used by [`ai-plan`](../ai/ai-plan.md) and [`ai-implement`](../ai/ai-implement.md).
 
 ```yaml
-- uses: uniquesca/ci/ai-stage-issue@main
+- uses: uniquesca/ci/ai-stage-issue@v11
   id: issue
   with:
     issue: ${{ github.event.issue.number }}

@@ -4,7 +4,7 @@ Brings the application up in Docker on the runner: renders the config files, log
 one is given, starts the containers and waits for MySQL to answer.
 
 ```yaml
-- uses: uniquesca/ci/docker-spin-up@main
+- uses: uniquesca/ci/docker-spin-up@v11
   with:
     env_variables: ${{ secrets.ENV_VARIABLES }}
     hostname: app.local

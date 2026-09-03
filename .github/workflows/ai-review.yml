@@ -441,7 +441,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.pull_request.outputs.issue != '' }}
-        uses: uniquesca/ci/ai-stage-issue@main
+        uses: uniquesca/ci/ai-stage-issue@v11
         with:
           issue: ${{ steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
@@ -454,7 +454,7 @@ jobs:
       - name: Stage the review history
         id: stage_pr
         if: ${{ success() && env.PROCEED == 'true' }}
-        uses: uniquesca/ci/ai-stage-pull-request@main
+        uses: uniquesca/ci/ai-stage-pull-request@v11
         with:
           pull_request: ${{ steps.pull_request.outputs.number }}
           repository: ${{ github.repository }}
@@ -674,7 +674,7 @@ jobs:
       - name: Report on the run
         id: report
         if: ${{ always() && steps.agent.outcome != 'skipped' }}
-        uses: uniquesca/ci/ai-run-report@main
+        uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.agent.outputs.execution_file }}
           verb: 'Reviewed'
@@ -728,7 +728,7 @@ jobs:
       - name: Submit the review
         id: submit
         if: ${{ success() && env.PROCEED == 'true' }}
-        uses: uniquesca/ci/ai-post-review@main
+        uses: uniquesca/ci/ai-post-review@v11
         with:
           pull_request: ${{ steps.pull_request.outputs.number }}
           repository: ${{ github.repository }}

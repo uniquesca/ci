@@ -11,7 +11,7 @@ Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) a
   id: agent
   # ...
 
-- uses: uniquesca/ci/ai-run-report@main
+- uses: uniquesca/ci/ai-run-report@v11
   if: always()
   id: report
   with:

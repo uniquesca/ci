@@ -1,8 +1,8 @@
 # Docker prepare release
 
 Does the release bookkeeping for a Docker-based repository and commits it: version fields in
-`composer.json` and `package.json`, the changelog section, optionally a refreshed database dump and
-a coverage badge.
+`composer.json` and `package.json`, the changelog section, optionally a refreshed database dump, a
+coverage badge and a coverage report.
 
 This is the step-level counterpart of the
 [`prepare-release`](../workflows/prepare-release.md) workflow, for a job that already has the
@@ -14,9 +14,9 @@ application running in Docker.
         with:
           fetch-depth: 0
 
-      - uses: uniquesca/ci/docker-spin-up@main
+      - uses: uniquesca/ci/docker-spin-up@v11
 
-      - uses: uniquesca/ci/docker-prepare-release@main
+      - uses: uniquesca/ci/docker-prepare-release@v11
         with:
           version: ${{ needs.version.outputs.version }}
 ```
@@ -33,6 +33,8 @@ application running in Docker.
 | `db_dump_path` | no | | Dump to write. Ignored unless `update_db` |
 | `generate_coverage_badge` | no | `false` | Run `./task.sh test` and commit a coverage badge |
 | `coverage_badge_file` | no | `coverage.svg` | Badge path. Ignored unless `generate_coverage_badge` |
+| `generate_coverage_report` | no | `false` | Run `./task.sh test` and commit an HTML coverage report |
+| `coverage_report_dir` | no | `coverage-report` | Report directory. Ignored unless `generate_coverage_report` |
 
 ## Outputs
 
@@ -46,7 +48,8 @@ This action produces no outputs - it commits to the current branch and pushes.
 2. Sets `version` in `composer.json`, adding the field if it is not there. Skipped when the
    repository has no `composer.json`.
 3. Writes the changelog section with [`update-changelog`](update-changelog.md).
-4. Runs `./task.sh test` and generates the coverage badge, if `generate_coverage_badge`.
+4. Runs `./task.sh test`, if `generate_coverage_badge` or `generate_coverage_report`, and generates
+   the badge from what it reports.
 5. Sets `version` in `package.json` with `npm pkg set`. Skipped when there is no `package.json`.
 6. Stages whatever the above touched, runs `git clean -fd`, and commits as
    `CI: automatic commit for the new release: #<sha> [skip ci]` - then pushes. Nothing is committed
@@ -59,10 +62,15 @@ This action produces no outputs - it commits to the current branch and pushes.
 * A checkout with **`fetch-depth: 0`** and a branch to push to - the changelog reads tags and
   history, and the commit goes back to the branch the run is on.
 * **`permissions: contents: write`**, since the push uses the run's own token.
-* The application already **up in Docker** if you are using `update_db` or
-  `generate_coverage_badge` - the dump is taken over the network from `127.0.0.1:3306` as
-  `root`/`root`, and the badge comes from `./task.sh test`. Use
+* The application already **up in Docker** if you are using `update_db`,
+  `generate_coverage_badge` or `generate_coverage_report` - the dump is taken over the network from
+  `127.0.0.1:3306` as `root`/`root`, and the badge and the report come from `./task.sh test`. Use
   [`docker-spin-up`](docker-spin-up.md) first.
+* A `task.sh test` that **honours `COVERAGE_HTML_DIR`** if you are using
+  `generate_coverage_report`. The tests run in the container, so the action only sets the variable
+  to `coverage_report_dir`; forwarding it in and passing PHPUnit `--coverage-html` is the task
+  script's job, and a script that ignores it writes no report. The directory is emptied before the
+  run and staged with a plain `git add`, so one in `.gitignore` fails the commit step.
 
 ### What it does not do
 
@@ -70,7 +78,8 @@ This action produces no outputs - it commits to the current branch and pushes.
 migrate the dump first belongs in [`migrate-db-dump`](migrate-db-dump.md), or in the
 [`prepare-release`](../workflows/prepare-release.md) workflow, which takes a `migration_command`.
 
-No tests either, unless you asked for a coverage badge - the badge is the only reason it runs them.
+No tests either, unless you asked for a coverage badge or report - those are the only reasons it
+runs them.
 
 ### Which of the two to use
 

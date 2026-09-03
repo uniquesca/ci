@@ -7,7 +7,7 @@ Imports a SQL dump into a database with the `mysql` client. The database has to 
   run: mysql -u root -proot --execute="CREATE DATABASE phpunit;"
 
 - name: Import the dump
-  uses: uniquesca/ci/mysql-import@main
+  uses: uniquesca/ci/mysql-import@v11
   with:
     dump_file_path: 'db/dump.sql'
     db_name: phpunit

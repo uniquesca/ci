@@ -9,7 +9,7 @@ call it at *job* level with `uses:`, it brings its own runners, jobs and matrix,
 ```yaml
 jobs:
   php-qa:
-    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@v11
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
 ```
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: uniquesca/ci/install-packages@main
+      - uses: uniquesca/ci/install-packages@v11
         with:
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
 ```
@@ -62,7 +62,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | Workflow | What it does |
 |---|---|
 | [`get-version.yml`](workflows/get-version.md) | Works out the version from a `release/**` or `hotfix/**` branch, or a tag |
-| [`prepare-release.yml`](workflows/prepare-release.md) | Writes the version and changelog, optionally migrates the DB dump and builds a coverage badge, and commits it all |
+| [`prepare-release.yml`](workflows/prepare-release.md) | Writes the version and changelog, optionally migrates the DB dump and builds a coverage badge and report, and commits it all |
 | [`publish-npm.yml`](workflows/publish-npm.md) | Builds and publishes the package to the Github registry, and publishes a Github release |
 
 ### Deployment
@@ -142,9 +142,11 @@ out.
 
 ## Pinning a version
 
-Every example here uses `@main`. Tags exist for each release, and pinning to one -
-`uniquesca/ci/install-packages@10.3.1` - is what keeps a change here from reaching your pipeline
-before you are ready for it. `@main` is fine for a repository whose CI you are actively working on.
+Every example here uses `@v11` - the branch that carries the latest v11 release, and the one to reach
+for. The workflows and actions reference each other at `@v11` too, so a `@v11` caller stays inside
+v11 code, and a change that breaks a caller goes to `v12` instead. Tags exist for each release, and
+pinning to one - `uniquesca/ci/install-packages@11.1.7` - freezes your pipeline exactly. `@main` is
+the tip, for a repository whose CI you are actively working on.
 
 ## Not on this page
 

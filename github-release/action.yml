@@ -53,7 +53,7 @@ runs:
       run: mkdir -p _github_ci_changelog
 
     - name: Generate changelog for the release
-      uses: uniquesca/ci/update-changelog@main
+      uses: uniquesca/ci/update-changelog@v11
       with:
         mode: 'raw'
         offset: 1

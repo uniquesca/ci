@@ -116,13 +116,13 @@ runs:
 
     - name: Prepare environment variables
       id: merge_env_variables
-      uses: uniquesca/ci/merge-environment-variables@main
+      uses: uniquesca/ci/merge-environment-variables@v11
       with:
         variables1: ${{ format('{{"docker.user_map":"{0}"}}', steps.uid_gid.outputs.result) }}
         variables2: ${{ inputs.env_variables }}
 
     - name: Prepare environment
-      uses: uniquesca/ci/prepare-environment@main
+      uses: uniquesca/ci/prepare-environment@v11
       with:
         env_variables: ${{ steps.merge_env_variables.outputs.variables }}
         working_directory: ${{ inputs.working_directory }}

@@ -7,7 +7,7 @@ Used by [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) and
 [`docker-qa-checks`](docker-qa-checks.md); call it directly when your job runs a fixer of its own.
 
 ```yaml
-- uses: uniquesca/ci/cs-fix@main
+- uses: uniquesca/ci/cs-fix@v11
   with:
     token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
     # As many attempts as there are jobs racing to land a fix

@@ -39,13 +39,23 @@ inputs:
     required: false
     default: 'coverage.svg'
     type: string
+  generate_coverage_report:
+    description: 'Whether an HTML unit test coverage report needs to be generated and committed'
+    required: false
+    default: false
+    type: boolean
+  coverage_report_dir:
+    description: 'Path to the directory for the coverage report - ignored if `generate_coverage_report` is not set to `true`'
+    required: false
+    default: 'docs/coverage-report'
+    type: string
 
 runs:
   using: composite
   steps:
     - name: Export DB dump
       if: inputs.update_db == 'true'
-      uses: uniquesca/ci/mysql-export@main
+      uses: uniquesca/ci/mysql-export@v11
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: ${{ inputs.db_name }}
@@ -68,15 +78,27 @@ runs:
 
     - name: Update changelog file
       if: ${{ inputs.generate_changelog == 'true' }}
-      uses: uniquesca/ci/update-changelog@main
+      uses: uniquesca/ci/update-changelog@v11
       with:
         working_directory: ${{ inputs.changelog_dir }}
         target_version: ${{ inputs.version }}
 
     - name: Run tests
-      if: inputs.generate_coverage_badge == 'true'
+      if: inputs.generate_coverage_badge == 'true' || inputs.generate_coverage_report == 'true'
       shell: bash
-      run: ./task.sh test
+      # The tests run inside the container, so the report directory is handed to `task.sh` as an
+      # environment variable for it to forward to PHPUnit as `--coverage-html`. A repository whose
+      # task script ignores `COVERAGE_HTML_DIR` gets the tests and no report
+      env:
+        COVERAGE_HTML_DIR: ${{ (inputs.generate_coverage_report == 'true' && inputs.coverage_report_dir) || '' }}
+      run: |
+        if [[ -n "$COVERAGE_HTML_DIR" ]]; then
+          # PHPUnit writes into the directory without clearing it first, so a class that has been
+          # deleted keeps the page it had at the last release until the directory goes
+          rm -rf "$COVERAGE_HTML_DIR"
+        fi
+
+        ./task.sh test
 
     - name: Generate coverage badge
       if: inputs.generate_coverage_badge == 'true'
@@ -116,6 +138,10 @@ runs:
         
         if ${{ inputs.generate_coverage_badge == 'true' }}; then
           git add ${{ inputs.coverage_badge_file }}
+        fi
+        
+        if ${{ inputs.generate_coverage_report == 'true' }}; then
+          git add -A ${{ inputs.coverage_report_dir }}
         fi
         
         git clean -fd

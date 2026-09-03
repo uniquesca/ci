@@ -87,6 +87,16 @@ on:
         required: false
         default: 'coverage.svg'
         type: string
+      generate_coverage_report:
+        description: 'Whether an HTML unit test coverage report needs to be generated and committed'
+        required: false
+        default: false
+        type: boolean
+      coverage_report_dir:
+        description: 'Path to the directory for the coverage report - ignored if `generate_coverage_report` is not set to `true`'
+        required: false
+        default: 'docs/coverage-report'
+        type: string
 
 jobs:
   get-environment:
@@ -104,7 +114,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - id: env
-        uses: uniquesca/ci/get-default-ci-environment@main
+        uses: uniquesca/ci/get-default-ci-environment@v11
 
   prepare-release:
     name: Prepare release
@@ -155,14 +165,14 @@ jobs:
       - name: Prepare environment variables
         if: env.phpunit == 1 || inputs.use_db || inputs.update_db
         id: merge_environment_vars
-        uses: uniquesca/ci/merge-environment-variables@main
+        uses: uniquesca/ci/merge-environment-variables@v11
         with:
           variables1: ${{ inputs.env_variables }}
           variables2: '{"db.dbname":"prepare_release","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Prepare environment configs
         if: env.phpunit == 1 || inputs.use_db || inputs.update_db
-        uses: uniquesca/ci/prepare-environment@main
+        uses: uniquesca/ci/prepare-environment@v11
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
@@ -178,7 +188,7 @@ jobs:
           ini-values: xdebug.mode=off
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@main
+        uses: uniquesca/ci/install-packages@v11
         with:
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
@@ -207,7 +217,7 @@ jobs:
 
       - name: Import DB
         if: inputs.use_db || inputs.update_db
-        uses: uniquesca/ci/mysql-import@main
+        uses: uniquesca/ci/mysql-import@v11
         with:
           dump_file_path: ${{ inputs.db_dump_path }}
           db_name: prepare_release
@@ -223,7 +233,7 @@ jobs:
 
       - name: Export DB dump
         if: inputs.update_db
-        uses: uniquesca/ci/mysql-export@main
+        uses: uniquesca/ci/mysql-export@v11
         with:
           dump_file_path: ${{ inputs.db_dump_path }}
           db_name: prepare_release
@@ -246,7 +256,7 @@ jobs:
 
       - name: Update changelog file
         if: ${{ inputs.generate_changelog == true }}
-        uses: uniquesca/ci/update-changelog@main
+        uses: uniquesca/ci/update-changelog@v11
         with:
           working_directory: ${{ inputs.changelog_dir }}
           target_version: ${{ inputs.version }}
@@ -254,11 +264,21 @@ jobs:
       - name: Run PHPUnit
         if: env.phpunit == 1
         # `XDEBUG_MODE` overrides the `xdebug.mode` the setup step left off, and only for this
-        # step. The coverage badge below is generated from what this run reports, so turning it
-        # on here is what keeps that badge from reading zero
+        # step. The coverage badge and the report below are both generated from what this run
+        # reports, so turning it on here is what keeps them from reading zero
         env:
           XDEBUG_MODE: coverage
-        run: php ./vendor/bin/phpunit --configuration phpunit.xml
+          COVERAGE_REPORT_DIR: ${{ (inputs.generate_coverage_report && inputs.coverage_report_dir) || '' }}
+        run: |
+          coverage_args=()
+          if [[ -n "$COVERAGE_REPORT_DIR" ]]; then
+            # PHPUnit writes into the directory without clearing it first, so a class that has
+            # been deleted keeps the page it had at the last release until the directory goes
+            rm -rf "$COVERAGE_REPORT_DIR"
+            coverage_args=(--coverage-html "$COVERAGE_REPORT_DIR")
+          fi
+
+          php ./vendor/bin/phpunit --configuration phpunit.xml "${coverage_args[@]}"
 
       - name: Generate coverage badge
         if: ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}
@@ -299,6 +319,10 @@ jobs:
           
           if ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}; then
             git add ${{ inputs.coverage_badge_file }}
+          fi
+          
+          if ${{ env.phpunit == 1 && inputs.generate_coverage_report == true }}; then
+            git add -A ${{ inputs.coverage_report_dir }}
           fi
           
           git clean -fd

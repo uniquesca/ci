@@ -6,7 +6,7 @@ validated against the lines the diff actually has.
 Used by [`ai-review`](../ai/ai-review.md).
 
 ```yaml
-- uses: uniquesca/ci/ai-post-review@main
+- uses: uniquesca/ci/ai-post-review@v11
   id: review
   with:
     pull_request: ${{ steps.pr.outputs.number }}

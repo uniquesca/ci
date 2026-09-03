@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - id: env
-        uses: uniquesca/ci/get-default-ci-environment@main
+        uses: uniquesca/ci/get-default-ci-environment@v11
 
   release:
     needs: [ environment ]

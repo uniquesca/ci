@@ -76,7 +76,7 @@ runs:
     - name: Fix the code style
       id: cs_fix
       if: ${{ steps.cs_check.outputs.failed == 'true' }}
-      uses: uniquesca/ci/cs-fix@main
+      uses: uniquesca/ci/cs-fix@v11
       with:
         cmd: './task.sh cs-fix'
         token: ${{ inputs.autofix_token }}
