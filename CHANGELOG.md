@@ -1263,3 +1263,4 @@
 ## v11.1.7
 
 * Update: improved php-related qa-checks to save time on green runs at the expense of extra time on red ones (eca9cb1 by George Shestayev)
+* Update: introduced proper versioning in CI framework (570c8ca6 by George Shestayev)
