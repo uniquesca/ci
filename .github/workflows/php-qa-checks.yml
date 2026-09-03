@@ -68,7 +68,7 @@ jobs:
 
       - name: Get QA matrix
         id: matrix
-        uses: uniquesca/ci/qa-ci-matrix@main
+        uses: uniquesca/ci/qa-ci-matrix@v11
 
   php-qa:
     name: Run PHP QA checks
@@ -114,13 +114,13 @@ jobs:
 
       - name: Prepare environment variables
         id: merge_environment_vars
-        uses: uniquesca/ci/merge-environment-variables@main
+        uses: uniquesca/ci/merge-environment-variables@v11
         with:
           variables1: ${{ inputs.env_variables }}
           variables2: '{"db.dbname":"phpunit","db.username":"root","db.password":"root","db.host":"127.0.0.1","db.port":"3306"}'
 
       - name: Set up environment
-        uses: uniquesca/ci/prepare-environment@main
+        uses: uniquesca/ci/prepare-environment@v11
         with:
           env_variables: ${{ steps.merge_environment_vars.outputs.variables }}
 
@@ -144,7 +144,7 @@ jobs:
           echo "cmd=$composer_cmd" >> $GITHUB_OUTPUT
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@main
+        uses: uniquesca/ci/install-packages@v11
         with:
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
           composer_cmd: ${{ steps.prep-composer-cmd.outputs.cmd }}
@@ -174,7 +174,7 @@ jobs:
 
       - name: Import database dump
         if: inputs.use_db == true && env.phpunit == 1
-        uses: uniquesca/ci/mysql-import@main
+        uses: uniquesca/ci/mysql-import@v11
         with:
           dump_file_path: ${{ inputs.db_dump_path }}
           db_name: 'phpunit'
@@ -221,7 +221,7 @@ jobs:
       - name: Fix the code style
         id: cs_fix
         if: steps.cs_check.outputs.failed == 'true'
-        uses: uniquesca/ci/cs-fix@main
+        uses: uniquesca/ci/cs-fix@v11
         with:
           token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
           report_dir: ${{ env.AI_REPORT_DIR }}

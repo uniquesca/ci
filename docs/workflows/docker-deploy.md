@@ -15,7 +15,7 @@ on:
 
 jobs:
   deploy:
-    uses: uniquesca/ci/.github/workflows/docker-deploy.yml@main
+    uses: uniquesca/ci/.github/workflows/docker-deploy.yml@v11
     with:
       host: staging.example.com
       username: deploy

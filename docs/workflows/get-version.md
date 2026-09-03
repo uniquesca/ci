@@ -6,13 +6,13 @@ branch and a `10.4.0` tag all yield `10.4.0`; anything else fails the run.
 ```yaml
 jobs:
   version:
-    uses: uniquesca/ci/.github/workflows/get-version.yml@main
+    uses: uniquesca/ci/.github/workflows/get-version.yml@v11
     with:
       ref: ${{ github.ref }}
 
   release:
     needs: [ version ]
-    uses: uniquesca/ci/.github/workflows/prepare-release.yml@main
+    uses: uniquesca/ci/.github/workflows/prepare-release.yml@v11
     with:
       version: ${{ needs.version.outputs.version }}
 ```

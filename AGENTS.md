@@ -8,6 +8,14 @@ release makes. **Your commit message is the changelog entry.** Prefix it `BREAKI
 `Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
 holds for every Uniques repository, not only this one.
 
+## Moving to the next major version
+
+The workflows and actions reference each other at the active version branch, so a caller on it
+stays inside its code. `bin/pin-ci-version.sh v12` moves the repository: it rewrites every
+reference and `VERSION_BRANCH` in `update-current-version.yml`, and lists the versions in prose for
+you to judge by hand. Create the `v12` branch off `main` in the same change. `self-tests.yml` fails
+on a reference left behind, so a new action added at `@main` does not get past a pull request.
+
 # Documentation and comments
 
 Write documentation and code comments in plain, easily readable English, and

@@ -321,7 +321,7 @@ jobs:
       # written by whoever opened the issue is ever expanded into the workflow.
       - name: Stage the issue for the agent
         if: ${{ steps.task.outputs.has_task == 'true' }}
-        uses: uniquesca/ci/ai-stage-issue@main
+        uses: uniquesca/ci/ai-stage-issue@v11
         with:
           issue: ${{ github.event.issue.number }}
           repository: ${{ github.repository }}
@@ -384,7 +384,7 @@ jobs:
       - name: Work out the PHP version to install under
         id: php
         if: ${{ steps.deps.outputs.php == 'true' }}
-        uses: uniquesca/ci/get-default-ci-environment@main
+        uses: uniquesca/ci/get-default-ci-environment@v11
 
       - name: Set up PHP
         if: ${{ steps.deps.outputs.php == 'true' }}
@@ -421,7 +421,7 @@ jobs:
         if: >-
           ${{ steps.deps.outputs.php == 'true' || steps.deps.outputs.node == 'true' }}
         continue-on-error: true
-        uses: uniquesca/ci/install-packages@main
+        uses: uniquesca/ci/install-packages@v11
         with:
           skip_composer: ${{ steps.deps.outputs.php != 'true' }}
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
@@ -675,7 +675,7 @@ jobs:
       - name: Report on the run
         id: report
         if: ${{ always() && steps.plan.outcome != 'skipped' }}
-        uses: uniquesca/ci/ai-run-report@main
+        uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.plan.outputs.execution_file }}
           verb: 'Planned'
@@ -850,7 +850,7 @@ jobs:
         if: >-
           ${{ success()
           && steps.replan.outputs.number != '' }}
-        uses: uniquesca/ci/ai-qa-criteria@main
+        uses: uniquesca/ci/ai-qa-criteria@v11
         with:
           pull_request: ${{ steps.replan.outputs.number }}
           repository: ${{ github.repository }}

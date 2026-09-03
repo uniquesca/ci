@@ -12,13 +12,13 @@ on:
 
 jobs:
   version:
-    uses: uniquesca/ci/.github/workflows/get-version.yml@main
+    uses: uniquesca/ci/.github/workflows/get-version.yml@v11
     with:
       ref: ${{ github.ref }}
 
   publish:
     needs: [ version ]
-    uses: uniquesca/ci/.github/workflows/publish-npm.yml@main
+    uses: uniquesca/ci/.github/workflows/publish-npm.yml@v11
     with:
       release_version: ${{ needs.version.outputs.version }}
       build_cmd: 'npm run build'

@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - id: matrix
-        uses: uniquesca/ci/ci-matrix-from-file@main
+        uses: uniquesca/ci/ci-matrix-from-file@v11
         with:
           matrix_file: '.github/deploy-targets.json'
 

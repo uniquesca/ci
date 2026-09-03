@@ -6,7 +6,7 @@ one call covers a PHP repository, a JavaScript one, and one that is both.
 
 ```yaml
 - name: Install dependencies
-  uses: uniquesca/ci/install-packages@main
+  uses: uniquesca/ci/install-packages@v11
   with:
     composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
     npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}

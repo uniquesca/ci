@@ -6,7 +6,7 @@ commit what changes.
 
 ```yaml
 - name: Migrate the dump
-  uses: uniquesca/ci/migrate-db-dump@main
+  uses: uniquesca/ci/migrate-db-dump@v11
   with:
     db_dump_path: 'db/dump.sql'
     migration_command: './vendor/bin/phinx migrate'

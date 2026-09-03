@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: uniquesca/ci/github-release@main
+      - uses: uniquesca/ci/github-release@v11
         with:
           release_version: ${{ needs.version.outputs.version }}
 ```

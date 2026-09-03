@@ -73,7 +73,7 @@ on:
 
 jobs:
   php-qa:
-    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@v11
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
       # What lets the code style fixes be committed, and their checks run - see below
@@ -85,7 +85,7 @@ With a database and a migration:
 ```yaml
 jobs:
   php-qa:
-    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@v11
     with:
       use_db: true
       db_dump_path: 'db/dump.sql'
@@ -144,7 +144,7 @@ on:
 
 jobs:
   npm-qa:
-    uses: uniquesca/ci/.github/workflows/npm-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/npm-qa-checks.yml@v11
     secrets:
       NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
 ```
@@ -175,12 +175,12 @@ linter is immediately distinguishable from a failing PHP test:
 ```yaml
 jobs:
   php-qa:
-    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@v11
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
 
   npm-qa:
-    uses: uniquesca/ci/.github/workflows/npm-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/npm-qa-checks.yml@v11
     secrets:
       NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
 ```
@@ -210,7 +210,7 @@ checks run against still needs a person.
 ```yaml
 jobs:
   php-qa:
-    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@v11
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
       AUTOFIX_ACCESS_TOKEN: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
@@ -228,7 +228,7 @@ jobs:
   php-qa:
     permissions:
       contents: write
-    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@main
+    uses: uniquesca/ci/.github/workflows/php-qa-checks.yml@v11
     secrets:
       COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
 ```
@@ -299,7 +299,7 @@ workflow, so the token is an input rather than a secret:
 
 ```yaml
     steps:
-      - uses: uniquesca/ci/docker-qa-checks@main
+      - uses: uniquesca/ci/docker-qa-checks@v11
         with:
           autofix_token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
 ```

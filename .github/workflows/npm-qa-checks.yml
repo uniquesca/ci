@@ -58,12 +58,12 @@ jobs:
         run: jq -e . package.json > /dev/null
 
       - name: Set up environment
-        uses: uniquesca/ci/prepare-environment@main
+        uses: uniquesca/ci/prepare-environment@v11
         with:
           env_variables: ${{ inputs.env_variables }}
 
       - name: Install dependencies
-        uses: uniquesca/ci/install-packages@main
+        uses: uniquesca/ci/install-packages@v11
         with:
           working_directory: ${{ inputs.working_directory }}
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}

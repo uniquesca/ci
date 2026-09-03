@@ -5,7 +5,7 @@ data produce a different file every time - so the result can be committed.
 
 ```yaml
 - name: Export the dump
-  uses: uniquesca/ci/mysql-export@main
+  uses: uniquesca/ci/mysql-export@v11
   with:
     dump_file_path: 'db/dump.sql'
     db_name: phpunit

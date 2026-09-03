@@ -6,12 +6,12 @@ its own defaults under whatever the caller passed in.
 ```yaml
 - name: Prepare environment variables
   id: env
-  uses: uniquesca/ci/merge-environment-variables@main
+  uses: uniquesca/ci/merge-environment-variables@v11
   with:
     variables1: '{"db.host":"127.0.0.1","db.port":"3306"}'
     variables2: ${{ inputs.env_variables }}
 
-- uses: uniquesca/ci/prepare-environment@main
+- uses: uniquesca/ci/prepare-environment@v11
   with:
     env_variables: ${{ steps.env.outputs.variables }}
 ```

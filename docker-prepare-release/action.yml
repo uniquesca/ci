@@ -55,7 +55,7 @@ runs:
   steps:
     - name: Export DB dump
       if: inputs.update_db == 'true'
-      uses: uniquesca/ci/mysql-export@main
+      uses: uniquesca/ci/mysql-export@v11
       with:
         dump_file_path: ${{ inputs.db_dump_path }}
         db_name: ${{ inputs.db_name }}
@@ -78,7 +78,7 @@ runs:
 
     - name: Update changelog file
       if: ${{ inputs.generate_changelog == 'true' }}
-      uses: uniquesca/ci/update-changelog@main
+      uses: uniquesca/ci/update-changelog@v11
       with:
         working_directory: ${{ inputs.changelog_dir }}
         target_version: ${{ inputs.version }}

@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: matrix
-        uses: uniquesca/ci/qa-ci-matrix@main
+        uses: uniquesca/ci/qa-ci-matrix@v11
 
   qa:
     needs: [ matrix ]
