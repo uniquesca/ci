@@ -6,7 +6,7 @@ wrote.
 Used by [`ai-implement`](../ai/ai-implement.md) at the end of a round.
 
 ```yaml
-- uses: uniquesca/ci/ai-post-review-replies@main
+- uses: uniquesca/ci/ai-post-review-replies@v11
   with:
     pull_request: ${{ steps.pr.outputs.number }}
     repository: ${{ github.repository }}

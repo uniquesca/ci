@@ -6,7 +6,7 @@ Commit subjects decide what appears: only those starting with `BREAKING`, `Depr`
 
 ```yaml
 - name: Update the changelog
-  uses: uniquesca/ci/update-changelog@main
+  uses: uniquesca/ci/update-changelog@v11
   with:
     target_version: '10.4.0'
 ```

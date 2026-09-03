@@ -6,7 +6,7 @@ has to go back to the issue for them.
 Used by [`ai-implement`](../ai/ai-implement.md) and [`ai-plan`](../ai/ai-plan.md).
 
 ```yaml
-- uses: uniquesca/ci/ai-qa-criteria@main
+- uses: uniquesca/ci/ai-qa-criteria@v11
   id: qa
   with:
     pull_request: ${{ steps.pr.outputs.number }}

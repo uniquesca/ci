@@ -8,7 +8,7 @@ declares.
 
 ```yaml
 - name: Render the test config
-  uses: uniquesca/ci/prepare-config@main
+  uses: uniquesca/ci/prepare-config@v11
   with:
     source: 'config/app.php.stub'
     destination: 'config/app.php'

@@ -386,7 +386,7 @@ jobs:
       - name: Find when the plan was last posted
         id: plan_at
         if: ${{ success() && steps.existing_pr.outputs.state == 'OPEN' }}
-        uses: uniquesca/ci/ai-stage-issue@main
+        uses: uniquesca/ci/ai-stage-issue@v11
         with:
           issue: ${{ github.event.issue.number }}
           repository: ${{ github.repository }}
@@ -925,7 +925,7 @@ jobs:
       - name: Stage the issue and its plan
         id: stage_issue
         if: ${{ success() && env.PROCEED == 'true' }}
-        uses: uniquesca/ci/ai-stage-issue@main
+        uses: uniquesca/ci/ai-stage-issue@v11
         with:
           issue: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
@@ -953,7 +953,7 @@ jobs:
       - name: Stage the review feedback
         id: stage_pr
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
-        uses: uniquesca/ci/ai-stage-pull-request@main
+        uses: uniquesca/ci/ai-stage-pull-request@v11
         with:
           pull_request: ${{ steps.event.outputs.pull_request }}
           repository: ${{ github.repository }}
@@ -1522,7 +1522,7 @@ jobs:
           ${{ success() && env.PROCEED == 'true' && inputs.provision_checks
           && steps.setup.outputs.docker == 'true' && inputs.spin_up_docker }}
         continue-on-error: true
-        uses: uniquesca/ci/docker-spin-up@main
+        uses: uniquesca/ci/docker-spin-up@v11
         with:
           env_variables: ${{ secrets.ENV_VARIABLES || '{}' }}
           profile: ${{ inputs.docker_profile }}
@@ -1733,7 +1733,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.verify.outputs.php_runner == 'true' }}
-        uses: uniquesca/ci/get-default-ci-environment@main
+        uses: uniquesca/ci/get-default-ci-environment@v11
 
       - name: Set up PHP
         if: >-
@@ -1811,7 +1811,7 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
         continue-on-error: true
-        uses: uniquesca/ci/install-packages@main
+        uses: uniquesca/ci/install-packages@v11
         with:
           skip_composer: ${{ steps.verify.outputs.php != 'true' }}
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
@@ -2371,7 +2371,7 @@ jobs:
           ${{ always()
           && (steps.implement_initial.outcome != 'skipped'
           || steps.implement_round.outcome != 'skipped') }}
-        uses: uniquesca/ci/ai-run-report@main
+        uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.implement_initial.outputs.execution_file || steps.implement_round.outputs.execution_file }}
           verb: ${{ steps.event.outputs.mode == 'initial' && 'Implemented' || 'Revised' }}
@@ -2888,7 +2888,7 @@ jobs:
             (steps.event.outputs.mode == 'initial' && steps.pr.outputs.url != '')
             || (steps.event.outputs.mode == 'round' && steps.revision.outputs.revised == 'true')
           ) }}
-        uses: uniquesca/ci/ai-qa-criteria@main
+        uses: uniquesca/ci/ai-qa-criteria@v11
         with:
           pull_request: ${{ steps.pr.outputs.number || steps.event.outputs.pull_request }}
           repository: ${{ github.repository }}
@@ -2966,7 +2966,7 @@ jobs:
       - name: Post the replies to the review
         id: replies
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
-        uses: uniquesca/ci/ai-post-review-replies@main
+        uses: uniquesca/ci/ai-post-review-replies@v11
         with:
           pull_request: ${{ steps.event.outputs.pull_request }}
           repository: ${{ github.repository }}

@@ -8,7 +8,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 [`ai-review`](../ai/ai-review.md), which reads it to see what has already been said.
 
 ```yaml
-- uses: uniquesca/ci/ai-stage-pull-request@main
+- uses: uniquesca/ci/ai-stage-pull-request@v11
   id: staged
   with:
     pull_request: ${{ github.event.issue.number }}

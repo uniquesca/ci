@@ -16,7 +16,7 @@ If `_ci_environment.json` is not present the action exits successfully without d
 
 ```yaml
 - name: Set up environment
-  uses: uniquesca/ci/prepare-environment@main
+  uses: uniquesca/ci/prepare-environment@v11
   with:
     env_variables: '{"db.host":"127.0.0.1","db.port":"3306"}'
 ```

@@ -35,7 +35,7 @@ jobs:
       packages: read
       # Mints the agent's Claude credential from this run's own identity
       id-token: write
-    uses: uniquesca/ci/.github/workflows/ai-implement.yml@main
+    uses: uniquesca/ci/.github/workflows/ai-implement.yml@v11
     with:
       # Identifiers, not secrets. Organisation-level Actions variables, so rotating the rule
       # is one edit rather than one per repository

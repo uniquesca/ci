@@ -37,7 +37,7 @@ jobs:
       checks: read
       # Mints the agent's Claude credential from this run's own identity
       id-token: write
-    uses: uniquesca/ci/.github/workflows/ai-review.yml@main
+    uses: uniquesca/ci/.github/workflows/ai-review.yml@v11
     with:
       # Identifiers, not secrets - the same three the other two jobs are passed
       anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}

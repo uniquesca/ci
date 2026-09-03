@@ -14,9 +14,9 @@ application running in Docker.
         with:
           fetch-depth: 0
 
-      - uses: uniquesca/ci/docker-spin-up@main
+      - uses: uniquesca/ci/docker-spin-up@v11
 
-      - uses: uniquesca/ci/docker-prepare-release@main
+      - uses: uniquesca/ci/docker-prepare-release@v11
         with:
           version: ${{ needs.version.outputs.version }}
 ```

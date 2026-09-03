@@ -9,8 +9,8 @@ For a repository that sets up PHP on the runner instead, use the
 ```yaml
     steps:
       - uses: actions/checkout@v7
-      - uses: uniquesca/ci/docker-spin-up@main
-      - uses: uniquesca/ci/docker-qa-checks@main
+      - uses: uniquesca/ci/docker-spin-up@v11
+      - uses: uniquesca/ci/docker-qa-checks@v11
         with:
           autofix_token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
 ```

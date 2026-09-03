@@ -13,7 +13,7 @@ on:
 jobs:
   version:
     if: startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/')
-    uses: uniquesca/ci/.github/workflows/get-version.yml@main
+    uses: uniquesca/ci/.github/workflows/get-version.yml@v11
     with:
       ref: ${{ github.ref }}
 
@@ -21,7 +21,7 @@ jobs:
     needs: [ version ]
     permissions:
       contents: write
-    uses: uniquesca/ci/.github/workflows/prepare-release.yml@main
+    uses: uniquesca/ci/.github/workflows/prepare-release.yml@v11
     with:
       version: ${{ needs.version.outputs.version }}
     secrets:
