@@ -31,6 +31,9 @@ issue                                    pull request
 `/ai-do` on the issue only points at it. The plan also records the branch it was written against,
 and later commands follow it without being told again.
 
+While a run is working it labels what it is working on - `ai:planning`, `ai:implementing` or
+`ai:reviewing` - and takes the label off when it ends.
+
 ## Integrating a repository
 
 Each of the three is its own workflow file. Each page carries the one to copy:

@@ -57,10 +57,20 @@ on:
         required: false
         default: 'claude-opus-5'
         type: string
+      effort:
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and the levels below `high` are worth measuring before assuming they cost quality'
+        required: false
+        default: ''
+        type: string
       branch_prefix:
         description: 'Prefix of the branch the implementing workflow pushes to. Used only to find the pull request already implementing this issue, so that a revised plan can be announced there. Keep it the same as the implementing workflow branch_prefix'
         required: false
         default: 'ai-feature/'
+        type: string
+      progress_label:
+        description: 'Label put on the issue while the run is planning, and taken off however the run ends. Created if this repository has not got it, then left alone, so recolouring or rewording it there sticks. Empty to not label anything'
+        required: false
+        default: 'ai:planning'
         type: string
       install_dependencies:
         description: 'Install this project''s Composer and NPM dependencies before the agent starts, so that it plans against the source of what the project depends on - the signature a library actually exposes, and whether the thing the plan was about to ask for already exists in one. Detected from the repository rather than configured: a manifest is what decides. Turn it off for a repository where the install is slow enough not to be worth it, and the agent plans from the code alone'
@@ -298,6 +308,31 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
           echo "Planning issue #$ISSUE against ${base:-the default branch}"
+
+      # After the step above, which is what stands a run with nothing to plan down: a run that
+      # will not plan anything must not label the issue as though it were about to.
+      - name: Say the agent is planning this
+        id: label
+        if: >-
+          ${{ steps.task.outputs.has_task == 'true'
+          && inputs.progress_label != '' }}
+        env:
+          LABEL: ${{ inputs.progress_label }}
+        run: |
+          # Created if this repository has not got the label, and left alone if it has - a
+          # repository that recoloured or reworded it keeps its own version
+          gh label create "$LABEL" --color 'fbca04' --description 'An AI workflow is working on this' \
+            2> /dev/null || true
+
+          # Nothing here may fail the run - a label is how the work is seen, not the work. Which
+          # is why the step below keys off this output rather than off an outcome: it is the only
+          # thing that says there is a label to take off.
+          if gh api "repos/$GH_REPO/issues/$ISSUE/labels" --method POST -f "labels[]=$LABEL" > /dev/null; then
+            echo "added=true" >> "$GITHUB_OUTPUT"
+            echo "Labelled #$ISSUE '$LABEL'"
+          else
+            echo "::warning title=Could not label the issue::'$LABEL' was not added to #$ISSUE, the run continues without it"
+          fi
 
       # The agent plans against the real code, so the repository has to be on disk.
       # Nothing is ever inferred from the event: an issue comment carries no ref worth
@@ -665,6 +700,7 @@ jobs:
             Writing the plan as your final message is the whole job.
           claude_args: |
             --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
             --disallowedTools "Edit,Write,Replace,NotebookEdit,Bash,Task,Agent"
             ${{ inputs.debug && '--debug' || '' }}
@@ -891,3 +927,18 @@ jobs:
 
           cat failure-comment.md >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$ISSUE" --body-file failure-comment.md
+
+      # Last in the job, after whatever the reporters above have to say. `always()` because a
+      # label describing a run in progress is wrong the moment the run stops, however it stopped -
+      # and the output rather than the outcome, because a skipped step's outputs read as empty.
+      - name: Take the label back off
+        if: ${{ always() && steps.label.outputs.added == 'true' }}
+        env:
+          LABEL: ${{ inputs.progress_label }}
+        run: |
+          # The label name is a path segment here, so anything awkward in a name a repository
+          # chose has to be encoded rather than sent as typed
+          name=$(jq -rn --arg name "$LABEL" '$name | @uri')
+
+          gh api "repos/$GH_REPO/issues/$ISSUE/labels/$name" --method DELETE > /dev/null \
+            || echo "::warning title=Could not unlabel the issue::'$LABEL' is still on #$ISSUE with nothing running - take it off by hand"

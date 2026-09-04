@@ -26,6 +26,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 | `review_file` | no | `.ai-review/review.json` | File the agent wrote: an object with `verdict`, `summary` and `comments` |
 | `diff_file` | no | `.ai-review/diff.patch` | The unified diff the agent reviewed. Every inline comment is checked against it |
 | `marker` | no | `<!-- ai-review -->` | Hidden first line of the review body |
+| `footer` | no | | Markdown added under a rule at the end of the review body. Inline comments that could not be placed are counted at the end of it |
 | `max_comments` | no | `30` | How many inline comments one review may carry |
 | `max_length` | no | `4000` | Longest inline comment body, in characters. Anything over is truncated rather than dropped |
 
