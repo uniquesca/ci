@@ -1069,24 +1069,21 @@ jobs:
             echo "Standing down - whatever is still reporting on this commit will start the round when it finishes"
           fi
 
-      # A round nobody asked for, on a commit where everything passed and the reviewer had
-      # nothing to say. Silent on purpose: this fires on every green pull request, and a comment
-      # each time would be noise rather than news.
+      # A round nobody asked for, on a commit where nothing is asking for a change. Stands down
+      # silently: this fires on every green pull request, and a comment each time would be noise.
+      # A review that only commented is not a change being asked for - it waits for the command.
       #
-      # A revised plan deliberately does *not* hold this open, though it does hold the asked-for
-      # gate below. Rework is a person's decision: they revise the plan, get it right, and then run
-      # the command. A round that started because some CI job finished is nobody asking for
-      # anything, and rebuilding a branch to a specification still being worked on is worse than
-      # waiting to be told. Any round that does run reads the newest plan either way.
+      # A revised plan does not hold this open, though it does hold the asked-for gate below:
+      # nobody has asked for the rework, and the specification is still moving.
       - name: Nothing to act on
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
           && steps.event.outputs.trigger == 'checks'
-          && steps.stage_pr.outputs.has_feedback != 'true' }}
+          && steps.stage_pr.outputs.has_actionable != 'true' }}
         run: |
           echo "PROCEED=false" >> "$GITHUB_ENV"
-          echo "Nothing to act on for #${{ steps.event.outputs.pull_request }} - no failing check and no unanswered feedback"
+          echo "Nothing to act on for #${{ steps.event.outputs.pull_request }} - no failing check and no review asking for a change"
 
       # An empty review, or a command run when everything has already been dealt with. Not a
       # failure, and worth saying rather than starting an agent with nothing to give it. Only

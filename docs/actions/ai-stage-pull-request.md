@@ -37,7 +37,9 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 
 | Output | Description |
 |---|---|
-| `has_feedback` | Whether anything is asking for changes - `true` or `false` |
+| `has_feedback` | Whether anything was staged at all - `true` or `false` |
+| `has_actionable` | Whether anything staged is asking for a change - `true` or `false` |
+| `actionable_count` | How many staged items are asking for a change |
 | `feedback_count` | How many feedback items were staged, across every source |
 | `thread_count` | How many unresolved review threads were staged |
 | `check_count` | How many failing check runs were staged |
@@ -63,8 +65,9 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 
 A feedback item is `{id, source, author, is_bot, created_at, url, anchor, state, answered,
 reply_target, text}`, where `source` is `thread`, `review`, `comment` or `check`. A `thread` carries
-an `anchor` with the file, line and diff hunk, and a `reply_target` that
-[`ai-post-review-replies`](ai-post-review-replies.md) can answer. The rest carry `null` for both.
+an `anchor` with the file, line and diff hunk, a `review_state` naming the state of the review it
+was opened in, and a `reply_target` that [`ai-post-review-replies`](ai-post-review-replies.md) can
+answer. The rest carry `null` for both.
 
 ### Which feedback is included
 
@@ -77,6 +80,11 @@ an `anchor` with the file, line and diff hunk, and a `reply_target` that
 
 State-based sources ignore `since` entirely. Time-based ones are read from the end of the previous
 round, or from the pull request's creation on the first round.
+
+`has_actionable` counts the subset asking for a change: a failing check, and a review body or thread
+from a review whose state is `changes_requested`. A review that only commented is staged but not
+counted, so a caller can tell a recommendation from a request before starting a round nobody asked
+for.
 
 A thread whose newest comment carries `reply_marker` has been answered and is left out, or every
 round would re-address the same comment forever. A human replying after the bot puts the thread back
