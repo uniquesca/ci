@@ -8,11 +8,11 @@ issue.
 
 ## Integrating a repository
 
-This is one job in the repository's AI workflow file; [the implementer](ai-implement.md) is the
-other. The setup both share is in [AI assisted development](../ai.md#integrating-a-repository).
+This is its own workflow file, subscribed to issue comments and nothing else. The setup all three
+share is in [AI assisted development](../ai.md#integrating-a-repository).
 
 ```yaml
-name: AI
+name: AI Plan
 
 on:
   issue_comment:
@@ -112,7 +112,7 @@ dropped as well as adding what it now asks for.
 | `anthropic_workspace_id` | string | *(none)* | Workspace the minted token is scoped to. Only needed when the rule covers more than one workspace - a rule bound to a single workspace resolves it on its own |
 | `command` | string | `/ai-plan` | Comment command that triggers the planning. Has to be at the very beginning of the comment |
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
-| `model` | string | `claude-opus-4-8` | Model used to produce the plan |
+| `model` | string | `claude-opus-5` | Model used to produce the plan |
 | `max_turns` | number | `50` | How many turns the agent may spend reading the repository before it has to plan with what it found |
 | `agent_timeout_minutes` | number | `30` | How long the planning agent itself may run before it is given up on |
 | `timeout_minutes` | number | `45` | How long the whole job may run. Keep it above `agent_timeout_minutes` plus what installing this project's dependencies costs |
