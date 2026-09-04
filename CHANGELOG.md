@@ -1272,3 +1272,9 @@
 ## v11.3.0
 
 * Fix: preventing AI coding agent to kick in even if QA checks are green and AI review hasn't requested any changes (cc9d210 by George Shestayev)
+
+## v1.14.0
+
+* Update: adding labels when AI work is in progress (9a413e4 by George Shestayev)
+* Update: review now one comment instead of two (9a413e4 by George Shestayev)
+* Update: introduced improvements to adopt Opus 5 and reduce costs without sacrificing the output quality (9a413e4 by George Shestayev)
