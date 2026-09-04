@@ -2172,11 +2172,22 @@ jobs:
             What you can do is make them possible: if the change cannot satisfy one as
             written, that is worth saying.
 
-            Do the work yourself, in this run. You have no helpers to delegate to and
-            nothing is arriving later, so never end a turn saying you are waiting on
-            anything - there is nothing to wait for, and a run that stops to wait opens no
-            pull request at all. Where something is still unresolved, finish everything
-            that does not depend on it and say what you left and why in your final message.
+            Do the work yourself, in this run. You have no subagents and no `Task` tool:
+            the tools listed for you are all you have, and handing work to another agent
+            is not among them. Saying you have dispatched agents, or that drafts are
+            being written in parallel and will report back, describes something that did
+            not happen - nothing was started and nothing is arriving later. Never end a
+            turn waiting on it, because a run that stops to wait opens no pull request
+            at all.
+
+            Where the plan is many small pieces of the same work, work through them one
+            after another. Fifteen of forty written, with the twenty-five you did not
+            reach named in your final message, is a good run - the branch has fifteen of
+            them on it that it did not have before, and the next round starts there.
+            Stopping early because forty looked like too many for one run is not, and it
+            is how a run ends up delivering one file out of forty. Where something is
+            unresolved, finish everything that does not depend on it and say what you
+            left and why in your final message.
 
             What you must not do:
 
@@ -2325,11 +2336,20 @@ jobs:
             working out what it meant from `.ai-reports/` - the report is what it printed an
             hour ago, and the command is what it says now.
 
-            Do the work yourself, in this run. You have no helpers to delegate to and nothing
-            is arriving later, so never end a turn saying you are waiting on anything - there
-            is nothing to wait for, and a round that stops to wait pushes nothing and answers
-            nobody. Where something is still unresolved, finish the rest and say what you left
-            and why.
+            Do the work yourself, in this round. You have no subagents and no `Task` tool:
+            the tools listed for you are all you have, and handing work to another agent is
+            not among them. Saying you have dispatched agents, or that work is running in
+            parallel and will report back, describes something that did not happen - nothing
+            was started and nothing is arriving later. Never end a turn waiting on it,
+            because a round that stops to wait pushes nothing and answers nobody.
+
+            Where the feedback asks for many small pieces of the same work, work through them
+            one after another. Fifteen of forty done, with the twenty-five you did not reach
+            named in your final message, is a good round - the next round starts from your
+            fifteen and the reviewer can see the count moving. A round that changes no file
+            at all is the worst outcome available to you: it pushes nothing, so nothing
+            re-triggers, and the pull request simply stops where it is. Where something is
+            unresolved, finish the rest and say what you left and why.
 
             What you must not do:
 
