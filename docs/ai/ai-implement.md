@@ -8,11 +8,11 @@ what you want on the pull request, an agent acts on it, answers each of your com
 
 ## Integrating a repository
 
-This is one job in the repository's AI workflow file; [the planner](ai-plan.md) is the other. The
-setup both share is in [AI assisted development](../ai.md#integrating-a-repository).
+This is its own workflow file, because it is the one that needs `pull_request_review` and `workflow_run`. The setup
+all three share is in [AI assisted development](../ai.md#integrating-a-repository).
 
 ```yaml
-name: AI
+name: AI Implement
 
 on:
   issue_comment:
@@ -20,6 +20,12 @@ on:
   # Without this, requesting changes on a pull request never starts a round
   pull_request_review:
     types: [ submitted ]
+  # And without this, a red check nobody commented on is never acted on. Name your own QA
+  # workflows here - see "Wiring CI into the loop" below
+  workflow_run:
+    workflows: [ 'QA Checks', 'E2E Tests' ]   # each one's `name:`, not its filename
+    types: [ completed ]
+    branches: [ 'ai-feature/**' ]             # must match `branch_prefix`
 
 jobs:
   ai-implement:
@@ -165,17 +171,9 @@ own:
           if-no-files-found: ignore
 ```
 
-**Let a red check start a round.** By default only a review can, so a failing check that nobody
-commented on is never acted on. Add this to the caller and whichever of your QA workflows and the
-reviewing agent finishes **second** starts one round, with both sources in the feedback:
-
-```yaml
-on:
-  workflow_run:
-    workflows: [ 'PHP QA Checks' ]   # the QA workflow's `name:`, not its filename
-    types: [ completed ]
-    branches: [ 'ai-feature/**' ]    # optional, must match `branch_prefix`
-```
+**Let a red check start a round.** The `workflow_run` trigger in the caller is what does it, and
+it does nothing until the workflows it names are real ones. Whichever of them and the reviewing
+agent finishes **second** starts one round, with both sources in the feedback.
 
 Your QA workflows run on the agent's commits because the implementing app pushes them, not
 the run's own token - Github starts no workflow run from a push made with `GITHUB_TOKEN`.
@@ -201,7 +199,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `command` | string | `/ai-do` | Comment command that triggers a round. Has to be at the very beginning of the comment. On an issue it starts the work - or runs a round on the pull request already implementing it, when the plan has been revised since that work last read it; on the pull request it always runs a round |
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
 | `allowed_bots` | string | `github-actions[bot] ai-review[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. **This has to name the reviewing app's bot login** - `<app-slug>[bot]` - or a review starts no round |
-| `model` | string | `claude-opus-4-8` | Model used to implement the plan and to act on review feedback |
+| `model` | string | `claude-opus-5` | Model used to implement the plan and to act on review feedback |
 | `max_turns` | number | `60` | How many turns the agent may spend before it has to stop with what it has |
 | `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
 | `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |

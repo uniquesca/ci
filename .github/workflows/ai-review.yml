@@ -65,7 +65,7 @@ on:
       model:
         description: 'Model used to review'
         required: false
-        default: 'claude-opus-4-8'
+        default: 'claude-opus-5'
         type: string
       max_comments:
         description: 'How many inline comments one review may carry'

@@ -55,7 +55,7 @@ on:
       model:
         description: 'Model used to produce the plan'
         required: false
-        default: 'claude-opus-4-8'
+        default: 'claude-opus-5'
         type: string
       branch_prefix:
         description: 'Prefix of the branch the implementing workflow pushes to. Used only to find the pull request already implementing this issue, so that a revised plan can be announced there. Keep it the same as the implementing workflow branch_prefix'

@@ -33,9 +33,8 @@ and later commands follow it without being told again.
 
 ## Integrating a repository
 
-The planner and the implementer are two jobs in one workflow file, because they run on the same
-events. The reviewer needs a second file, because it listens for one the other two do not. Each page
-carries the job to copy: [AI Plan](ai/ai-plan.md#integrating-a-repository),
+Each of the three is its own workflow file. Each page carries the one to copy:
+[AI Plan](ai/ai-plan.md#integrating-a-repository),
 [AI Implement](ai/ai-implement.md#integrating-a-repository),
 [AI Review](ai/ai-review.md#integrating-a-repository).
 
@@ -43,8 +42,11 @@ The three federation identifiers every job is passed come from **Workload identi
 workload** in the Claude Console. They are identifiers rather than secrets, so organisation-level
 Actions variables suit them - rotating the rule is then one edit rather than one per repository.
 
-Four things fail quietly rather than loudly:
+Five things fail quietly rather than loudly:
 
+* **A `pull_request_review` run is recorded against the pull request's head commit.** Anything
+  subscribed to that event reports a check on every pull request in the repository, skipped on the
+  ones it has nothing to do with. Only the implementer needs it.
 * **The `permissions` block belongs on the calling job.** A called workflow can only narrow the
   token it is given, never widen it - including `id-token: write`, which the agent's Claude
   credential is minted from.

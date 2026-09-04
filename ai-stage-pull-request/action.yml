@@ -46,8 +46,14 @@ inputs:
 
 outputs:
   has_feedback:
-    description: 'Whether anything is asking for changes - "true" or "false"'
+    description: 'Whether anything was staged at all - "true" or "false". A recommendation counts, so this is the test for a round somebody asked for'
     value: ${{ steps.stage.outputs.has_feedback }}
+  has_actionable:
+    description: 'Whether anything staged is asking for a change - a failing check, or a thread or body from a review that requested changes. A review that only commented is a recommendation and does not count, so this is the test for a round nobody asked for'
+    value: ${{ steps.stage.outputs.has_actionable }}
+  actionable_count:
+    description: 'How many staged items are asking for a change'
+    value: ${{ steps.stage.outputs.actionable_count }}
   feedback_count:
     description: 'How many feedback items were staged, across every source'
     value: ${{ steps.stage.outputs.feedback_count }}
@@ -207,6 +213,7 @@ runs:
                           url
                           diffHunk
                           author { login __typename }
+                          pullRequestReview { state }
                         }
                       }
                     }
@@ -251,6 +258,7 @@ runs:
               state: (if .isResolved then "resolved"
                       elif .isOutdated then "outdated"
                       else "unresolved" end),
+              review_state: (($first.pullRequestReview.state // "") | ascii_downcase),
               answered: .answered,
               reply_target: $first.databaseId,
               text: (.comments.nodes
@@ -485,9 +493,22 @@ runs:
         has_feedback='false'
         [[ "$feedback_count" -gt 0 ]] && has_feedback='true'
 
+        # Of everything staged, what is asking for a change. It reads the review state, so a
+        # reviewer can leave an inline comment without it counting as work.
+        actionable_count=$(jq '
+          [ .[] | select(.source == "check"
+                         or (.source == "review" and .state == "changes_requested")
+                         or (.source == "thread" and .review_state == "changes_requested")) ]
+          | length' "$DIR/feedback.json")
+
+        has_actionable='false'
+        [[ "$actionable_count" -gt 0 ]] && has_actionable='true'
+
         # Written once each - a key repeated in $GITHUB_OUTPUT has no defined winner
         {
           printf 'has_feedback=%s\n' "$has_feedback"
+          printf 'has_actionable=%s\n' "$has_actionable"
+          printf 'actionable_count=%s\n' "$actionable_count"
           printf 'feedback_count=%s\n' "$feedback_count"
           printf 'thread_count=%s\n' "$thread_count"
           printf 'check_count=%s\n' "$check_count"
@@ -502,7 +523,8 @@ runs:
           printf 'title=%s\n' "$title"
         } >> "$GITHUB_OUTPUT"
 
-        echo "Staged pull request #$PR round $round: $feedback_count feedback item(s)" \
+        echo "Staged pull request #$PR round $round: $feedback_count feedback item(s)," \
+             "$actionable_count of them asking for a change" \
              "- $thread_count unresolved thread(s), $check_count failing check(s)," \
              "$checks_pending check(s) still running. Watermark $since, $unattended_rounds" \
              "unattended round(s) behind us." \

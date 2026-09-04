@@ -1268,3 +1268,7 @@
 ## v11.2.1
 
 * Update: improving prompt for coding and plannint agents - they should not try to use subagents (729b6e8 by George Shestayev)
+
+## v11.3.0
+
+* Fix: preventing AI coding agent to kick in even if QA checks are green and AI review hasn't requested any changes (cc9d210 by George Shestayev)

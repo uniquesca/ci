@@ -13,8 +13,8 @@ workflow has to be told to hand its work over.
 
 ## Integrating a repository
 
-This is its own workflow file, because it listens for an event [the planner](ai-plan.md) and
-[the implementer](ai-implement.md) do not. The setup all three share is in
+This is its own workflow file, subscribed to the dispatch [the implementer](ai-implement.md) sends
+and to `/ai-review`. The setup all three share is in
 [AI assisted development](../ai.md#integrating-a-repository).
 
 ```yaml
@@ -107,7 +107,7 @@ the code, go back to [`/ai-plan` on the issue](ai-plan.md#adjusting-the-plan).
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and the triage role as `read`, so this covers owners, maintainers and developers |
 | `dispatch_type` | string | `ai-review` | The `repository_dispatch` event type this reacts to. [`ai-implement`](ai-implement.md) sends it after it pushes |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branches the implementing workflow pushes to. A dispatched review is only accepted for a branch carrying it, and the prefix is also what tells that workflow's pull requests from ones somebody wrote - which decides whether the agent is told about the plan and the round. Keep it the same as the implementing workflow's |
-| `model` | string | `claude-opus-4-8` | Model used to review |
+| `model` | string | `claude-opus-5` | Model used to review |
 | `max_turns` | number | `40` | How many turns the agent may spend reading the code before it has to review with what it found |
 | `agent_timeout_minutes` | number | `25` | How long the reviewing agent itself may run before it is given up on |
 | `timeout_minutes` | number | `30` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes` |
