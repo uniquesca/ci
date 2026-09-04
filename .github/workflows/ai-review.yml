@@ -47,6 +47,11 @@ on:
         required: false
         default: 'ai-feature/'
         type: string
+      progress_label:
+        description: 'Label put on the pull request while the run is reviewing, and taken off however the run ends. Created if this repository has not got it, then left alone, so recolouring or rewording it there sticks. Empty to not label anything'
+        required: false
+        default: 'ai:reviewing'
+        type: string
       timeout_minutes:
         description: 'How long the whole job may run. Keep it a few minutes above agent_timeout_minutes'
         required: false
@@ -66,6 +71,11 @@ on:
         description: 'Model used to review'
         required: false
         default: 'claude-opus-5'
+        type: string
+      effort:
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and the levels below `high` are worth measuring before assuming they cost quality'
+        required: false
+        default: ''
         type: string
       max_comments:
         description: 'How many inline comments one review may carry'
@@ -372,6 +382,32 @@ jobs:
           gh issue comment "$PR" --body "@$COMMENTER I cannot run \`$COMMAND\` on #$PR - $REASON. A review checks out the branch, so it only runs on an open pull request whose branch lives in this repository." \
             || echo "::warning title=Could not say the command cannot run::Nothing was posted on #$PR"
 
+      # After `Resolve the pull request`, which is the one place PROCEED is set, so a dispatch
+      # or a command that cannot be acted on never labels anything.
+      - name: Say the agent is reviewing this
+        id: label
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && inputs.progress_label != '' }}
+        env:
+          LABEL: ${{ inputs.progress_label }}
+          PR: ${{ steps.pull_request.outputs.number }}
+        run: |
+          # Created if this repository has not got the label, and left alone if it has - a
+          # repository that recoloured or reworded it keeps its own version
+          gh label create "$LABEL" --color 'fbca04' --description 'An AI workflow is working on this' \
+            2> /dev/null || true
+
+          # Nothing here may fail the run - a label is how the work is seen, not the work. Which
+          # is why the step below keys off this output rather than off an outcome: it is the only
+          # thing that says there is a label to take off.
+          if gh api "repos/$GH_REPO/issues/$PR/labels" --method POST -f "labels[]=$LABEL" > /dev/null; then
+            echo "added=true" >> "$GITHUB_OUTPUT"
+            echo "Labelled #$PR '$LABEL'"
+          else
+            echo "::warning title=Could not label #$PR::'$LABEL' was not added, the run continues without it"
+          fi
+
       # Minted once and used only to submit the review. The reviewing agent writes review.json on
       # disk and never receives this token, so it cannot post, edit or request changes itself.
       - name: Create AI Review app token
@@ -599,10 +635,9 @@ jobs:
               inline comment restating what a linter said
               ${{ steps.pull_request.outputs.ai_authored == 'true' && '- it has already reached the implementing agent, which is working on it.' || '- though where the change cannot be right while a check is red, that belongs in your summary.' }}
 
-            **You must be willing to find nothing.** A change that does what it set out to do
-            and reads like the surrounding code should get the `comment` verdict and a short
-            summary saying so. Do not manufacture a concern to justify the review, and do not
-            request changes over a preference.
+            A change that does what it set out to do and reads like the surrounding code
+            should get the `comment` verdict and a short summary saying so. Do not manufacture
+            a concern to justify the review, and do not request changes over a preference.
             ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Every unnecessary round costs real money and moves nothing forward, and a reviewer that always finds something is worse than no reviewer at all because the loop never ends.' || 'A reviewer that always finds something is worse than no reviewer at all, because whoever reads it learns to stop.' }}
 
             Request changes only for things that genuinely should not merge as they are:
@@ -615,7 +650,8 @@ jobs:
             - it needs a test that is missing, where the rest of the repository tests that
               kind of thing
 
-            Everything smaller is a `comment` verdict, or not worth saying.
+            Everything smaller still goes in, under the `comment` verdict. The bar decides
+            the verdict, not whether something is worth saying at all.
 
             A missing `CHANGELOG.md` entry is never a finding. Every repository here generates
             that file from the git log when it releases, so nothing in a pull request should be
@@ -667,6 +703,7 @@ jobs:
             you concluded is plenty.
           claude_args: |
             --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
             --allowedTools "Read,Grep,Glob,LS,TodoWrite,Write"
             ${{ inputs.debug && '--debug' || '' }}
@@ -716,6 +753,22 @@ jobs:
 
           echo "::warning title=The reviewing agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The review is complete, so it was submitted anyway - raise max_turns if this keeps happening."
 
+      # The line the review closes on. Rounds are the implementing workflow's count of its own
+      # work, so they are only worth naming on a branch it pushed - on a pull request somebody
+      # wrote there is one review per time it was asked for, and nothing to number them against.
+      - name: Note the round and what the run cost
+        id: footer
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
+          ROUND: ${{ steps.stage_pr.outputs.round }}
+          USAGE: ${{ steps.report.outputs.summary }}
+        run: |
+          footer=''
+          [[ "$AI_AUTHORED" == 'true' ]] && footer="Round $ROUND"
+          [[ -n "$USAGE" ]] && footer="${footer:+$footer - }$USAGE"
+          printf 'text=%s\n' "$footer" >> "$GITHUB_OUTPUT"
+
       # This is where the loop turns, on a branch the implementing workflow pushed. The app's
       # review creates a `pull_request_review` event, and that event is what starts the next
       # implementing round - which is why the review is submitted on an installation token and not
@@ -735,11 +788,14 @@ jobs:
           token: ${{ steps.ai_review.outputs.token }}
           head_sha: ${{ steps.pull_request.outputs.head_sha }}
           marker: ${{ env.REVIEW_MARKER }}
+          footer: ${{ steps.footer.outputs.text }}
           max_comments: ${{ inputs.max_comments }}
 
-      # Whatever happened to the review, what the agent concluded should be visible on the pull
-      # request. On the happy path this is a short line under a review that speaks for itself;
-      # when the review could not be submitted it carries the whole thing.
+      # What came of the review, always in the run summary and on the pull request only when the
+      # review cannot say it itself. A submitted review carries its own verdict, its summary and
+      # the line above, so a comment repeating any of that is noise on top of something the
+      # reader is already looking at. Two things it cannot carry: a review Github refused
+      # outright, and one it took as a comment when the agent asked for changes.
       - name: Say what came of it
         id: comment
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -751,18 +807,17 @@ jobs:
           POSTED: ${{ steps.submit.outputs.comments_posted }}
           DROPPED: ${{ steps.submit.outputs.comments_dropped }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
-          # Rounds are the implementing workflow's count of its own work, so they are only worth
-          # naming on a branch it pushed. On a pull request somebody wrote there is one review
-          # per time it was asked for and nothing to number them against
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
-          USAGE: ${{ steps.report.outputs.summary }}
+          FOOTER: ${{ steps.footer.outputs.text }}
         run: |
           if [[ "$AI_AUTHORED" == 'true' ]]; then
             what="round $ROUND"
           else
             what="#$PR"
           fi
+
+          comment='false'
 
           if [[ "$SUBMITTED" == 'true' ]]; then
             # `REQUEST_CHANGES` and `COMMENT` are how Github names what was submitted, and
@@ -775,12 +830,15 @@ jobs:
             else
               outcome='no changes needed'
             fi
+            if [[ "$VERDICT" == 'changes_requested' && "$EVENT" != 'REQUEST_CHANGES' ]]; then
+              comment='true'
+            fi
             {
               printf 'Reviewed %s' "$what"
               [[ "$POSTED" != '0' ]] && printf ' with %s inline comment(s)' "$POSTED"
               printf ' - %s.' "$outcome"
               [[ "$DROPPED" != '0' ]] && printf ' %s comment(s) could not be placed on a line the diff contains; see the run log.' "$DROPPED"
-              if [[ "$VERDICT" == 'changes_requested' && "$EVENT" != 'REQUEST_CHANGES' ]]; then
+              if [[ "$comment" == 'true' ]]; then
                 printf '\n\n**Github would not take this as a changes-requested review.** It does not allow one from the identity that opened this pull request, so this landed as a comment and it does not block merging.'
                 if [[ "$AI_AUTHORED" == 'true' ]]; then
                   printf ' It will not start another round on its own either - run `/ai-do` here to act on it, and check that the reviewing app is a different app from the implementing one.'
@@ -788,12 +846,12 @@ jobs:
                   printf ' Check that the reviewing app is a different app from the one that opened this pull request.'
                 fi
               fi
-              [[ -n "$USAGE" ]] && printf '\n\n%s.' "$USAGE"
               printf '\n'
             } > "$RUNNER_TEMP/outcome.md"
           else
             # The review itself never reached Github, so the whole thing goes in a comment
             # rather than being lost with the run
+            comment='true'
             {
               printf 'The review could not be submitted, so here it is as a comment.\n\n'
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
@@ -801,16 +859,17 @@ jobs:
               else
                 printf 'The reviewing agent produced nothing. The run log has what it did.\n'
               fi
-              printf '\n\n'
-              printf -- '---\n\n'
-              [[ "$AI_AUTHORED" == 'true' ]] && printf 'Round %s.' "$ROUND"
-              [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+              if [[ -n "$FOOTER" ]]; then
+                printf '\n\n---\n\n%s' "$FOOTER"
+              fi
               printf '\n'
             } > "$RUNNER_TEMP/outcome.md"
           fi
 
           cat "$RUNNER_TEMP/outcome.md" >> "$GITHUB_STEP_SUMMARY"
-          gh issue comment "$PR" --body-file "$RUNNER_TEMP/outcome.md"
+          if [[ "$comment" == 'true' ]]; then
+            gh issue comment "$PR" --body-file "$RUNNER_TEMP/outcome.md"
+          fi
 
       # A failed review is otherwise invisible from the pull request, and it is the step that
       # would have started the next round - so silence here stalls the whole loop.
@@ -856,3 +915,19 @@ jobs:
 
           cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$PR" --body-file "$RUNNER_TEMP/failure.md"
+
+      # Last in the job, after whatever the reporters above have to say. `always()` because a
+      # label describing a run in progress is wrong the moment the run stops, however it stopped -
+      # and the output rather than the outcome, because a skipped step's outputs read as empty.
+      - name: Take the label back off
+        if: ${{ always() && steps.label.outputs.added == 'true' }}
+        env:
+          LABEL: ${{ inputs.progress_label }}
+          PR: ${{ steps.pull_request.outputs.number }}
+        run: |
+          # The label name is a path segment here, so anything awkward in a name a repository
+          # chose has to be encoded rather than sent as typed
+          name=$(jq -rn --arg name "$LABEL" '$name | @uri')
+
+          gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \
+            || echo "::warning title=Could not unlabel #$PR::'$LABEL' is still on it with nothing running - take it off by hand"

@@ -27,6 +27,10 @@ inputs:
     description: 'Hidden first line of the review body. The implementing workflow reads it to tell a review an agent wrote from one a person wrote, which is what keeps the unattended round cap honest - identity cannot answer that on its own, since which login the reviewer arrives as is the caller''s to configure'
     required: false
     default: '<!-- ai-review -->'
+  footer:
+    description: 'Markdown added at the end of the review body, under a rule - what the run cost, and which round it was. What could not be placed is added to it here, since that is only known once the comments have been checked against the diff'
+    required: false
+    default: ''
   max_comments:
     description: 'How many inline comments one review may carry'
     required: false
@@ -70,6 +74,7 @@ runs:
         REVIEW_FILE: ${{ inputs.review_file }}
         DIFF_FILE: ${{ inputs.diff_file }}
         MARKER: ${{ inputs.marker }}
+        FOOTER: ${{ inputs.footer }}
         MAX_COMMENTS: ${{ inputs.max_comments }}
         MAX_LENGTH: ${{ inputs.max_length }}
       run: |
@@ -218,7 +223,20 @@ runs:
 
         build() {
           # $1 = event, $2 = whether to include the inline comments
+          #
+          # Rebuilt per attempt, because a retry that gives up its inline comments has a
+          # different number of them to account for than the attempt before it.
+          {
+            if [[ -n "$FOOTER" ]]; then
+              printf '%s\n' "$FOOTER"
+            fi
+            if [[ "$comments_dropped" -gt 0 ]]; then
+              printf '\n%s inline comment(s) could not be placed on a line the diff contains, and the run log names them.\n' "$comments_dropped"
+            fi
+          } > "$tmp/footer.md"
+
           jq -n --rawfile summary "$tmp/summary.md" \
+                --rawfile footer "$tmp/footer.md" \
                 --slurpfile comments "$tmp/comments.json" \
                 --arg marker "$MARKER" \
                 --arg event "$1" \
@@ -226,7 +244,8 @@ runs:
                 --argjson inline "$2" '
             {
               commit_id: $sha,
-              body: ($marker + "\n\n" + $summary),
+              body: ($marker + "\n\n" + $summary
+                     + (if ($footer | test("\\S")) then "\n\n---\n\n" + $footer else "" end)),
               event: $event
             }
             + (if $inline and (($comments[0] | length) > 0)

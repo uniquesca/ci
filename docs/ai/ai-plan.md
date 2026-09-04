@@ -113,12 +113,14 @@ dropped as well as adding what it now asks for.
 | `command` | string | `/ai-plan` | Comment command that triggers the planning. Has to be at the very beginning of the comment |
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
 | `model` | string | `claude-opus-5` | Model used to produce the plan |
+| `effort` | string | `''` | How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to |
 | `max_turns` | number | `50` | How many turns the agent may spend reading the repository before it has to plan with what it found |
 | `agent_timeout_minutes` | number | `30` | How long the planning agent itself may run before it is given up on |
 | `timeout_minutes` | number | `45` | How long the whole job may run. Keep it above `agent_timeout_minutes` plus what installing this project's dependencies costs |
 | `install_dependencies` | boolean | `true` | Install this project's Composer and NPM dependencies before the agent starts, so it plans against [what the project really depends on](#what-the-agent-can-and-cannot-do). Detected from the repository - a manifest is what decides |
 | `node_version` | number | `20` | Node version the JavaScript dependencies are installed under. The same default as [`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow) |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch [`ai-implement`](ai-implement.md) pushes to, used to find the pull request already implementing this issue. Keep the two the same |
+| `progress_label` | string | `ai:planning` | Label put on the issue while the run is planning, and taken off however it ends. Created if the repository has not got it, then left alone, so recolouring it there sticks. Empty to not label anything |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
 ## Outputs
