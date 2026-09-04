@@ -69,7 +69,7 @@ on:
       model:
         description: 'Model used to implement the plan and to act on review feedback'
         required: false
-        default: 'claude-opus-4-8'
+        default: 'claude-opus-5'
         type: string
       branch_prefix:
         description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
