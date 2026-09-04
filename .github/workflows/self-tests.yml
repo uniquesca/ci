@@ -20,7 +20,9 @@ jobs:
       # The workflows and actions here reference each other at the active version branch. One left
       # at `@main` ships a caller that pulls the tip of the next version's code
       - name: Check the internal references are pinned
-        run: bin/pin-ci-version.sh --check
+        run: |
+          chmod +x bin/pin-ci-version.sh 
+          bin/pin-ci-version.sh --check
 
       # Node 24 matches the runtime the actions in this repository declare in their action.yml
       - name: Set up Node
