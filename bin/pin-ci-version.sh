@@ -6,6 +6,9 @@
 #   bin/pin-ci-version.sh          # re-pin to the active version - a no-op unless something drifted
 #   bin/pin-ci-version.sh v12      # move the whole repository to v12
 #   bin/pin-ci-version.sh --check  # fail if anything is off the active version, rewrite nothing
+#
+# A reference that belongs off the version branch carries `# pin-ci-version: skip` and a comment
+# saying why. This leaves it alone and reports it, so a bump still puts it in front of you.
 
 set -euo pipefail
 
@@ -38,26 +41,45 @@ mapfile -t files < <(
 # Anchoring on `uses:` is what makes the rewrite safe: the references that appear in prose - an
 # exact-tag illustration, a quoted error message - are left for a human to judge
 reference='uses:[[:space:]]*uniquesca/ci/[A-Za-z0-9._/-]+'
+skip='pin-ci-version: skip'
+
+report_skipped() {
+    local skipped
+    skipped="$(grep -nE "$reference@" "${files[@]}" | grep -F "$skip" || true)"
+
+    if [[ -n "$skipped" ]]; then
+        echo
+        echo "Deliberately off $target:"
+        echo "$skipped"
+    fi
+}
 
 if [[ "$check_only" == true ]]; then
     # The trailing boundary stops `@v11` from counting `@v110` as pinned
-    drift="$(grep -nE "$reference@" "${files[@]}" | grep -vE "$reference@$target([^A-Za-z0-9._/-]|$)" || true)"
+    drift="$(
+        grep -nE "$reference@" "${files[@]}" \
+            | grep -vF "$skip" \
+            | grep -vE "$reference@$target([^A-Za-z0-9._/-]|$)" || true
+    )"
 
     if [[ -n "$drift" ]]; then
         echo "These references are not pinned to $target:" >&2
         echo "$drift" >&2
-        echo "Run bin/pin-ci-version.sh to pin them." >&2
+        echo "Run bin/pin-ci-version.sh to pin them, or mark one '# $skip' with a reason." >&2
         exit 1
     fi
 
     echo "Every reference between this repository's actions and workflows is pinned to $target"
+    report_skipped
     exit 0
 fi
 
-sed -i -E "s#($reference)@[A-Za-z0-9._/-]+#\1@$target#g" "${files[@]}"
+sed -i -E "/$skip/!s#($reference)@[A-Za-z0-9._/-]+#\1@$target#g" "${files[@]}"
 sed -i -E "s#^([[:space:]]*VERSION_BRANCH:[[:space:]]*)[^[:space:]#]+#\1$target#" "$version_file"
 
 echo "Pinned to $target"
+
+report_skipped
 
 # A version in prose is a judgement call rather than a substitution, so these are reported instead
 prose="$(grep -nE 'uniquesca/ci/[A-Za-z0-9._/-]+@' "${files[@]}" | grep -vE "$reference@" || true)"

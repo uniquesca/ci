@@ -15,6 +15,7 @@ stays inside its code. `bin/pin-ci-version.sh v12` moves the repository: it rewr
 reference and `VERSION_BRANCH` in `update-current-version.yml`, and lists the versions in prose for
 you to judge by hand. Create the `v12` branch off `main` in the same change. `self-tests.yml` fails
 on a reference left behind, so a new action added at `@main` does not get past a pull request.
+A reference that belongs off the branch carries `# pin-ci-version: skip` and a comment saying why.
 
 # Documentation and comments
 
