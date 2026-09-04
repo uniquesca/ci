@@ -1264,3 +1264,7 @@
 
 * Update: improved php-related qa-checks to save time on green runs at the expense of extra time on red ones (eca9cb1 by George Shestayev)
 * Update: introduced proper versioning in CI framework (570c8ca6 by George Shestayev)
+
+## v11.2.1
+
+* Update: improving prompt for coding and plannint agents - they should not try to use subagents (729b6e8 by George Shestayev)
