@@ -1278,3 +1278,7 @@
 * Update: adding labels when AI work is in progress (9a413e4 by George Shestayev)
 * Update: review now one comment instead of two (9a413e4 by George Shestayev)
 * Update: introduced improvements to adopt Opus 5 and reduce costs without sacrificing the output quality (9a413e4 by George Shestayev)
+
+## v1.14.1
+
+* Fix: fixed AI review agent not being told it doesn't have bash, but also granting it some git read commands (d194043 by George Shestayev)
