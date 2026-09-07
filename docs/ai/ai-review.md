@@ -170,12 +170,13 @@ blocking review and a comment asking for a person.
 
 ### What the agent can and cannot do
 
-It **may** read and search every file in the checkout.
+It **may** read and search every file in the checkout, and read the branch's history with
+`git log`, `git blame` and `git show`.
 
 It **may not**, and cannot:
 
-* **Run anything.** No shell, no network. Tests and linters are CI's job, and what they find reaches
-  the *implementing* agent directly through
+* **Run anything else.** No other shell command, no network. Tests and linters are CI's job, and
+  what they find reaches the *implementing* agent directly through
   [the check intake](ai-implement.md#other-things-the-round-reads) rather than through the reviewer -
   which is also why it is told not to spend an inline comment restating what a linter already said.
 * **Change any code.** The job holds `contents: read` and pushes nothing, so anything it writes is

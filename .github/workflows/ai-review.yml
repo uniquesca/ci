@@ -137,8 +137,9 @@ jobs:
       group: ai-review-${{ github.repository }}-${{ github.event.client_payload.pull_request || github.event.issue.number }}
       cancel-in-progress: false
     permissions:
-      # Read-only on the code. The reviewing agent has no shell and nothing here pushes, so
-      # this is the boundary that actually holds - the same shape as the planner.
+      # Read-only on the code. The reviewing agent's shell reads git history and nothing else,
+      # and nothing here pushes, so this is the boundary that actually holds - the same shape as
+      # the planner.
       contents: read
       # Submitting the review, and replying in the pull request conversation when it could
       # not be submitted
@@ -429,7 +430,7 @@ jobs:
           # checkout leaves a live `x-access-token:ghs_...` in .git/config for it to find
           persist-credentials: false
 
-      # The agent has no shell, so it cannot run `git diff` itself. Three dots rather than two:
+      # `git diff` is not among the commands the agent may run. Three dots rather than two:
       # what this branch changed since it left the base, not everything that has happened on
       # the base since.
       - name: Stage the diff
@@ -591,6 +592,12 @@ jobs:
               a person's. Same shape, and the two files never overlap. Nothing in it is open.
             ${{ steps.approval_diff.outputs.staged == 'true' && format('- `.ai-review/since-approval.patch` - what changed after this branch was approved at {0}. That is the part nobody has read.', steps.stage_pr.outputs.approved_at) || '' }}
 
+            You have no network access, and the only shell commands you may run are `git log`,
+            `git blame` and `git show` - reach for them where the history behind a line is what
+            settles the question. Everything else is on disk: read with `Read`, search with
+            `Grep` and `Glob`. Any other `Bash` call is refused, and the refusal costs a turn
+            you needed for reading.
+
             **The working tree is the branch.** Do not review the diff in isolation - open the
             files it touches and read around each hunk. A comment that misses the function
             three lines below the hunk is worse than no comment, and this is the single biggest
@@ -701,11 +708,17 @@ jobs:
             Your final message is not published anywhere. Put everything you want said in
             `review.json`; the final message is only for the run log, so a sentence on what
             you concluded is plenty.
+          # The git commands are the history behind a line, which nothing else here can reach.
+          # Where the wildcard sits is the whole of it: after the subcommand, so `git -c <program>
+          # log` is not a match, and a rule has to match each subcommand of a compound command on
+          # its own, so `git log && anything` is refused. The prompt above names this same list -
+          # a tool the agent reaches for and does not have costs it a turn, so the two have to
+          # say the same thing.
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Write"
+            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Write,Bash(git log:*),Bash(git blame:*),Bash(git show:*)"
             ${{ inputs.debug && '--debug' || '' }}
 
       - name: Report on the run
