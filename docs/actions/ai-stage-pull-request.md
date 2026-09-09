@@ -49,6 +49,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `checks_pending` | How many check runs had not finished yet |
 | `round` | Which round this run is, counting from 1 |
 | `unattended_rounds` | How many rounds in a row were triggered by a bot, counting back from the most recent |
+| `last_round_sha` | Commit the previous round left on the branch. Empty before the first round, and for a round that closed without recording one |
 | `since` | Timestamp the time-based sources were filtered from |
 | `staged_at` | Timestamp taken before anything was read. The caller records it in the round comment, and it becomes the next round's `since` |
 | `title` | Title of the pull request |
@@ -105,7 +106,9 @@ Each finished round leaves one `round_marker` comment carrying its own metadata,
 are the history. `round` is how many have run plus one. `unattended_rounds` counts consecutive
 bot-triggered rounds back from the newest, and **any round a person asked for resets it to zero**. A
 round whose metadata cannot be parsed counts as unattended, erring towards stopping rather than
-looping.
+looping. `last_round_sha` is the commit the newest round recorded, which is how a caller tells its
+own work from a commit pushed on top of it; it is empty for a round that closed without one, and a
+caller has to read empty as not knowing rather than as a match.
 
 ### Checks
 

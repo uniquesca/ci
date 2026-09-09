@@ -207,6 +207,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch the work is pushed to - the branch is this plus `issue-<number>`. Only branches carrying it are ever worked on |
 | `progress_label` | string | `ai:implementing` | Label put on the issue, or on the pull request on a round, while the run is working, and taken off however it ends. Created if the repository has not got it, then left alone, so recolouring it there sticks. Empty to not label anything |
 | `allow_workflow_changes` | boolean | `false` | Let the agent change this repository's own workflow files. Off by default, and then a change it wants to `.github/workflows/` is [reported as a patch](#what-the-agent-can-and-cannot-do) instead of pushed. Turning it on needs the AI Implement app to hold the `workflows` permission, which means an agent editing your CI |
+| `autofix_commit_subject` | string | `CI: automatic code style fixes` | Subject line the code style fixer commits with. A commit carrying it on top of a round is the fixer rewriting the agent's own push rather than somebody taking the branch over |
 | `max_unattended_rounds` | number | `5` | How many rounds in a row a bot may trigger before a person has to look. A round a person asked for resets this to zero |
 | `ignore_check_patterns` | string | `(ai.implement\|ai.plan\|ai.review)` | Case-insensitive regular expression matching check runs to leave out of the feedback, so a run does not read its own red status back as a code defect |
 | `dispatch_review` | boolean | `false` | Ask [`ai-review`](ai-review.md) to look at the work as soon as it is pushed, with a `repository_dispatch` event. Turn it on only once a workflow is subscribed to that event |
@@ -251,6 +252,12 @@ nothing waits for a reviewer that was never dispatched. These rounds count as un
 [the round cap](#the-round-cap), which is what stops the round → push → CI → round cycle running
 away. **`workflow_run` only fires when the workflow file containing it is on the default branch**,
 which on a feature branch looks exactly like a broken gate.
+
+A round nobody asked for only runs while the branch is still the agent's own. Each round records
+the commit it left, and a round started by a check compares it against the head: anything on top of
+it other than an automatic style fix means somebody has taken the branch over, and the round stands
+down with a note rather than reasoning about a change that moved underneath it. `/ai-do` and a
+review you submit yourself are unaffected, and either one hands the branch back.
 
 A round reads your review and conversation comments by **time**, from a watermark the previous round
 recorded when it started reading rather than when it finished, so a review submitted while a round
