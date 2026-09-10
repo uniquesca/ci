@@ -1282,3 +1282,9 @@
 ## v1.14.1
 
 * Fix: fixed AI review agent not being told it doesn't have bash, but also granting it some git read commands (d194043 by George Shestayev)
+
+## v1.15.0
+
+* Fix: fixed AI agent thinking it has persistent memory (e91120e by George Shestayev)
+* Update: adjusted AI efforts to save costs (87b424c by George Shestayev)
+* Update: human commit would stop AI loop now (e91120e by George Shestayev)

@@ -81,6 +81,9 @@ outputs:
   unattended_rounds:
     description: 'How many rounds in a row were triggered by a bot, counting back from the most recent. Reset by any round a person asked for'
     value: ${{ steps.stage.outputs.unattended_rounds }}
+  last_round_sha:
+    description: 'Commit the previous round left on the branch. Empty before the first round, and for a round closed without recording one - so a caller comparing it against the head has to read empty as "not known to be the agent''s"'
+    value: ${{ steps.stage.outputs.last_round_sha }}
   since:
     description: 'Timestamp the time-based sources were filtered from - the previous round staged_at, or the pull request creation time on the first round'
     value: ${{ steps.stage.outputs.since }}
@@ -176,6 +179,10 @@ runs:
         # review threads and checks - ignore this entirely, because "still unresolved" and
         # "currently red" are not questions about when something was said.
         since=$(jq -r 'last | .staged_at // ""' "$tmp/rounds.json")
+
+        # What the previous round left on the branch, which is how a caller tells its own work
+        # from a commit somebody else pushed on top of it.
+        last_round_sha=$(jq -r 'last | .head_sha // ""' "$tmp/rounds.json")
         if [[ -z "$since" || "$since" == 'null' ]]; then
           # First round: the pull request was opened by the initial implementation, so
           # everything on it is feedback on that
@@ -518,6 +525,7 @@ runs:
           printf 'checks_pending=%s\n' "$checks_pending"
           printf 'round=%s\n' "$round"
           printf 'unattended_rounds=%s\n' "$unattended_rounds"
+          printf 'last_round_sha=%s\n' "$last_round_sha"
           printf 'since=%s\n' "$since"
           printf 'staged_at=%s\n' "$staged_at"
           printf 'title=%s\n' "$title"

@@ -72,9 +72,9 @@ on:
         default: 'claude-opus-5'
         type: string
       effort:
-        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and the levels below `high` are worth measuring before assuming they cost quality'
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and implementing is where it buys the most'
         required: false
-        default: ''
+        default: 'high'
         type: string
       branch_prefix:
         description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
@@ -91,6 +91,11 @@ on:
         required: false
         default: false
         type: boolean
+      autofix_commit_subject:
+        description: 'Subject line the automatic code style fixer commits with. A commit carrying it on top of a round is the fixer rewriting the agent''s own push rather than somebody taking the branch over, and the default is the one `cs-fix` uses - change it only where a repository fixes its code style with something else'
+        required: false
+        default: 'CI: automatic code style fixes'
+        type: string
       max_unattended_rounds:
         description: 'How many rounds in a row a bot may trigger before a person has to look. Rounds a person asked for are not counted and reset this to zero. Without a bound, a reviewing agent and this one can hand work back and forth until the API key runs dry'
         required: false
@@ -1078,6 +1083,81 @@ jobs:
             echo "PROCEED=false" >> "$GITHUB_ENV"
             echo "Standing down - whatever is still reporting on this commit will start the round when it finishes"
           fi
+
+      # Somebody else has the branch. A round nobody asked for exists to close the loop on the
+      # agent's own push - the checks that ran on it, and the review that answered it. Once a
+      # person has committed on top of that push the branch is theirs, and a red check is no
+      # longer the agent being handed its own work back: a round would reason about a design
+      # that moved underneath it, and the reviewer it dispatches re-reads the whole change
+      # against a base somebody else has moved.
+      #
+      # Only an unattended round. `/ai-do` and a person's own review are somebody asking for
+      # this and still get it, which is also how a branch is handed back.
+      #
+      # The commit the last round left is what is compared, not who authored it. Which identity
+      # a round commits as is the caller's to configure, and the style fixer commits as the
+      # repository's CI rather than as a bot at all, so no identity test separates the two.
+      # Anything that cannot be established - a round that recorded no commit, a comparison that
+      # could not be read, a branch rewritten under the last round - stands the round down. The
+      # cost of being wrong that way is somebody typing the command; the other way it is an
+      # agent rewriting work it does not own.
+      - name: Make sure the branch is still the agent's to move
+        id: ownership
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.attended == 'false' }}
+        env:
+          PR: ${{ steps.event.outputs.pull_request }}
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          LAST_ROUND_SHA: ${{ steps.stage_pr.outputs.last_round_sha }}
+          FIX_SUBJECT: ${{ inputs.autofix_commit_subject }}
+        run: |
+          stand_down() {
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            echo "::notice title=No round was started::$1 Run the command on #$PR to ask for one."
+            exit 0
+          }
+
+          if [[ "$LAST_ROUND_SHA" == "$HEAD_SHA" ]]; then
+            echo "#$PR is still on $HEAD_SHA, which the last round pushed"
+            exit 0
+          fi
+
+          # Empty before the first round has closed, and for any round that ran before the
+          # commit was being recorded
+          if [[ -z "$LAST_ROUND_SHA" ]]; then
+            stand_down "No round on #$PR recorded the commit it left, so nothing says this head is the agent's."
+          fi
+
+          if ! gh api "repos/$GH_REPO/compare/$LAST_ROUND_SHA...$HEAD_SHA" \
+                 > "$RUNNER_TEMP/branch-moved.json" 2> /dev/null; then
+            stand_down "$LAST_ROUND_SHA...$HEAD_SHA on #$PR could not be compared."
+          fi
+
+          # `behind` and `diverged` both mean the last round's commit is not on this branch any
+          # more, so whatever is here was force pushed over it
+          status=$(jq -r '.status' "$RUNNER_TEMP/branch-moved.json")
+          if [[ "$status" != 'ahead' && "$status" != 'identical' ]]; then
+            stand_down "#$PR is $status of the $LAST_ROUND_SHA the last round pushed."
+          fi
+
+          # The style fixer's commit is the one thing expected on top of a round: it rewrites the
+          # agent's own push and pushes it back, so the checks this round is answering are the
+          # ones running on that commit rather than on the agent's. Subjects are compared because
+          # that is what the fixer's own circuit breaker recognises itself by.
+          foreign=$(jq -r --arg fix "$FIX_SUBJECT" '
+            .commits[]
+            | (.commit.message | split("\n")[0]) as $subject
+            | select($subject != $fix)
+            | "\(.sha[0:9]) \($subject)"' "$RUNNER_TEMP/branch-moved.json")
+
+          if [[ -n "$foreign" ]]; then
+            printf 'On top of the %s the last round pushed:\n%s\n' "$LAST_ROUND_SHA" "$foreign"
+            stand_down "#$PR has moved on without the agent."
+          fi
+
+          echo "#$PR is on $HEAD_SHA, and everything since $LAST_ROUND_SHA is an automatic style fix"
 
       # A round nobody asked for, on a commit where nothing is asking for a change. Stands down
       # silently: this fires on every green pull request, and a comment each time would be noise.
@@ -2222,6 +2302,12 @@ jobs:
             turn waiting on it, because a run that stops to wait opens no pull request
             at all.
 
+            You have no persistent memory. Recording one is not among your tools, so the
+            attempt is refused at the cost of a turn, and this runner is thrown away when
+            the run ends - nothing written there would be read again. Do not mention having
+            tried, either: your final message is the body of the pull request, where a
+            refused tool call reads as a warning to whoever opens it.
+
             Where the plan is many small pieces of the same work, work through them one
             after another. Fifteen of forty written, with the twenty-five you did not
             reach named in your final message, is a good run - the branch has fifteen of
@@ -2265,6 +2351,8 @@ jobs:
             Once this is open as a pull request, the review happens there and you will be
             asked for changes on the lines themselves. Make that easy: small commits of
             related work, and no unrelated tidying mixed in.
+          # The prompt above names what this list leaves out - a tool the agent reaches for
+          # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
@@ -2386,6 +2474,12 @@ jobs:
             was started and nothing is arriving later. Never end a turn waiting on it,
             because a round that stops to wait pushes nothing and answers nobody.
 
+            You have no persistent memory. Recording one is not among your tools, so the
+            attempt is refused at the cost of a turn, and this runner is thrown away when
+            the run ends - nothing written there would be read again. Do not mention having
+            tried, either: your final message is posted as a comment on the pull request,
+            where a refused tool call reads as a warning to the reviewer.
+
             Where the feedback asks for many small pieces of the same work, work through them
             one after another. Fifteen of forty done, with the twenty-five you did not reach
             named in your final message, is a good round - the next round starts from your
@@ -2419,6 +2513,8 @@ jobs:
             words and nothing else. `C2` alone tells them nothing, while the sentence with `C2`
             after it tells them everything and lets them go and find it. That goes for a
             revision too - name what changed, and put the ids after it.
+          # The prompt above names what this list leaves out - a tool the agent reaches for
+          # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
@@ -2837,7 +2933,13 @@ jobs:
             exit 1
           fi
 
-          echo "pushed=true" >> "$GITHUB_OUTPUT"
+          {
+            printf 'pushed=true\n'
+            # Recorded in the round comment, where the next round reads it to tell this commit
+            # from one somebody else pushed on top of it. Read after the replay above, so it is
+            # the commit that actually landed rather than the one the work was cut as.
+            printf 'head=%s\n' "$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
       # One pull request per issue, opened by the first run and reused by every round after.
       # A round never reaches this - it already has one.
@@ -3051,6 +3153,9 @@ jobs:
           ATTENDED: ${{ steps.event.outputs.attended }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
           STAGED_AT: ${{ steps.stage_pr.outputs.staged_at }}
+          # Falls back to the head this round read when it pushed nothing, because that commit
+          # is still the last one the agent worked on and is what the next round compares against
+          HEAD_SHA: ${{ steps.push.outputs.head || steps.pull_request.outputs.head_sha }}
           FEEDBACK_COUNT: ${{ steps.stage_pr.outputs.feedback_count }}
           CHECK_COUNT: ${{ steps.stage_pr.outputs.check_count }}
           PUSHED: ${{ steps.push.outputs.pushed }}
@@ -3069,7 +3174,9 @@ jobs:
             --argjson round "$ROUND" \
             --arg staged_at "$STAGED_AT" \
             --arg trigger "$TRIGGER" \
-            '{attended: $attended, round: $round, staged_at: $staged_at, trigger: $trigger}')
+            --arg head_sha "$HEAD_SHA" \
+            '{attended: $attended, round: $round, staged_at: $staged_at, trigger: $trigger,
+              head_sha: $head_sha}')
 
           {
             printf '%s\n' "$ROUND_MARKER"

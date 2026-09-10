@@ -58,9 +58,9 @@ on:
         default: 'claude-opus-5'
         type: string
       effort:
-        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and the levels below `high` are worth measuring before assuming they cost quality'
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and planning holds its quality a level below implementing'
         required: false
-        default: ''
+        default: 'medium'
         type: string
       branch_prefix:
         description: 'Prefix of the branch the implementing workflow pushes to. Used only to find the pull request already implementing this issue, so that a revised plan can be announced there. Keep it the same as the implementing workflow branch_prefix'
