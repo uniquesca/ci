@@ -72,9 +72,9 @@ on:
         default: 'claude-opus-5'
         type: string
       effort:
-        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and the levels below `high` are worth measuring before assuming they cost quality'
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and implementing is where it buys the most'
         required: false
-        default: ''
+        default: 'high'
         type: string
       branch_prefix:
         description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'

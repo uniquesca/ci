@@ -200,7 +200,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and triage as `read`, so this covers owners, maintainers and developers |
 | `allowed_bots` | string | `github-actions[bot] uniques-ai-review[bot] uniques-ai-implement[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. **This has to name the reviewing app's bot login** - `<app-slug>[bot]` - or a review starts no round |
 | `model` | string | `claude-opus-5` | Model used to implement the plan and to act on review feedback |
-| `effort` | string | `''` | How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to |
+| `effort` | string | `'high'` | How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to |
 | `max_turns` | number | `60` | How many turns the agent may spend before it has to stop with what it has |
 | `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
 | `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |

@@ -73,9 +73,9 @@ on:
         default: 'claude-opus-5'
         type: string
       effort:
-        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and the levels below `high` are worth measuring before assuming they cost quality'
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to. This is the largest lever there is over what a run costs, and reviewing holds its quality a level below implementing'
         required: false
-        default: ''
+        default: 'medium'
         type: string
       max_comments:
         description: 'How many inline comments one review may carry'
