@@ -64,7 +64,7 @@ on:
       max_turns:
         description: 'How many turns the agent may spend before it has to stop with what it has. A ceiling to work under rather than one the agent is held to - the SDK enforces it exactly on a short run and lets a long one past it, so leave room above what a round here actually costs'
         required: false
-        default: 60
+        default: 100
         type: number
       model:
         description: 'Model used to implement the plan and to act on review feedback'
@@ -1969,7 +1969,7 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && steps.install.outcome == 'failure' }}
         run: |
-          echo "::warning title=The dependencies could not be installed::The agent implements without them, so it is back to the artifact reports for what CI says about its work and it is told nothing it cannot run. The step's log has why - a private registry with no token configured, a token that has expired, and a lock file the branch itself broke, are the three to look at first"
+          echo "::warning title=The dependencies could not be installed::The agent implements without them: it is told they are missing and to leave them alone, and the artifact reports are what CI says about its work. Worth fixing even so - a round that can run the checks is a round that catches its own mistakes. The step's log has why, and a private registry with no token configured, a token that has expired, and a lock file the branch itself broke, are the three to look at first"
 
       # Whether installing changed anything git already tracks. A repository that commits its
       # `vendor/` or its `node_modules` is the case that matters: the install then turns up inside
@@ -1999,7 +1999,11 @@ jobs:
           fi
 
       # What the agent is told about its dependencies, and it has to be the truth: an agent told
-      # to run a linter out of a `vendor/` that is not there spends turns finding out.
+      # to run a linter out of a `vendor/` that is not there spends turns finding out. Silence
+      # costs the same turns and reads worse - an agent with a shell and a plan full of checks
+      # takes it as the environment being its to build, and one run went two thirds of its turns
+      # on a substitute dependency tree, stubs for the packages it could not reach and a linter
+      # under `/tmp`, then was cut off before it wrote anything down.
       #
       # Read off the disk rather than from the install's outcome, because those are not the same
       # answer - a partial install and a repository that commits its dependencies both end up here.
@@ -2008,6 +2012,10 @@ jobs:
         if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
         env:
           COMMANDS: ${{ steps.verify.outputs.commands }}
+          # Whether anything was meant to be installed at all. An empty `vendor/` means something
+          # different in a repository with a `composer.json` than in one without.
+          PHP: ${{ steps.verify.outputs.php }}
+          NODE: ${{ steps.verify.outputs.node }}
         run: |
           # Named by directory rather than by ecosystem, because a repository can have a
           # `composer.json` this workflow installs nothing for and a `package.json` it does - and
@@ -2055,13 +2063,33 @@ jobs:
                 echo 'Having these clean is the floor rather than the whole of it: they are what CI'
                 echo 'will say about your work, not everything that has to be true of it.'
               fi
+            elif [[ "$PHP" == 'true' || "$NODE" == 'true' ]]; then
+              echo 'This project declares dependencies, and the install for them did not work on'
+              echo 'this runner - so there is no `vendor/` or `node_modules` here, and none of the'
+              echo 'test runners, linters or static analysis they carry is available to you.'
+              echo
+              echo 'Leave it that way. Installing them again fails the same way, and building'
+              echo 'something to stand in for them - a substitute tree somewhere else, stubs for the'
+              echo 'packages that will not resolve, a linter of your own under `/tmp` - is a whole'
+              echo 'run spent on an environment that is thrown away at the end of it. Those turns'
+              echo "are worth more spent on the plan, so treat every one of the plan's checks as"
+              echo 'something that cannot be run here.'
+              echo
+              echo 'Verify by reading instead, and be plain in your final message about which'
+              echo 'checks went unrun and why. CI runs them against what is pushed and reports back'
+              echo 'on the pull request, so what you leave unproven is picked up there and can be'
+              echo 'acted on in a later round.'
             fi
 
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
 
           if [[ ${#installed[@]} -eq 0 ]]; then
-            echo "There are no dependency directories in the working tree, and the agent is told nothing about any"
+            if [[ "$PHP" == 'true' || "$NODE" == 'true' ]]; then
+              echo "The dependencies are not on the disk, and the agent is told to expect none and to leave them alone"
+            else
+              echo "There are no dependency directories in the working tree, and the agent is told nothing about any"
+            fi
           elif [[ ${#commands[@]} -gt 0 ]]; then
             echo "The agent can run: ${commands[*]}"
           else
