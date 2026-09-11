@@ -201,7 +201,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `allowed_bots` | string | `github-actions[bot] uniques-ai-review[bot] uniques-ai-implement[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. **This has to name the reviewing app's bot login** - `<app-slug>[bot]` - or a review starts no round |
 | `model` | string | `claude-opus-5` | Model used to implement the plan and to act on review feedback |
 | `effort` | string | `'high'` | How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to |
-| `max_turns` | number | `60` | How many turns the agent may spend before it has to stop with what it has |
+| `max_turns` | number | `100` | How many turns the agent may spend before it has to stop with what it has |
 | `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
 | `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch the work is pushed to - the branch is this plus `issue-<number>`. Only branches carrying it are ever worked on |
@@ -240,7 +240,8 @@ violations that were already there. `provision_checks: false` skips all of it.
 The dependencies those commands come out of are installed where they run: through `./task.sh
 composer install` and `./task.sh yarn install` for a repository whose application is up, and on the
 runner for one without a container task for that ecosystem. Either way they land in the working
-tree, and an install that fails costs the round its checks rather than the round.
+tree, and an install that fails costs the round its checks rather than the round - the agent is told
+there are none and to leave it that way, and verifies by reading and names what it could not run.
 
 ### What starts a round, and what it reads
 

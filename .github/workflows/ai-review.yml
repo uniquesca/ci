@@ -65,7 +65,7 @@ on:
       max_turns:
         description: 'How many turns the agent may spend reading the code before it has to review with what it found. A ceiling to work under rather than one the agent is held to - the SDK enforces it exactly on a short run and lets a long one past it, so leave room above what a review here actually costs'
         required: false
-        default: 40
+        default: 60
         type: number
       model:
         description: 'Model used to review'

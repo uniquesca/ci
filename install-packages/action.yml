@@ -251,11 +251,10 @@ runs:
       run: |
         echo "Installing dependencies via Yarn using command: ${{ inputs.yarn_install_cmd }}"
 
-        # Temporarily disable exit on error to handle yarn failure
-        set +e
-        output=$(${{ inputs.yarn_install_cmd }} 2>&1)
-        exit_code=$?
-        set -e
+        # `|| exit_code=$?` keeps the failure out of both errexit and any ERR trap, so the 401
+        # retry below is reached
+        exit_code=0
+        output=$(${{ inputs.yarn_install_cmd }} 2>&1) || exit_code=$?
 
         if [ $exit_code -ne 0 ]; then
           if echo "$output" | grep -q '401 Unauthorized' && [ -f "yarn.lock" ]; then

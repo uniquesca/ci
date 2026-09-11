@@ -372,11 +372,10 @@ jobs:
               if [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
                 echo "Installing Yarn - first attempt"
 
-                # Temporarily disable exit on error to handle yarn failure
-                set +e
-                output=$(./task.sh yarn install 2>&1)
-                exit_code=$?
-                set -e
+                # `|| exit_code=$?` keeps the failure out of both `errexit` and the ERR trap -
+                # `set +e` would leave the trap armed, and it exits the script before the retry below
+                exit_code=0
+                output=$(./task.sh yarn install 2>&1) || exit_code=$?
 
                 if [ $exit_code -ne 0 ]; then
                   if echo "$output" | grep -q '401 Unauthorized' && [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then

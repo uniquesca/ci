@@ -1288,3 +1288,8 @@
 * Fix: fixed AI agent thinking it has persistent memory (e91120e by George Shestayev)
 * Update: adjusted AI efforts to save costs (87b424c by George Shestayev)
 * Update: human commit would stop AI loop now (e91120e by George Shestayev)
+
+## v1.15.1
+
+* Fix: fixed yarn re-attempt to install packages in docker-deploy action (1d669bf by George Shestayev)
+* Update: adjusted default max turned for AI (483adfb by George Shestayev)
