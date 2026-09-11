@@ -1,7 +1,8 @@
 # Spin up application in Docker
 
-Brings the application up in Docker on the runner: renders the config files, logs into a registry if
-one is given, starts the containers and waits for MySQL to answer.
+Brings the application up in Docker on the runner: creates the shared network and volumes, renders
+the config files, logs into a registry if one is given, starts the containers and waits for MySQL to
+answer.
 
 ```yaml
 - uses: uniquesca/ci/docker-spin-up@v11
@@ -37,6 +38,12 @@ This action produces no outputs.
 a `task.sh`, and `docker compose up -d` when it does not. `docker_up_arguments` and `--profile` are
 appended to whichever it picked, so `-d` must not be in either.
 
+### The network and the volumes
+
+The `infrastructure` network and the `composer_cache` and `npm_cache` volumes are created before
+anything else, because a compose file that declares them as external will not start otherwise.
+Creating them again is harmless, so nothing checks whether they are already there.
+
 ### The environment it renders
 
 `docker.user_map` is set to the runner's own `uid:gid` and merged **under** `env_variables`, so a
@@ -52,9 +59,9 @@ environment pointing at a temporary file holding `env_variables` as JSON. A repo
 ### Waiting for MySQL
 
 If `./task.sh supports ping-mysql`, the action polls `./task.sh ping-mysql` every 5 seconds and
-**fails after 120 seconds**. Without that task nothing is waited for, and `sleep` is the only tool
-left - a container that accepts TCP connections before the database is ready is what that input
-exists for.
+**fails after 120 seconds**. Without that task nothing is waited for and the step says so, leaving
+`sleep` as the only tool - a container that accepts TCP connections before the database is ready is
+what that input exists for. Adding `ping-mysql` to `task.sh` is the fix the warning asks for.
 
 ### After it
 

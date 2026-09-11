@@ -123,6 +123,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 
 | Action | What it does |
 |---|---|
+| [`setup-app`](actions/setup-app.md) | The whole starting point of a job: the application up, its dependencies installed, the database migrated and the cache cleared |
 | [`docker-spin-up`](actions/docker-spin-up.md) | Brings the application up in Docker on the runner and waits for MySQL |
 
 ### AI
