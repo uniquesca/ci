@@ -18,10 +18,6 @@ inputs:
     description: 'Docker Compose profile to use'
     required: false
     default: 'ci'
-  sleep:
-    description: 'Seconds to wait after the containers are up'
-    required: false
-    default: 0
   docker_registry:
     description: 'Registry to log into before pulling'
     required: false
@@ -77,9 +73,8 @@ runs:
         env_variables: ${{ inputs.env_variables }}
         hostname: ${{ inputs.hostname }}
         profile: ${{ inputs.profile }}
-        sleep: ${{ inputs.sleep }}
         docker_registry: ${{ inputs.docker_registry }}
-        docker_username: ${{ inputs.docker_username || vars.USERNAME_GITHUB }}
+        docker_username: ${{ inputs.docker_username }}
         docker_password: ${{ inputs.docker_password }}
 
     - name: Install packages
