@@ -1293,3 +1293,8 @@
 
 * Fix: fixed yarn re-attempt to install packages in docker-deploy action (1d669bf by George Shestayev)
 * Update: adjusted default max turned for AI (483adfb by George Shestayev)
+
+## v1.16.0
+
+* New: introduced setup-app reusable action, that is docker-spin-up + install-packages + migrate + clear cache (db68462 by George Shestayev)
+* Update: docker spin-up now created shared resources itself (db68462 by George Shestayev)

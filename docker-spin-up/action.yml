@@ -50,6 +50,14 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # A compose file that declares these as external fails to start unless they already exist
+    - name: Prepare Docker network and volumes
+      shell: bash
+      run: |
+        docker network create infrastructure || true
+        docker volume create composer_cache || true
+        docker volume create npm_cache || true
+
     - name: Prepare command to spin up Docker
       working-directory: ${{ inputs.working_directory }}
       shell: bash
@@ -159,7 +167,7 @@ runs:
         TIMEOUT=120
         ELAPSED=0
         
-        if ./task.sh supports ping-mysql > /dev/null; then
+        if [ -f task.sh ] && ./task.sh supports ping-mysql > /dev/null; then
           until ./task.sh ping-mysql > /dev/null 2>&1; do
             if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
               echo "❌ Timed out waiting for MySQL!"
@@ -171,4 +179,6 @@ runs:
             ELAPSED=$((ELAPSED + 5))
           done
           echo "✅ MySQL is ready!"
+        else
+          echo "⚠️ Nothing waits for MySQL: task.sh here does not support ping-mysql. Add the command to it, otherwise the job relies on the sleep input being long enough"
         fi

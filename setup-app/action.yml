@@ -1,0 +1,119 @@
+name: Set up application
+
+description: Brings the application up in Docker, installs its dependencies, migrates the database and clears the cache.
+
+inputs:
+  working_directory:
+    description: 'Directory the application lives in'
+    required: false
+    default: '.'
+  env_variables:
+    description: 'JSON object of variables the config templates are rendered with'
+    required: false
+    default: '{}'
+  hostname:
+    description: 'Hostname to point at 127.0.0.1 in /etc/hosts'
+    required: false
+  profile:
+    description: 'Docker Compose profile to use'
+    required: false
+    default: 'ci'
+  sleep:
+    description: 'Seconds to wait after the containers are up'
+    required: false
+    default: 0
+  docker_registry:
+    description: 'Registry to log into before pulling'
+    required: false
+    default: 'ghcr.io'
+  docker_username:
+    description: 'Registry username. Falls back to the USERNAME_GITHUB variable'
+    required: false
+  docker_password:
+    description: 'Registry password or access token'
+    required: false
+  composer_cmd:
+    description: 'Command that installs the Composer dependencies'
+    required: false
+    default: './task.sh composer install --prefer-dist --no-interaction'
+  composer_cache_dir:
+    description: 'Composer cache directory'
+    required: false
+    default: 'var/docker/.composer-cache/files/'
+  composer_access_token:
+    description: 'Token for satis.unqs.ca, the Uniques Composer registry'
+    required: false
+  skip_composer:
+    description: 'Skip Composer entirely'
+    required: false
+    default: false
+  yarn_install_cmd:
+    description: 'Command that installs the Yarn dependencies'
+    required: false
+    default: './task.sh yarn install'
+  yarn_cache_dir:
+    description: 'Yarn cache directory'
+    required: false
+    default: 'var/docker/yarn/'
+  npm_access_token:
+    description: 'Token for the Uniques NPM registry'
+    required: false
+  skip_npm_yarn:
+    description: 'Skip NPM and Yarn entirely'
+    required: false
+    default: false
+  cache_key:
+    description: 'Extra fragment mixed into every cache key, to keep two callers caches apart'
+    required: false
+    default: ''
+
+runs:
+  using: "composite"
+  steps:
+    - name: Spin up Docker
+      uses: uniquesca/ci/docker-spin-up@v11
+      with:
+        working_directory: ${{ inputs.working_directory }}
+        env_variables: ${{ inputs.env_variables }}
+        hostname: ${{ inputs.hostname }}
+        profile: ${{ inputs.profile }}
+        sleep: ${{ inputs.sleep }}
+        docker_registry: ${{ inputs.docker_registry }}
+        docker_username: ${{ inputs.docker_username || vars.USERNAME_GITHUB }}
+        docker_password: ${{ inputs.docker_password }}
+
+    - name: Install packages
+      uses: uniquesca/ci/install-packages@v11
+      with:
+        working_directory: ${{ inputs.working_directory }}
+        skip_composer: ${{ inputs.skip_composer }}
+        composer_cmd: ${{ inputs.composer_cmd }}
+        composer_cache_dir: ${{ inputs.composer_cache_dir }}
+        composer_access_token: ${{ inputs.composer_access_token }}
+        skip_npm_yarn: ${{ inputs.skip_npm_yarn }}
+        yarn_install_cmd: ${{ inputs.yarn_install_cmd }}
+        yarn_cache_dir: ${{ inputs.yarn_cache_dir }}
+        npm_access_token: ${{ inputs.npm_access_token }}
+        cache_key: ${{ inputs.cache_key }}
+
+    # An application without a database declares no `migrate` task, so asking `task.sh` what it
+    # supports is what keeps this action usable by every repository
+    - name: Run migrations
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        if [ -f task.sh ] && ./task.sh supports migrate > /dev/null; then
+          ./task.sh migrate
+        else
+          echo "ℹ️  No migrate task, skipped"
+        fi
+
+    - name: Clear cache
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        if [ -f task.sh ] && ./task.sh supports clear-cache > /dev/null; then
+          ./task.sh clear-cache
+        else
+          echo "ℹ️  No clear-cache task, skipped"
+        fi
