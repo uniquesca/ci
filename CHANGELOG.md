@@ -1298,3 +1298,7 @@
 
 * New: introduced setup-app reusable action, that is docker-spin-up + install-packages + migrate + clear cache (db68462 by George Shestayev)
 * Update: docker spin-up now created shared resources itself (db68462 by George Shestayev)
+
+## v1.16.1
+
+* Fix: fixing docker username fallback to vars (e314230 by George Shestayev)
