@@ -7,6 +7,10 @@ inputs:
   db_name:
     description: 'DB name to export dump from'
     required: true
+  schema_only:
+    description: 'Dump the schema only, without any table data'
+    required: false
+    default: 'false'
   host:
     description: 'MySQL server address'
     required: false
@@ -29,7 +33,13 @@ runs:
   steps:
     - name: MySQL export
       run: |
+        EXTRA_ARGS=()
+        if [[ "${{ inputs.schema_only }}" == 'true' ]]; then
+          EXTRA_ARGS+=(--no-data)
+        fi
+
         mysqldump -q --routines --triggers --single-transaction --max_allowed_packet=512M \
+          "${EXTRA_ARGS[@]}" \
           --user=${{inputs.username}} \
           --password=${{inputs.password}} \
           --host=${{inputs.host}} \
@@ -44,4 +54,10 @@ runs:
         sed -i '/^-- Dump completed on/d' ${{ inputs.dump_file_path }}
         sed -i '/^-- Host:/d' ${{ inputs.dump_file_path }}
         sed -i -E "s/^-- Dumping routines for database '.+'$/-- Dumping routines/" ${{ inputs.dump_file_path }}
+
+        # Without the data, AUTO_INCREMENT is the last id the table happened to reach, so it moves
+        # on every run and defeats the point of a committable dump.
+        if [[ "${{ inputs.schema_only }}" == 'true' ]]; then
+          sed -i -E 's/ AUTO_INCREMENT=[0-9]+//' ${{ inputs.dump_file_path }}
+        fi
       shell: bash
