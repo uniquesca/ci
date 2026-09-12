@@ -729,6 +729,26 @@ jobs:
           execution_file: ${{ steps.agent.outputs.execution_file }}
           verb: 'Reviewed'
 
+      # What the agent was given to review from, and the `review.json` it wrote out of it, kept
+      # after the runner is gone. The only other way to see either is `debug: true`, which puts
+      # every tool result in the job log.
+      #
+      # `always()`, because a run that stood down or died part-way is one of the runs worth
+      # opening. Retention is left at the default, which is long enough to read a month of runs
+      # side by side and work out what the agent had to rediscover on each one.
+      - name: Upload the context the agent was given
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-context-review
+          path: |
+            .ai-review/
+            .ai-plan/
+          # Both are dot-directories, and upload-artifact excludes hidden files by default -
+          # without this the artifact arrives empty
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       # A workaround for `claude-code-action`, which fails the agent step when a run used more
       # turns than `--max-turns` allowed even though the agent stopped of its own accord and
       # the review is finished.

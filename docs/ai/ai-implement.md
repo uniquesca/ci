@@ -269,6 +269,9 @@ What those rules exclude is staged separately as the settled record: threads alr
 resolved, and earlier reviews. None of it is work. Where the feedback asks again for something the
 record shows was settled, the round replies saying where it was settled and leaves the code alone.
 
+Every round uploads all of it as an `ai-context-implement` artifact, together with the replies the
+agent wrote and the check reports it read.
+
 ### The round cap
 
 The count is only ever consecutive rounds a bot started, and any round a person asks for resets it

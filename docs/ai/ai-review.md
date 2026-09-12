@@ -148,6 +148,9 @@ closing keyword in that description is followed to the issue behind it - so one 
 issue of some other repository is ignored rather than staged. Rounds go unmentioned there, and the
 agent is told a person is reading what it writes.
 
+Every run uploads all of it as an `ai-context-review` artifact, together with the review the agent
+wrote from it.
+
 ### Inline comments, and why some go missing
 
 Github rejects an **entire** review - summary, verdict and every comment - if one comment names a
