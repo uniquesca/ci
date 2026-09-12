@@ -96,7 +96,7 @@ runs:
         # branch as it really is rather than passing against a tree nobody will ever see - which
         # errexit cannot do, because it exits where it stands
         set +e
-        set -uo pipefail
+        set -u
 
         # Anchored to the repository root, because that is what `git diff` paths are relative to and
         # what the patch below has to apply from. The fixer itself runs where the caller put us,

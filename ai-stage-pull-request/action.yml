@@ -118,8 +118,6 @@ runs:
         IGNORE_CHECKS: ${{ inputs.ignore_check_patterns }}
         MAX_ANNOTATIONS: ${{ inputs.max_annotations }}
       run: |
-        set -o pipefail
-
         mkdir -p "$DIR"
 
         # Scratch lives outside the checkout: the calling workflow commits its working tree,

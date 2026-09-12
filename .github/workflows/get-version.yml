@@ -12,6 +12,10 @@ on:
         description: "Version in x.y.z format"
         value: ${{ jobs.get-version.outputs.output1 }}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   get-version:
     name: Get version

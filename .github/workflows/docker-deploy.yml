@@ -73,6 +73,10 @@ on:
         type: string
         default: '5m'
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   deploy:
     name: Deploy
@@ -101,8 +105,10 @@ jobs:
             # Create a secure temporary file
             VARIABLES_FILE=$(mktemp)
           
-            VARIABLES='${{ secrets.ENV_VARIABLES }}'
-            echo "$VARIABLES" > "$VARIABLES_FILE"
+            # Quoted delimiter, so a quote or a `$` anywhere in the secret is text and not code
+            cat > "$VARIABLES_FILE" <<'CI_ENV_VARIABLES'
+          ${{ secrets.ENV_VARIABLES }}
+          CI_ENV_VARIABLES
         
             # Export so INIT_SCRIPT can access it
             export VARIABLES_FILE
@@ -255,9 +261,12 @@ jobs:
               # Create a secure temporary file
               VARIABLES_FILE=$(mktemp)
             
-              VARIABLES='${{ secrets.ENV_VARIABLES }}'
-              echo "$VARIABLES" > "$VARIABLES_FILE"
-              
+              # Quoted delimiter, so a quote or a `$` anywhere in the secret is text and not
+              # code. A heredoc body is also untraced, which keeps it out of the `set -x` log
+              cat > "$VARIABLES_FILE" <<'CI_ENV_VARIABLES'
+            ${{ secrets.ENV_VARIABLES }}
+            CI_ENV_VARIABLES
+
               # Export so INIT_SCRIPT can access it
               export VARIABLES_FILE
               
@@ -357,7 +366,8 @@ jobs:
             rm -f ${{ inputs.composer_working_directory }}/auth.json
             if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
               echo "Installing composer dependencies"
-              ./task.sh composer config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+              # Tracing off in a subshell: `set -x` prints the token as an expanded argument
+              ( set +x; ./task.sh composer config --auth github-oauth.github.com '${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}' )
               ./task.sh composer install
             fi
             rm -f ${{ inputs.composer_working_directory }}/auth.json
@@ -365,9 +375,13 @@ jobs:
             rm -f ${{ inputs.npm_working_directory }}/.npmrc
             if [ -f "${{ inputs.npm_working_directory }}/package.json" ]; then
               echo "Preparing .npmrc file"
-              echo "@uniquesca:registry=https://npm.pkg.github.com/" > ${{ inputs.npm_working_directory }}/.npmrc
-              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> ${{ inputs.npm_working_directory }}/.npmrc
-              echo "always-auth=true" >> ${{ inputs.npm_working_directory }}/.npmrc
+              # Heredoc rather than `echo`: a heredoc body is untraced, so the token stays out
+              # of the `set -x` log
+              cat > ${{ inputs.npm_working_directory }}/.npmrc <<'CI_NPMRC'
+            @uniquesca:registry=https://npm.pkg.github.com/
+            //npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}
+            always-auth=true
+            CI_NPMRC
             
               if [ -f "${{ inputs.npm_working_directory }}/yarn.lock" ]; then
                 echo "Installing Yarn - first attempt"

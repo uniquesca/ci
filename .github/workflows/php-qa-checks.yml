@@ -50,6 +50,10 @@ on:
         default: '{}'
         type: string
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   matrix:
     name: Get CI job matrix
@@ -183,10 +187,6 @@ jobs:
         if: inputs.use_db == true && env.phpunit == 1
         run: ${{ inputs.db_migration_cmd }}
 
-      # Every check below tees its output to a file as well as the log. `set -o pipefail` is
-      # there because a `run:` step that does not name its shell does not get it, and without
-      # it `tee` would return success for a tool that failed - turning every red check green.
-
       # A failure here is held back for the fixer below, and reported by the re-check after it.
       # With `auto_fix` off nothing is going to fix it, so it is reported here.
       - name: Run PHP Codesniffer
@@ -194,7 +194,6 @@ jobs:
         env:
           AUTO_FIX: ${{ inputs.auto_fix }}
         run: |
-          set -o pipefail
           if [[ ! -f "phpcs.xml" ]] && [[ ! -f "phpcs.xml.dist" ]]; then
             echo "No PHP_Codesniffer configuration file found, skipping code check."
             exit 0
@@ -233,7 +232,6 @@ jobs:
       - name: Re-run PHP Codesniffer
         if: steps.cs_fix.outcome == 'success'
         run: |
-          set -o pipefail
           ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log"
 
       - name: Run PHPUnit
@@ -243,12 +241,10 @@ jobs:
         env:
           XDEBUG_MODE: coverage
         run: |
-          set -o pipefail
           php ./vendor/bin/phpunit 2>&1 | tee "$AI_REPORT_DIR/phpunit.log"
 
       - name: Run Psalm
         run: |
-          set -o pipefail
           if [[ -f "psalm.xml" ]]; then
             ./vendor/bin/psalm 2>&1 | tee "$AI_REPORT_DIR/psalm.log"
           elif [[ -f "psalm.xml.dist" ]]; then

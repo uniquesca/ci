@@ -56,7 +56,7 @@ Any artifact whose name starts with `ai-report-` is picked up by
 Artifact names have to be unique within a run, so give each leg its own `report_name` if this action
 runs more than once.
 
-`set -o pipefail` is on for each check, so `tee` cannot report success for a task that failed.
+Each check runs under `pipefail`, so `tee` cannot report success for a task that failed.
 The upload runs on `always()`, since a failed run is the only one anybody wants the reports from.
 
 ### Code style fixing

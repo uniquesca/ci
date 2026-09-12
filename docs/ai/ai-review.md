@@ -28,6 +28,9 @@ on:
   issue_comment:
     types: [ created ]
 
+# No `concurrency:` here - the reusable workflow holds one per pull request. A group at this
+# level is keyed on `github.ref`, which both of these events report as the default branch, so
+# it would be one lock across every pull request in the repository
 jobs:
   ai-review:
     permissions:
