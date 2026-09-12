@@ -1302,3 +1302,8 @@
 ## v1.16.1
 
 * Fix: fixing docker username fallback to vars (e314230 by George Shestayev)
+
+## v1.17.0
+
+* New: added an ability to do mysql-export with schema only (4828c79 by George Shestayev)
+* Update: uploading artifacts with agent context for a future review and optimization (69cae8b by George Shestayev)

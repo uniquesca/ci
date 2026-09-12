@@ -17,6 +17,7 @@ data produce a different file every time - so the result can be committed.
 |---|---|---|---|
 | `dump_file_path` | yes | | File to write the dump to |
 | `db_name` | yes | | Database to dump |
+| `schema_only` | no | `false` | Dump the schema only, without any table data |
 | `host` | no | `127.0.0.1` | MySQL server address |
 | `port` | no | `3306` | MySQL port |
 | `username` | no | `root` | MySQL username |
@@ -31,7 +32,11 @@ This action produces no outputs - it writes `dump_file_path`.
 ### What is dumped
 
 Routines, triggers and one consistent snapshot (`--single-transaction`), with
-`--max_allowed_packet=512M` so a large row does not stop the dump. Data and schema both.
+`--max_allowed_packet=512M` so a large row does not stop the dump. Data and schema both, unless
+`schema_only` is `true` - which adds `--no-data` and keeps the routines and triggers, so what is
+left is the schema. A schema-only dump also has `AUTO_INCREMENT=` stripped from the table
+definitions, because without the rows it is whichever id the table last reached and would move on
+every run.
 
 ### What is taken back out, and why
 

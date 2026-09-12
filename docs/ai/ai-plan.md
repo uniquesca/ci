@@ -164,3 +164,6 @@ is posted with a warning on the run instead. A run genuinely cut off part-way re
 The `Show what the agent did` step is printed on every run, failed ones included, and the run
 summary carries a copy of the finished plan. `debug: true` adds the raw transcript - never on a
 public repository, because a tool result is whatever the agent just read out of the code.
+
+Every run uploads what was staged for it as an `ai-context-plan` artifact, so the issue and comments
+the agent planned from can be opened without turning the transcript on.
