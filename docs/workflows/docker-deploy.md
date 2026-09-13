@@ -36,6 +36,8 @@ jobs:
 | `UNIQUES_GITHUB_ACCESS_TOKEN` | yes | Access token for cloning Uniques private repositories |
 | `NODE_AUTH_TOKEN` | no | Access token for authentication with the NPM registry |
 | `ENV_VARIABLES` | no | JSON object of variables the config files are rendered with. A secret rather than an input, because it holds the environment's credentials |
+| `GHCR_USERNAME` | no | Username for GitHub Container Registry authentication |
+| `GHCR_TOKEN` | no | Personal access token for GitHub Container Registry authentication |
 
 ## Inputs
 
@@ -156,6 +158,10 @@ detect it with. That is not hypothetical - a `phinx.php` that cannot reach the d
 **0**, as does a bare `exit;`. Phinx is then a command that succeeded, the deployment carries on and
 finishes, and the run is green with no migrations applied. Fix that where it belongs, in the
 application: `exit(1)`.
+
+### Docker registry authentication
+
+If your `docker-compose.yml` pulls images from GitHub Container Registry (ghcr.io), pass `GHCR_USERNAME` and `GHCR_TOKEN` as secrets. Both must be present for the login to run; if either is missing, the deployment proceeds without authenticating. The token should be a GitHub personal access token with at least `read:packages` scope for private images.
 
 ### Downtime
 
