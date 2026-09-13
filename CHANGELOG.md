@@ -1311,3 +1311,7 @@
 ## v11.18.1
 
 * Deprecated: UNIQUES_GITHUB_ACCESS_TOKEN is deprecated in favour of new GITHUB_ACCESS_TOKEN (44c4ceb by George Shestayev)
+
+## v11.18.2
+
+* Fix: fixed missing username for docker login in docker-deploy workflow (b691736 by George Shestayev)
