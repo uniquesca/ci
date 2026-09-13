@@ -1307,3 +1307,7 @@
 
 * New: added an ability to do mysql-export with schema only (4828c79 by George Shestayev)
 * Update: uploading artifacts with agent context for a future review and optimization (69cae8b by George Shestayev)
+
+## v11.18.1
+
+* Deprecated: UNIQUES_GITHUB_ACCESS_TOKEN is deprecated in favour of new GITHUB_ACCESS_TOKEN (44c4ceb by George Shestayev)

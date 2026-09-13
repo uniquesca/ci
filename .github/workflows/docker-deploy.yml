@@ -6,20 +6,17 @@ on:
       SSH_KEY:
         description: 'SSH private key to use to connect to the host'
         required: true
+      GITHUB_ACCESS_TOKEN:
+        description: 'GitHub personal access token for cloning private repositories and container registry authentication'
+        required: false
       UNIQUES_GITHUB_ACCESS_TOKEN:
-        description: 'Access token for cloning Uniques private repositories from GitHub'
-        required: true
+        description: 'GitHub personal access token, fallback if GITHUB_ACCESS_TOKEN is not provided'
+        required: false
       NODE_AUTH_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: false
       ENV_VARIABLES:
         description: 'Environment variables to set on the remote server'
-        required: false
-      GHCR_USERNAME:
-        description: 'Username for GitHub Container Registry authentication'
-        required: false
-      GHCR_TOKEN:
-        description: 'Personal access token for GitHub Container Registry authentication'
         required: false
     inputs:
       host:
@@ -146,11 +143,18 @@ jobs:
             # Whatever stops this script names itself and carries its status out
             trap 'status=$?; set +x; echo "❌ Initialization failed at line $LINENO: $BASH_COMMAND (exit $status)"; exit $status' ERR
 
-            # Log into GitHub Container Registry if credentials are provided
-            if [ -n "${{ secrets.GHCR_USERNAME }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-              echo "Logging into GitHub Container Registry"
-              # Tracing off in a subshell: echo expands the secret as an argument
-              ( set +x; echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin )
+            # Log into GitHub Container Registry using the job's token.
+            # Fall back to UNIQUES_GITHUB_ACCESS_TOKEN if GITHUB_ACCESS_TOKEN is not provided
+            GH_TOKEN="${{ secrets.GITHUB_ACCESS_TOKEN }}"
+            if [ -z "$GH_TOKEN" ]; then
+              GH_TOKEN="${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}"
+              if [ -n "$GH_TOKEN" ]; then
+                echo "⚠️  UNIQUES_GITHUB_ACCESS_TOKEN is deprecated and will be removed in v12. Use GITHUB_ACCESS_TOKEN instead."
+              fi
+            fi
+            if [ -n "$GH_TOKEN" ]; then
+              # Tracing off in a subshell: the token is expanded as an argument
+              ( set +x; echo "$GH_TOKEN" | docker login ghcr.io --password-stdin ) || true
             fi
 
             # Check if it's already a git repo
@@ -377,8 +381,16 @@ jobs:
             rm -f ${{ inputs.composer_working_directory }}/auth.json
             if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
               echo "Installing composer dependencies"
+              # Fall back to UNIQUES_GITHUB_ACCESS_TOKEN if GITHUB_ACCESS_TOKEN is not provided
+              GH_TOKEN="${{ secrets.GITHUB_ACCESS_TOKEN }}"
+              if [ -z "$GH_TOKEN" ]; then
+                GH_TOKEN="${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}"
+                if [ -n "$GH_TOKEN" ]; then
+                  echo "⚠️  UNIQUES_GITHUB_ACCESS_TOKEN is deprecated and will be removed in v12. Use GITHUB_ACCESS_TOKEN instead."
+                fi
+              fi
               # Tracing off in a subshell: `set -x` prints the token as an expanded argument
-              ( set +x; ./task.sh composer config --auth github-oauth.github.com '${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}' )
+              ( set +x; ./task.sh composer config --auth github-oauth.github.com "$GH_TOKEN" )
               ./task.sh composer install
             fi
             rm -f ${{ inputs.composer_working_directory }}/auth.json

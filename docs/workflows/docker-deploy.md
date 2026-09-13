@@ -23,7 +23,7 @@ jobs:
       ref: develop
     secrets:
       SSH_KEY: ${{ secrets.SSH_KEY }}
-      UNIQUES_GITHUB_ACCESS_TOKEN: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+      GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_ACCESS_TOKEN }}
       NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
       ENV_VARIABLES: ${{ secrets.ENV_VARIABLES }}
 ```
@@ -33,11 +33,10 @@ jobs:
 | Secret | Required | Description |
 |---|---|---|
 | `SSH_KEY` | yes | SSH private key used to connect to the host |
-| `UNIQUES_GITHUB_ACCESS_TOKEN` | yes | Access token for cloning Uniques private repositories |
+| `GITHUB_ACCESS_TOKEN` | no | GitHub personal access token for cloning private repositories and container registry authentication. Falls back to `UNIQUES_GITHUB_ACCESS_TOKEN` if not provided |
+| `UNIQUES_GITHUB_ACCESS_TOKEN` | no | GitHub personal access token, used if `GITHUB_ACCESS_TOKEN` is not provided |
 | `NODE_AUTH_TOKEN` | no | Access token for authentication with the NPM registry |
 | `ENV_VARIABLES` | no | JSON object of variables the config files are rendered with. A secret rather than an input, because it holds the environment's credentials |
-| `GHCR_USERNAME` | no | Username for GitHub Container Registry authentication |
-| `GHCR_TOKEN` | no | Personal access token for GitHub Container Registry authentication |
 
 ## Inputs
 
@@ -161,7 +160,7 @@ application: `exit(1)`.
 
 ### Docker registry authentication
 
-If your `docker-compose.yml` pulls images from GitHub Container Registry (ghcr.io), pass `GHCR_USERNAME` and `GHCR_TOKEN` as secrets. Both must be present for the login to run; if either is missing, the deployment proceeds without authenticating. The token should be a GitHub personal access token with at least `read:packages` scope for private images.
+If your `docker-compose.yml` pulls images from GitHub Container Registry (ghcr.io), the initialization step logs the remote server in using `GITHUB_ACCESS_TOKEN` (or `UNIQUES_GITHUB_ACCESS_TOKEN` if the former is not provided). If the login fails it does not stop the deployment; it only matters when containers pull images.
 
 ### Downtime
 
