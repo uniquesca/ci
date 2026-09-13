@@ -154,7 +154,7 @@ jobs:
             fi
             if [ -n "$GH_TOKEN" ]; then
               # Tracing off in a subshell: the token is expanded as an argument
-              ( set +x; echo "$GH_TOKEN" | docker login ghcr.io --password-stdin ) || true
+              ( set +x; echo "$GH_TOKEN" | docker login ghcr.io -u github --password-stdin ) || true
             fi
 
             # Check if it's already a git repo
