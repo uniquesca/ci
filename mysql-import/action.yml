@@ -29,10 +29,7 @@ runs:
   steps:
     - name: MySQL import
       run: |
-        # `pipefail` for the compressed branch below: without it a dump that failed to
-        # decompress is reported by whatever `mysql` made of the truncated stream, which is
-        # usually success
-        set -euo pipefail
+        set -u
 
         dump="${{ inputs.dump_file_path }}"
 
@@ -48,6 +45,7 @@ runs:
         )
 
         if [[ "$dump" == *.gz ]]; then
+          # Safe on a truncated stream only because `shell: bash` carries pipefail
           gzip -dc "$dump" | "${mysql_cmd[@]}"
         else
           "${mysql_cmd[@]}" < "$dump"

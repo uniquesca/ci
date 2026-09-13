@@ -103,6 +103,10 @@ on:
         default: false
         type: boolean
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   review:
     name: Review the pull request

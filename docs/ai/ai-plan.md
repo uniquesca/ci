@@ -18,6 +18,12 @@ on:
   issue_comment:
     types: [ created ]
 
+# One planner per issue. Keyed on the issue rather than on `github.ref`, which an
+# `issue_comment` event reports as the default branch whichever issue it came from
+concurrency:
+  group: ai-plan-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   ai-plan:
     permissions:

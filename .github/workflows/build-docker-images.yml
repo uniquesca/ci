@@ -8,6 +8,10 @@ on:
   # build failed on the tag that last touched them: a manual run always builds everything
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # The images are tagged with a PHP version, not a release version, so a tag that changes nothing
   # under `docker/` republishes what is already there under the name it is already published as.
@@ -30,7 +34,7 @@ jobs:
       - name: Decide whether the images need building
         id: decide
         run: |
-          set -euo pipefail
+          set -u
 
           # Anything that is not a tag push is somebody asking for a build by hand
           if [[ "$GITHUB_EVENT_NAME" != 'push' ]]; then
@@ -105,7 +109,7 @@ jobs:
           PHP_VERSION: ${{ matrix.php-version }}
           VARIANT: ${{ matrix.variant }}
         run: |
-          set -euo pipefail
+          set -u
 
           # 5.6 predates every base image the others are built on, and the newest Node it can be
           # asked to carry
@@ -204,7 +208,7 @@ jobs:
           PHP_VERSION: ${{ matrix.php-version }}
           VARIANT: ${{ matrix.variant }}
         run: |
-          set -euo pipefail
+          set -u
 
           # No `PHP_BASE_IMAGE`: each DEV Dockerfile defaults it to its own PROD image at this
           # version, which is exactly what the job above pushed

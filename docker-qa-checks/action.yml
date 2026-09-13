@@ -48,9 +48,6 @@ runs:
     # Every check below tees its output to a file as well as the log, and the files go up as an
     # artifact at the end - an implementing agent cannot read job logs, and a check run on its own
     # carries nothing but `Process completed with exit code 1`.
-    #
-    # `set -o pipefail` so that `tee` cannot return success for a task that failed, which would
-    # turn every red check green.
 
     # A failure here is held back for the fixer below, and reported by the re-check after it.
     # Without a fixer to run, it is reported here.
@@ -60,7 +57,6 @@ runs:
       env:
         FIXABLE: ${{ steps.cs_fix_support.outputs.supported }}
       run: |
-        set -o pipefail
         if ! ./task.sh supports cs-check > /dev/null; then
           exit 0
         fi
@@ -87,13 +83,11 @@ runs:
       if: ${{ steps.cs_fix.outcome == 'success' }}
       shell: bash
       run: |
-        set -o pipefail
         ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log"
 
     - name: Run tests
       shell: bash
       run: |
-        set -o pipefail
         if ./task.sh supports test > /dev/null; then
           ./task.sh test 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/test.log"
         fi
@@ -101,7 +95,6 @@ runs:
     - name: Run Psalm
       shell: bash
       run: |
-        set -o pipefail
         if ./task.sh supports psalm > /dev/null; then
           ./task.sh psalm 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/psalm.log"
         fi

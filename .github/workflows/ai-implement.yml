@@ -152,6 +152,10 @@ on:
         default: false
         type: boolean
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   implement:
     name: Implement the plan
@@ -2960,6 +2964,8 @@ jobs:
             echo "::warning title=This push carries older copies of workflow files::$stale_files - the agent did not touch them, but they differ from the copy on ${against#refs/remotes/origin/}, and Github reads that as this push updating them"
           fi
 
+          # Read as a failure only because the shell carries pipefail - on `tee`'s status a
+          # refused push is a successful one, and a pull request is opened for a missing branch
           if ! git -c http.extraheader="AUTHORIZATION: basic $auth" \
                  push origin "HEAD:refs/heads/$BRANCH" 2>&1 | tee "$RUNNER_TEMP/push-output.txt"; then
             # The run summary outlives nothing here, but it is the one place somebody reading

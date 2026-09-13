@@ -27,6 +27,10 @@ on:
     types: [ completed ]
     branches: [ 'ai-feature/**' ]             # must match `branch_prefix`
 
+# No `concurrency:` here - the reusable workflow holds one per branch or pull request, and
+# queues rather than cancels. A group at this level is keyed on `github.ref`, which a comment
+# and a `workflow_run` both report as the default branch, so it would be one lock across every
+# pull request in the repository - and cancelling a round mid-flight loses the agent's work
 jobs:
   ai-implement:
     permissions:
@@ -252,7 +256,11 @@ feedback. There is no handshake between them, so a duplicated or lost trigger ca
 nothing waits for a reviewer that was never dispatched. These rounds count as unattended against
 [the round cap](#the-round-cap), which is what stops the round → push → CI → round cycle running
 away. **`workflow_run` only fires when the workflow file containing it is on the default branch**,
-which on a feature branch looks exactly like a broken gate.
+which on a feature branch looks exactly like a broken gate. "Still reporting" means every check run
+on the commit, not only the workflows named in the trigger - so a suite you leave out of it still
+holds the round back, and if it is the last to finish nothing starts one at all. Naming it in
+[`ignore_check_patterns`](#inputs) is what keeps a suite out of the wait as well as out of the
+feedback.
 
 A round nobody asked for only runs while the branch is still the agent's own. Each round records
 the commit it left, and a round started by a check compares it against the head: anything on top of

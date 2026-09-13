@@ -98,6 +98,10 @@ on:
         default: 'docs/coverage-report'
         type: string
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   get-environment:
     name: Get environment info
@@ -212,7 +216,6 @@ jobs:
 
       - name: Start MySQL and create a database
         if: inputs.use_db || inputs.update_db
-        shell: bash
         run: mysql -u root -proot --execute="CREATE DATABASE prepare_release;"
 
       - name: Import DB
@@ -241,7 +244,6 @@ jobs:
       - name: Set Composer version in composer.json
         if: ${{ steps.check-composer.outputs.exists == 'true' }}
         working-directory: ${{ inputs.working_directory }}
-        shell: bash
         run: |
           composer_version="${{ inputs.version }}"
           echo "Setting version in composer.json to $composer_version"

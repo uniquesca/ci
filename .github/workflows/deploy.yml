@@ -159,7 +159,8 @@ jobs:
               fi
               echo "Installing Composer dependencies"
               chmod +x composer.phar
-              php composer.phar config --auth github-oauth.github.com ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+              # Tracing off in a subshell: `set -x` prints the token as an expanded argument
+              ( set +x; php composer.phar config --auth github-oauth.github.com '${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}' )
               php composer.phar install --no-dev
             fi
             rm -f auth.json
@@ -167,9 +168,13 @@ jobs:
             rm -f .npmrc
             if [ -f "package.json" ]; then
               echo "Preparing .npmrc file"
-              echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-              echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-              echo "always-auth=true" >> .npmrc
+              # Heredoc rather than `echo`: a heredoc body is untraced, so the token stays out
+              # of the `set -x` log
+              cat > .npmrc <<'CI_NPMRC'
+            @uniquesca:registry=https://npm.pkg.github.com/
+            //npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}
+            always-auth=true
+            CI_NPMRC
             
               export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
               [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
@@ -197,9 +202,11 @@ jobs:
               # with yarn authentication
               if echo "$output" | grep -q "401 Unauthorized"; then
                 echo "Could not install yarn dependencies, retrying..."
-                echo "@uniquesca:registry=https://npm.pkg.github.com/" > .npmrc
-                echo "//npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}" >> .npmrc
-                echo "always-auth=true" >> .npmrc
+                cat > .npmrc <<'CI_NPMRC'
+            @uniquesca:registry=https://npm.pkg.github.com/
+            //npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}
+            always-auth=true
+            CI_NPMRC
                 rm yarn.lock
                 npm cache clean --force
                 yarn cache clean 

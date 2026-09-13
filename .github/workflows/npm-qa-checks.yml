@@ -28,6 +28,10 @@ on:
         default: '{}'
         type: string
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   npm-qa:
     name: Run NPM QA checks
@@ -69,13 +73,9 @@ jobs:
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
           skip_composer: true
 
-      # Both checks tee their output to a file as well as the log. `set -o pipefail` is there
-      # because a `run:` step that does not name its shell does not get it, and without it
-      # `tee` would return success for a script that failed - turning every red check green.
       - name: Run linter
         working-directory: ${{ inputs.working_directory }}
         run: |
-          set -o pipefail
           mkdir -p "$AI_REPORT_DIR"
 
           if jq -e '.scripts.lint' package.json > /dev/null; then
@@ -87,7 +87,6 @@ jobs:
       - name: Run tests
         working-directory: ${{ inputs.working_directory }}
         run: |
-          set -o pipefail
           mkdir -p "$AI_REPORT_DIR"
 
           if jq -e '.scripts.test' package.json > /dev/null; then

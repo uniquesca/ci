@@ -88,6 +88,10 @@ on:
         default: false
         type: boolean
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   plan:
     name: Plan the issue

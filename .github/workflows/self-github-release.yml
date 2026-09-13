@@ -5,6 +5,10 @@ on:
     tags:
       - '*'
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish-release:
     runs-on: ubuntu-latest

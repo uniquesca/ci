@@ -42,6 +42,10 @@ on:
         type: string
         default: '.'
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish-npm:
     name: Publish NPM package
