@@ -113,6 +113,7 @@ jobs:
 | `db_dump_path` | string | | Path to the DB dump. Ignored unless `use_db` is `true` |
 | `db_migration_cmd` | string | `''` | Migration command, runs before the unit tests |
 | `env_variables` | string | `'{}'` | JSON object of environment variables |
+| `artifact_suffix` | string | `''` | Appended after the matrix leg to the name of the [check report artifact](ai/ai-implement.md#wiring-ci-into-the-loop). Give each leg its own where this workflow is called more than once in a workflow file |
 
 ## NPM QA Checks workflow
 
@@ -166,6 +167,7 @@ registry. A repository depending only on public packages can leave the `secrets`
 | `working_directory` | string | `'.'` | Directory the package lives in |
 | `setup_cmd` | string | `''` | Command to run before the checks execute |
 | `env_variables` | string | `'{}'` | JSON object of environment variables |
+| `artifact_suffix` | string | `''` | Appended to the name of the [check report artifact](ai/ai-implement.md#wiring-ci-into-the-loop). Give each leg its own where this workflow is called more than once in a workflow file |
 
 ## Repositories with PHP and JavaScript
 

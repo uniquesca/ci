@@ -49,6 +49,11 @@ on:
         required: false
         default: '{}'
         type: string
+      artifact_suffix:
+        description: 'Suffix for the name of the check report artifact, appended after the matrix leg and a dash. Artifact names have to be unique within a run, and `gh run download` extracts only one of a repeated name - so give each leg its own suffix where this workflow is called more than once in a workflow file'
+        required: false
+        default: ''
+        type: string
 
 defaults:
   run:
@@ -258,12 +263,13 @@ jobs:
       # read by the next implementing round, within minutes, not kept.
       #
       # The name carries the matrix leg because artifact names have to be unique within a run,
-      # and because which PHP version went red is part of the answer.
+      # and because which PHP version went red is part of the answer. `artifact_suffix` is what
+      # keeps two calls of this workflow in one file from landing on the same names.
       - name: Upload the check reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ai-report-php-${{ matrix.setup.php.version }}-${{ matrix.setup.os }}
+          name: ai-report-php-${{ matrix.setup.php.version }}-${{ matrix.setup.os }}${{ inputs.artifact_suffix && format('-{0}', inputs.artifact_suffix) || '' }}
           path: ${{ env.AI_REPORT_DIR }}
           retention-days: 1
           # `.ai-reports` is a dot-directory, and upload-artifact excludes hidden files by
