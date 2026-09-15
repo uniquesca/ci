@@ -1323,3 +1323,7 @@
 ## v11.18.4
 
 * Fix: fixed phpunit coverage report directory in docker-prepare-release workflow (0947360 by George Shestayev)
+
+## v11.18.5
+
+* New: introduced an ability to define artifact suffix for qa-checks to avoid possible collisions (9887bef by George Shestayev)
