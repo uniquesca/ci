@@ -1319,3 +1319,7 @@
 ## v11.18.3
 
 * Update: improved way to run unit tests with html coverage report in docker-prepare-release workflow (b44b0ab by George Shestayev)
+
+## v11.18.4
+
+* Fix: fixed phpunit coverage report directory in docker-prepare-release workflow (0947360 by George Shestayev)
