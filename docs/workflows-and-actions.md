@@ -152,8 +152,11 @@ the tip, for a repository whose CI you are actively working on.
 ## Not on this page
 
 `.github/workflows` also holds this repository's own CI - `self-tests.yml`,
-`self-prepare-release.yml`, `self-github-release.yml`, `build-docker-images.yml` and
-`update-current-version.yml`. None of them declares `on: workflow_call`, so **none of them can be
-called from another repository.** They are here to test and release the framework itself.
+`self-prepare-release.yml`, `self-github-release.yml`, `self-ai-cost-report.yml`,
+`build-docker-images.yml` and `update-current-version.yml`. None of them declares
+`on: workflow_call`, so **none of them can be called from another repository.** They are here to
+test and release the framework itself, and to report what the AI workflows across the
+organisation spend - which [AI costs](ai/ai-costs.md) covers, with the setting up of its monthly
+email in [AI cost report](self/self-ai-cost-report.md).
 
 The base Docker images are documented separately, in [Docker Images](docker-images.md).

@@ -11,6 +11,22 @@ inputs:
     description: 'Past-tense verb the summary opens with, for example `Planned` or `Implemented`'
     required: false
     default: 'Ran'
+  kind:
+    description: 'What the run was doing - `plan`, `implement` or `review`. Recorded in `cost_line`, where it is what tells one kind of spend from another'
+    required: false
+    default: ''
+  issue:
+    description: 'Issue the run belongs to. Recorded in `cost_line`, and what a cost report groups by - a plan, the rounds that built it and the reviews of those rounds are all spend on one issue'
+    required: false
+    default: ''
+  pull_request:
+    description: 'Pull request the run belongs to, where there is one'
+    required: false
+    default: ''
+  round:
+    description: 'Which round this run was, where the caller counts them'
+    required: false
+    default: ''
 
 outputs:
   has_result:
@@ -31,6 +47,12 @@ outputs:
   turns:
     description: 'How many turns the run took, for a caller that has to compare it with the budget it set. Empty when the log recorded none'
     value: ${{ steps.report.outputs.turns }}
+  cost_usd:
+    description: 'What the run cost in US dollars, as a bare number the caller can compare or add up - for example `3.41`. The agent''s own estimate from its token counts, not a billed figure. Empty when the log recorded none'
+    value: ${{ steps.report.outputs.cost_usd }}
+  cost_line:
+    description: 'The whole run as one hidden HTML comment - `<!-- ai-cost {"v":1,"kind":"plan",...} -->`. Put it on the last line of the comment the run posts and the spend is recorded where the work is, for `bin/ai-cost-report.sh` to read back. Empty when there was no execution log to read'
+    value: ${{ steps.report.outputs.cost_line }}
 
 runs:
   using: composite
@@ -71,6 +93,10 @@ runs:
       env:
         EXECUTION_FILE: ${{ inputs.execution_file }}
         VERB: ${{ inputs.verb }}
+        KIND: ${{ inputs.kind }}
+        ISSUE: ${{ inputs.issue }}
+        PULL_REQUEST: ${{ inputs.pull_request }}
+        ROUND: ${{ inputs.round }}
       run: |
         # Outside the checkout on purpose: a workflow that commits its working tree must
         # not be able to sweep the agent's own output into the commit
@@ -78,6 +104,7 @@ runs:
         mkdir -p "$out"
 
         has_result='false'; result_file=''; summary=''; reason=''; completed='false'; turns=''
+        cost_usd=''; cost_line=''
 
         if [[ -n "$EXECUTION_FILE" && -f "$EXECUTION_FILE" ]]; then
           # Whether the agent stopped because it had nothing left to do, which is the one
@@ -163,7 +190,49 @@ runs:
           if [[ -n "$cost" && "$cost" != null ]]; then
             # The agent's own estimate from its token counts, not a billed figure
             summary="${summary:+$summary, }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
+            cost_usd="$cost"
           fi
+
+          # The same run again, as one line a machine can read. The prose above is for whoever
+          # opens the issue; this is what a cost report adds up, and the caller carries it on
+          # the last line of whatever it posts. Nothing else keeps these numbers - the execution
+          # log dies with the runner.
+          #
+          # Everything the log did not record drops out of the object rather than arriving as a
+          # null, so a report can tell a run that recorded no cost from one that cost nothing.
+          # The token counters stay separate here, unlike in the prose: cache reads are most of
+          # the volume and a fraction of the price, and a rise in spend cannot be explained
+          # without them.
+          cost_line=$(
+            jq -rs --arg kind "$KIND" \
+                   --arg repo "${GITHUB_REPOSITORY:-}" \
+                   --arg issue "$ISSUE" \
+                   --arg pull_request "$PULL_REQUEST" \
+                   --arg round "$ROUND" \
+                   --arg run_id "${GITHUB_RUN_ID:-}" \
+                   --arg run_attempt "${GITHUB_RUN_ATTEMPT:-}" \
+                   --arg actor "${GITHUB_ACTOR:-}" \
+                   --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+              def num: if . == "" then null else (tonumber? // null) end;
+              flatten
+              | (map(select(.type == "result")) | last) as $r
+              | (map(select(.type == "assistant")) | last) as $a
+              | {v: 1, kind: $kind, repo: $repo, at: $at,
+                 issue: ($issue | num), pull_request: ($pull_request | num),
+                 round: ($round | num),
+                 run_id: ($run_id | num), run_attempt: ($run_attempt | num), actor: $actor,
+                 cost_usd: $r.total_cost_usd, turns: $r.num_turns,
+                 duration_ms: $r.duration_ms,
+                 input_tokens: $r.usage.input_tokens,
+                 output_tokens: $r.usage.output_tokens,
+                 cache_read_tokens: $r.usage.cache_read_input_tokens,
+                 cache_write_tokens: $r.usage.cache_creation_input_tokens,
+                 model: ((($r.modelUsage // {}) | keys | first) // $a.message.model),
+                 completed: (($r.subtype // "") == "success" and $r.is_error != true)}
+              | with_entries(select(.value != null and .value != ""))
+              | "<!-- ai-cost " + tojson + " -->"' "$EXECUTION_FILE" 2>/dev/null || true
+          )
+          [[ -n "$cost_line" ]] || echo "::warning title=The run cost was not recorded::The execution log could not be read as JSON, so this run is missing from the cost report"
         else
           echo "No execution log to read"
         fi
@@ -176,6 +245,8 @@ runs:
           printf 'reason=%s\n' "$reason"
           printf 'completed=%s\n' "$completed"
           printf 'turns=%s\n' "$turns"
+          printf 'cost_usd=%s\n' "$cost_usd"
+          printf 'cost_line=%s\n' "$cost_line"
         } >> "$GITHUB_OUTPUT"
 
         echo "$summary"

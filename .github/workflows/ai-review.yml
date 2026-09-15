@@ -732,6 +732,10 @@ jobs:
         with:
           execution_file: ${{ steps.agent.outputs.execution_file }}
           verb: 'Reviewed'
+          kind: 'review'
+          issue: ${{ steps.pull_request.outputs.issue }}
+          pull_request: ${{ steps.pull_request.outputs.number }}
+          round: ${{ steps.stage_pr.outputs.round }}
 
       # What the agent was given to review from, and the `review.json` it wrote out of it, kept
       # after the runner is gone. The only other way to see either is `debug: true`, which puts
@@ -826,6 +830,9 @@ jobs:
           head_sha: ${{ steps.pull_request.outputs.head_sha }}
           marker: ${{ env.REVIEW_MARKER }}
           footer: ${{ steps.footer.outputs.text }}
+          # What the run cost, as one hidden line for a report to read back. The prose footer
+          # above is for whoever reads the review; this is the only copy a machine can add up.
+          cost: ${{ steps.report.outputs.cost_line }}
           max_comments: ${{ inputs.max_comments }}
 
       # What came of the review, always in the run summary and on the pull request only when the
@@ -847,6 +854,10 @@ jobs:
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
           FOOTER: ${{ steps.footer.outputs.text }}
+          # Only reaches the comment on the path where the review itself never did, since a
+          # submitted review already carries this line. A report reading both sees one run
+          # twice and keeps it once - the `run_id` in the line is the same either way.
+          COST: ${{ steps.report.outputs.cost_line }}
         run: |
           if [[ "$AI_AUTHORED" == 'true' ]]; then
             what="round $ROUND"
@@ -900,6 +911,9 @@ jobs:
                 printf '\n\n---\n\n%s' "$FOOTER"
               fi
               printf '\n'
+              if [[ -n "$COST" ]]; then
+                printf '\n%s\n' "$COST"
+              fi
             } > "$RUNNER_TEMP/outcome.md"
           fi
 
@@ -928,6 +942,10 @@ jobs:
           REASON: ${{ steps.report.outputs.reason }}
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           COMMAND: ${{ inputs.command }}
+          # A run that failed was billed for whatever it did before it failed, and on this path
+          # there is no review to record it
+          USAGE: ${{ steps.report.outputs.summary }}
+          COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
@@ -948,6 +966,12 @@ jobs:
               printf ', or comment `%s` to try again' "$COMMAND"
             fi
             printf '. The run log has the detail: %s\n' "$RUN_URL"
+            if [[ -n "$USAGE" ]]; then
+              printf '\n%s.\n' "$USAGE"
+            fi
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > "$RUNNER_TEMP/failure.md"
 
           cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"

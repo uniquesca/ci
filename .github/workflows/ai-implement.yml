@@ -2567,6 +2567,14 @@ jobs:
         with:
           execution_file: ${{ steps.implement_initial.outputs.execution_file || steps.implement_round.outputs.execution_file }}
           verb: ${{ steps.event.outputs.mode == 'initial' && 'Implemented' || 'Revised' }}
+          kind: 'implement'
+          # A round is triggered on the pull request and learns its issue from the branch, so
+          # the resolved number comes first and the typed-on issue is the fallback
+          issue: ${{ steps.pull_request.outputs.issue || steps.event.outputs.issue }}
+          # Empty on an initial run: the pull request is opened after this step, and the issue
+          # is what ties the two together anyway
+          pull_request: ${{ steps.event.outputs.pull_request }}
+          round: ${{ steps.stage_pr.outputs.round }}
 
       # What the agent was given to work from, and the `replies.json` it wrote out of it, kept
       # after the runner is gone. The only other way to see either is `debug: true`, which puts
@@ -3135,6 +3143,9 @@ jobs:
           PR_URL: ${{ steps.pr.outputs.url }}
           ACTOR: ${{ steps.event.outputs.actor }}
           USAGE: ${{ steps.report.outputs.summary }}
+          # What the run cost, as one hidden line for a report to read back. The prose in the
+          # footer is for whoever opens the issue; this is the only copy a machine can add up.
+          COST: ${{ steps.report.outputs.cost_line }}
           COMMAND: ${{ inputs.command }}
         run: |
           {
@@ -3146,6 +3157,9 @@ jobs:
             printf 'Requested by @%s.' "$ACTOR"
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
             printf '\n'
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > "$RUNNER_TEMP/implement-comment.md"
 
           cat "$RUNNER_TEMP/implement-comment.md" >> "$GITHUB_STEP_SUMMARY"
@@ -3166,18 +3180,28 @@ jobs:
           # tell somebody whose CI edit is sitting in a patch on a runner that is about to go
           HELD_BACK: ${{ steps.workflow_changes.outputs.held_back }}
           REPORT_FILE: ${{ steps.workflow_changes.outputs.report_file }}
+          # A run that produced no pull request was billed for everything it did on the way to
+          # finding that out, and this comment is the only place left to record it
+          USAGE: ${{ steps.report.outputs.summary }}
+          COST: ${{ steps.report.outputs.cost_line }}
         run: |
-          if [[ -z "$HELD_BACK" ]]; then
-            gh issue comment "$ISSUE" --body "@$ACTOR the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: $RUN_URL"
-            exit 0
-          fi
-
-          # The report rather than a summary of it: it holds whatever the agent said about the
-          # run as well as the patch, and this comment is the only place either of them lands
+          # The report rather than a summary of it, where there is one: it holds whatever the
+          # agent said about the run as well as the patch, and this comment is the only place
+          # either of them lands
           {
-            printf '@%s the implementing agent changed nothing outside %s, and that cannot be pushed from here - so there is no pull request for this issue.\n\n' "$ACTOR" "$HELD_BACK"
-            [[ -f "$REPORT_FILE" ]] && cat "$REPORT_FILE"
-            printf '\nThe run log has the rest of what it did: %s\n' "$RUN_URL"
+            if [[ -z "$HELD_BACK" ]]; then
+              printf '@%s the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: %s\n' "$ACTOR" "$RUN_URL"
+            else
+              printf '@%s the implementing agent changed nothing outside %s, and that cannot be pushed from here - so there is no pull request for this issue.\n\n' "$ACTOR" "$HELD_BACK"
+              [[ -f "$REPORT_FILE" ]] && cat "$REPORT_FILE"
+              printf '\nThe run log has the rest of what it did: %s\n' "$RUN_URL"
+            fi
+            if [[ -n "$USAGE" ]]; then
+              printf '\n%s.\n' "$USAGE"
+            fi
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > "$RUNNER_TEMP/empty-comment.md"
 
           cat "$RUNNER_TEMP/empty-comment.md" >> "$GITHUB_STEP_SUMMARY"
@@ -3221,6 +3245,8 @@ jobs:
           # step that held it back appended one
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          # What the round cost, as one hidden line for a report to read back
+          COST: ${{ steps.report.outputs.cost_line }}
           REVISED: ${{ steps.revision.outputs.revised }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
         run: |
@@ -3273,6 +3299,11 @@ jobs:
             [[ "$PUSHED" != 'true' ]] && printf ' **No file changed this round.**'
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
             printf '\n'
+            # Last, and never second: the round metadata above is read by line number, so a
+            # line added anywhere but the end would take `ai-stage-pull-request` with it
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > "$RUNNER_TEMP/round-comment.md"
 
           cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
@@ -3394,6 +3425,10 @@ jobs:
           # is the failure that loses finished work outright, so "the run log has the detail"
           # is not enough on its own - the detail belongs where somebody will read it.
           PUSH_REASON: ${{ steps.push.outputs.reason }}
+          # A run that failed was billed for whatever it did before it failed, and on this path
+          # there is no round comment to record it
+          USAGE: ${{ steps.report.outputs.summary }}
+          COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
@@ -3409,6 +3444,12 @@ jobs:
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
             printf 'The run log has the detail: %s\n' "$RUN_URL"
+            if [[ -n "$USAGE" ]]; then
+              printf '\n%s.\n' "$USAGE"
+            fi
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > "$RUNNER_TEMP/failure-comment.md"
 
           cat "$RUNNER_TEMP/failure-comment.md" >> "$GITHUB_STEP_SUMMARY"
