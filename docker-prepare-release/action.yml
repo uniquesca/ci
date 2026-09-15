@@ -92,13 +92,15 @@ runs:
       env:
         COVERAGE_HTML_DIR: ${{ (inputs.generate_coverage_report == 'true' && inputs.coverage_report_dir) || '' }}
       run: |
+        coverage_args=()
         if [[ -n "$COVERAGE_HTML_DIR" ]]; then
           # PHPUnit writes into the directory without clearing it first, so a class that has been
           # deleted keeps the page it had at the last release until the directory goes
           rm -rf "$COVERAGE_HTML_DIR"
+          coverage_args=(--coverage-html "$COVERAGE_REPORT_DIR")
         fi
 
-        ./task.sh test
+        ./task.sh test "${coverage_args[@]}"
 
     - name: Generate coverage badge
       if: inputs.generate_coverage_badge == 'true'

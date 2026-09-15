@@ -1315,3 +1315,7 @@
 ## v11.18.2
 
 * Fix: fixed missing username for docker login in docker-deploy workflow (b691736 by George Shestayev)
+
+## v11.18.3
+
+* Update: improved way to run unit tests with html coverage report in docker-prepare-release workflow (b44b0ab by George Shestayev)
