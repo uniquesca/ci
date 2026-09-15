@@ -1327,3 +1327,7 @@
 ## v11.18.5
 
 * New: introduced an ability to define artifact suffix for qa-checks to avoid possible collisions (9887bef by George Shestayev)
+
+## v11.19.0
+
+* New: introduce AI cost observability (1d13b73 by George Shestayev)
