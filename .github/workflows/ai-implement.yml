@@ -987,6 +987,40 @@ jobs:
           settled_record: true
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
 
+      # The framework catalogue, staged the way everything else an agent reads is. Every reusable
+      # workflow and action this organisation shares is listed on one page, and an agent that has
+      # not seen it writes the steps out by hand - a registry login and an install where
+      # `install-packages` was the answer.
+      #
+      # Fetched out of the repository this workflow is running from, at the commit it is running
+      # at, so the list is the one belonging to the version the caller pinned and there is no
+      # second copy of it to keep in step. `job_workflow_ref` is `<owner>/<repo>/<path>@<ref>`,
+      # and it is empty for a workflow running other than as a reusable one.
+      #
+      # Allowed to fail. The prompt says nothing about the catalogue when the file is absent, so
+      # what a failure costs is depth in one description rather than the round.
+      - name: Stage the CI framework catalogue
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          WORKFLOW_REF: ${{ github.job_workflow_ref }}
+          WORKFLOW_SHA: ${{ github.job_workflow_sha }}
+        run: |
+          repository=$(cut -d/ -f1,2 <<< "$WORKFLOW_REF")
+
+          if [[ -z "$WORKFLOW_SHA" || "$repository" != */* ]]; then
+            echo "::warning title=The CI framework catalogue could not be staged::This run cannot tell which repository it is running out of, so the agent describes a workflow change without the list of what the framework already offers"
+            exit 0
+          fi
+
+          if ! gh api "repos/$repository/contents/docs/workflows-and-actions.md?ref=$WORKFLOW_SHA" \
+            -H 'Accept: application/vnd.github.raw' > .ai-plan/ci-framework.md || [[ ! -s .ai-plan/ci-framework.md ]]; then
+            rm -f .ai-plan/ci-framework.md
+            echo "::warning title=The CI framework catalogue could not be staged::The agent describes a workflow change without the list of what the framework already offers. The step log has why - $repository at $WORKFLOW_SHA is what it asked for"
+            exit 0
+          fi
+
+          echo "Staged the catalogue from $repository at $WORKFLOW_SHA"
+
       # A plan revised since the last round is work in its own right, and nothing in the feedback
       # amounts to saying so. The planner does leave a note on an open pull request when it revises
       # the plan under it, and that note is staged like any other comment - but a pointer sitting
@@ -2209,6 +2243,13 @@ jobs:
       # than written into each prompt, so the rule and the step that enforces it below are read
       # from one place.
       #
+      # The first rule holds whether or not the agent may push the file. Workflow YAML is what a
+      # model writes most confidently out of memory and least well: an action version that was
+      # current two years ago, and steps doing by hand what one call into the framework covers.
+      # What the repository already has is the answer to both, and the catalogue is the answer
+      # to what the framework offers - a caller sees `npm-qa-checks.yml` in its own files and
+      # nothing of the actions underneath it.
+      #
       # Github refuses a push that creates or updates anything under `.github/workflows/` from
       # an identity without the `workflows` permission, and the work is finished by the time the
       # push finds that out. An hour of it is thrown away over a file a plan may have asked for
@@ -2216,26 +2257,39 @@ jobs:
       # its report is where the description goes - in front of the person who can apply it.
       #
       # It is told what happens to an edit it makes anyway, because the step below makes one:
-      # an agent that thinks the edit reached the branch writes a report saying it did.
-      #
-      # Empty where the app holds that permission and the caller wants CI edited, which leaves
-      # both prompts reading as they do without this.
+      # an agent that thinks the edit reached the branch writes a report saying it did. That
+      # part is left out where the app holds the permission and the caller wants CI edited.
       - name: Tell the agent what to do about workflow files
         id: workflow_files
-        if: >-
-          ${{ success() && env.PROCEED == 'true'
-          && !inputs.allow_workflow_changes }}
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          ALLOW_WORKFLOW_CHANGES: ${{ inputs.allow_workflow_changes }}
         run: |
           {
             echo 'instructions<<PROMPT'
-            echo '- Do not change any file under `.github/workflows/`. Github refuses a push'
-            echo '  touching one from the identity this work is pushed with, so the edit cannot'
-            echo '  reach the branch. Where the work needs one - including where the plan or'
-            echo '  the feedback asks for it - do the rest around it, and in your final message'
-            echo '  say which file, what it should say and what it is for, so that somebody can'
-            echo '  apply it by hand.'
-            echo '  Anything you do edit there is taken back out before the commit and reported'
-            echo '  as a patch, so do not describe it as something you changed.'
+            echo '- Do not write Github workflow YAML out of what you remember of it. The files'
+            echo '  under `.github/workflows/` here are the pattern to follow: how a job is laid'
+            echo '  out, how a step is named, and which actions are in use at which versions.'
+            echo '  Take every `uses:` version from a file you can read in this repository - a'
+            echo '  version you recall is a version that was current once.'
+
+            if [[ -s .ai-plan/ci-framework.md ]]; then
+              echo '  `.ai-plan/ci-framework.md` lists every reusable workflow and action this'
+              echo '  organisation shares. Call one rather than writing out the steps it already'
+              echo '  does, at the version the workflows here reference.'
+            fi
+
+            if [[ "$ALLOW_WORKFLOW_CHANGES" != 'true' ]]; then
+              echo '- Do not change any file under `.github/workflows/`. Github refuses a push'
+              echo '  touching one from the identity this work is pushed with, so the edit cannot'
+              echo '  reach the branch. Where the work needs one - including where the plan or'
+              echo '  the feedback asks for it - do the rest around it, and in your final message'
+              echo '  say which file, what it should say and what it is for, so that somebody can'
+              echo '  apply it by hand.'
+              echo '  Anything you do edit there is taken back out before the commit and reported'
+              echo '  as a patch, so do not describe it as something you changed.'
+            fi
+
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
 

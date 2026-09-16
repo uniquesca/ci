@@ -366,6 +366,55 @@ jobs:
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # The framework catalogue, staged the same way and for the same reason: the agent has no
+      # network, and a plan that asks for a workflow is where the framework is either used or
+      # missed. Every reusable workflow and action this organisation shares is listed on one
+      # page, and a repository calling `npm-qa-checks.yml` shows nothing of the actions
+      # underneath it - so without the page the plan asks somebody to write out steps that
+      # `install-packages` already covers.
+      #
+      # Fetched out of the repository this workflow is running from, at the commit it is running
+      # at, so the list is the one belonging to the version the caller pinned and there is no
+      # second copy of it to keep in step. `job_workflow_ref` is `<owner>/<repo>/<path>@<ref>`,
+      # and it is empty for a workflow running other than as a reusable one.
+      #
+      # Allowed to fail, and the instruction it writes is what the prompt interpolates - so a
+      # failure leaves the prompt reading as it does without any of this, rather than sending
+      # the agent to a file that is not there.
+      - name: Stage the CI framework catalogue
+        id: catalogue
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        env:
+          WORKFLOW_REF: ${{ github.job_workflow_ref }}
+          WORKFLOW_SHA: ${{ github.job_workflow_sha }}
+        run: |
+          repository=$(cut -d/ -f1,2 <<< "$WORKFLOW_REF")
+
+          if [[ -z "$WORKFLOW_SHA" || "$repository" != */* ]]; then
+            echo "::warning title=The CI framework catalogue could not be staged::This run cannot tell which repository it is running out of, so a plan for a workflow change is written without the list of what the framework already offers"
+            exit 0
+          fi
+
+          if ! gh api "repos/$repository/contents/docs/workflows-and-actions.md?ref=$WORKFLOW_SHA" \
+            -H 'Accept: application/vnd.github.raw' > .ai-plan/ci-framework.md || [[ ! -s .ai-plan/ci-framework.md ]]; then
+            rm -f .ai-plan/ci-framework.md
+            echo "::warning title=The CI framework catalogue could not be staged::A plan for a workflow change is written without the list of what the framework already offers. The step log has why - $repository at $WORKFLOW_SHA is what it asked for"
+            exit 0
+          fi
+
+          {
+            echo 'instructions<<PROMPT'
+            echo 'Where the task needs a Github workflow or an action,'
+            echo '`.ai-plan/ci-framework.md` lists every reusable workflow and action this'
+            echo 'organisation shares. Plan a call to one rather than steps that do its job'
+            echo 'again, and name it in the step that needs it. What is already under'
+            echo '`.github/workflows/` is how a workflow here is written, so read it before'
+            echo 'planning a new one.'
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Staged the catalogue from $repository at $WORKFLOW_SHA"
+
       # What a plan is worth comes down to what the agent could read while writing it, and a bare
       # checkout stops at this repository's own files. `vendor/` and `node_modules` are where the
       # source of everything it depends on lives - the signature a private library actually
@@ -630,6 +679,8 @@ jobs:
             built on assumptions about what it probably does.
 
             ${{ steps.deps_prompt.outputs.instructions }}
+
+            ${{ steps.catalogue.outputs.instructions }}
 
             Do the investigation yourself, in this run. You have no helpers to delegate to
             and nothing is arriving later, so never end a turn saying you are waiting on
