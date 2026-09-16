@@ -719,6 +719,8 @@ jobs:
         with:
           execution_file: ${{ steps.plan.outputs.execution_file }}
           verb: 'Planned'
+          kind: 'plan'
+          issue: ${{ github.event.issue.number }}
 
       # What the agent was given to plan from, kept after the runner is gone. The only other way
       # to see it is `debug: true`, which puts every tool result in the job log.
@@ -779,6 +781,9 @@ jobs:
         env:
           PLAN_FILE: ${{ steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          # What the run cost, as one hidden line for a report to read back. The prose in the
+          # footer is for whoever opens the issue; this is the only copy a machine can add up.
+          COST: ${{ steps.report.outputs.cost_line }}
           # The branch this plan was written against, recorded so the implementing workflow can
           # build on the same one without being told again. Resolved rather than passed through
           # empty: a plan that says which branch it read is useful even when that is the default
@@ -811,6 +816,11 @@ jobs:
             printf ' Written against `%s`.' "$BASE"
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
             printf '\n'
+            # Last, so it stays out of the way of anything reading a fixed line of this
+            # comment - the metadata line above is the second line and has to stay there
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > plan-comment.md
 
           # Keep a copy in the run itself, so a failing comment post does not lose the plan
@@ -936,6 +946,10 @@ jobs:
           # something actionable - an exhausted credit balance and a genuine bug look
           # identical from the issue otherwise.
           REASON: ${{ steps.report.outputs.reason }}
+          # A run that failed was billed for whatever it did before it failed, and this comment
+          # is the only place left to record it - there is no plan comment on this path
+          USAGE: ${{ steps.report.outputs.summary }}
+          COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           {
@@ -944,6 +958,12 @@ jobs:
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
             printf 'The run log has the detail: %s\n' "$RUN_URL"
+            if [[ -n "$USAGE" ]]; then
+              printf '\n%s.\n' "$USAGE"
+            fi
+            if [[ -n "$COST" ]]; then
+              printf '\n%s\n' "$COST"
+            fi
           } > failure-comment.md
 
           cat failure-comment.md >> "$GITHUB_STEP_SUMMARY"

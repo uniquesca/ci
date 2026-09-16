@@ -1,0 +1,176 @@
+name: AI cost report
+
+# What the AI workflows spent last month, emailed on the first of the month.
+#
+# The figures come from the hidden `<!-- ai-cost {...} -->` line every agent run leaves on the
+# issue or pull request it worked on, read back by `bin/ai-cost-report.sh`. Repositories are
+# found by code search, so one that integrates the harness is in the next report without
+# anybody adding it here.
+
+on:
+  schedule:
+    # The 1st, early enough that the month is closed everywhere and late enough that a run
+    # started on the 31st has finished commenting. Deliberately off the hour: every scheduled
+    # workflow on Github asking for :00 is queued behind every other one.
+    # - cron: '23 7 1 * *'
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 'Month to report, as 2026-08. Empty reports the month that just ended'
+        required: false
+        type: string
+      recipients:
+        description: 'Send it to these addresses instead, comma separated. Empty uses the AI_COST_REPORT_RECIPIENTS secret'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The whole organisation's issues, which `GITHUB_TOKEN` cannot see past this repository.
+      # A missing token fails here rather than producing a report that says nothing was spent.
+      - name: Work out the spend
+        id: report
+        env:
+          GH_TOKEN: ${{ secrets.GHA_PRIVATE_ACCESS_TOKEN }}
+          MONTH: ${{ inputs.month }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error title=No token to read the organisation with::GHA_PRIVATE_ACCESS_TOKEN is not set, and without it only this repository can be read - which would report a total that is missing everything"
+            exit 1
+          fi
+
+          if [[ -n "$MONTH" ]]; then
+            bin/ai-cost-report.sh --month "$MONTH" > /dev/null
+            from="$MONTH-01"
+          else
+            bin/ai-cost-report.sh --last-month > /dev/null
+            from=$(date -u -d "$(date -u +%Y-%m-01) -1 month" +%Y-%m-%d)
+          fi
+
+          # The subject line is the one part of this most people will read
+          total=$(grep -m1 -oE '^\*\*\$[0-9.]+\*\*' ai-cost-report/ai-costs.md | tr -d '*$')
+          {
+            printf 'subject=AI spend for %s: $%s\n' "$(date -u -d "$from" +'%B %Y')" "${total:-0.00}"
+            printf 'month=%s\n' "$(date -u -d "$from" +'%B %Y')"
+          } >> "$GITHUB_OUTPUT"
+
+          cat ai-cost-report/ai-costs.md >> "$GITHUB_STEP_SUMMARY"
+
+      # The report is kept whether or not the mail goes out, so a month is never lost to an
+      # SMTP problem - and so somebody can open the spreadsheet rather than the summary
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ai-cost-report
+          path: ai-cost-report/
+          if-no-files-found: ignore
+
+      # Advisory: a report that cannot be emailed is still in the run, and failing the job would
+      # only hide it behind a red cross. The addresses live in a secret because this repository
+      # is public.
+      - name: Check there is somewhere to send it
+        id: mail_config
+        env:
+          CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
+          SENDER: ${{ secrets.AI_COST_REPORT_SENDER }}
+          RECIPIENTS: ${{ inputs.recipients || secrets.AI_COST_REPORT_RECIPIENTS }}
+        run: |
+          missing=()
+          [[ -n "$CLIENT_ID" ]] || missing+=('MICROSOFT_CLIENT_ID')
+          [[ -n "$CLIENT_SECRET" ]] || missing+=('MICROSOFT_CLIENT_SECRET')
+          [[ -n "$TENANT_ID" ]] || missing+=('MICROSOFT_TENANT_ID')
+          [[ -n "$SENDER" ]] || missing+=('AI_COST_REPORT_SENDER')
+          [[ -n "$RECIPIENTS" ]] || missing+=('AI_COST_REPORT_RECIPIENTS')
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::warning title=The report was not emailed::Set ${missing[*]} - the report itself is in this run's summary and artifact"
+            echo 'send=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'send=true' >> "$GITHUB_OUTPUT"
+
+      # Microsoft Graph rather than SMTP. Exchange Online disables basic authentication for SMTP
+      # submission by default at the end of December 2026, so a username and password against
+      # smtp.office365.com is a password that stops working on a date - and the organisation
+      # already has the app registration this authenticates as.
+      #
+      # Two requests: a token for the app itself, then the message. No mail library, no action,
+      # and the app never holds a mailbox password.
+      - name: Email the report
+        if: ${{ steps.mail_config.outputs.send == 'true' }}
+        env:
+          CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
+          # The mailbox the report arrives from, and the one the app is scoped to send as
+          SENDER: ${{ secrets.AI_COST_REPORT_SENDER }}
+          RECIPIENTS: ${{ inputs.recipients || secrets.AI_COST_REPORT_RECIPIENTS }}
+          SUBJECT: ${{ steps.report.outputs.subject }}
+        run: |
+          # The form body is built by jq and handed over on stdin, so the client secret is
+          # url-encoded correctly and never appears in this runner's process list
+          token=$(
+            jq -rn --arg id "$CLIENT_ID" --arg secret "$CLIENT_SECRET" \
+              '"client_id=" + ($id | @uri)
+               + "&client_secret=" + ($secret | @uri)
+               + "&scope=" + ("https://graph.microsoft.com/.default" | @uri)
+               + "&grant_type=client_credentials"' \
+            | curl -sS --fail-with-body -X POST \
+                "https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token" \
+                -H 'Content-Type: application/x-www-form-urlencoded' --data-binary @- \
+            | jq -r '.access_token // empty'
+          )
+
+          if [[ -z "$token" ]]; then
+            echo "::error title=Could not authenticate to Microsoft Graph::The app registration in MICROSOFT_CLIENT_ID could not get a token for this tenant"
+            exit 1
+          fi
+
+          # Both spreadsheets go inline as base64. Graph wants an upload session past 3MB, and
+          # a month of runs is a few kilobytes - a report that ever approaches that limit is a
+          # different problem from mailing it.
+          jq -n \
+            --arg subject "$SUBJECT" \
+            --rawfile body ai-cost-report/ai-costs.html \
+            --arg recipients "$RECIPIENTS" \
+            --arg issues "$(base64 -w0 ai-cost-report/ai-costs-issues.csv)" \
+            --arg runs "$(base64 -w0 ai-cost-report/ai-costs-runs.csv)" \
+            '{
+              message: {
+                subject: $subject,
+                body: {contentType: "HTML", content: $body},
+                toRecipients: [
+                  $recipients | split(",") | .[] | sub("^\\s+"; "") | sub("\\s+$"; "")
+                  | select(length > 0) | {emailAddress: {address: .}}
+                ],
+                attachments: [
+                  {"@odata.type": "#microsoft.graph.fileAttachment",
+                   name: "ai-costs-issues.csv", contentType: "text/csv", contentBytes: $issues},
+                  {"@odata.type": "#microsoft.graph.fileAttachment",
+                   name: "ai-costs-runs.csv", contentType: "text/csv", contentBytes: $runs}
+                ]
+              },
+              saveToSentItems: false
+            }' > "$RUNNER_TEMP/message.json"
+
+          curl -sS --fail-with-body -X POST \
+            "https://graph.microsoft.com/v1.0/users/$SENDER/sendMail" \
+            -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$RUNNER_TEMP/message.json"
+
+          echo "Sent to $RECIPIENTS as $SENDER"

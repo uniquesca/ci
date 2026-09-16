@@ -8,6 +8,9 @@ Three workflows that take an issue to a reviewed pull request. Each has its own 
 | [AI Implement](ai/ai-implement.md) | Builds the plan on a branch and opens a pull request, then runs a round for every review or red check, on `/ai-do` |
 | [AI Review](ai/ai-review.md) | Reviews a pull request as a real Github review, on `/ai-review` or on what a round pushed |
 
+What the three of them spend is recorded on the issues they work on, and read back by
+[AI costs](ai/ai-costs.md).
+
 ## How the three fit together
 
 ```
