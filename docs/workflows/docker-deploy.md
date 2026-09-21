@@ -33,8 +33,9 @@ jobs:
 | Secret | Required | Description |
 |---|---|---|
 | `SSH_KEY` | yes | SSH private key used to connect to the host |
-| `GITHUB_ACCESS_TOKEN` | no | GitHub personal access token for cloning private repositories and container registry authentication. Falls back to `UNIQUES_GITHUB_ACCESS_TOKEN` if not provided |
+| `GITHUB_ACCESS_TOKEN` | no | GitHub personal access token for container registry authentication. Falls back to `UNIQUES_GITHUB_ACCESS_TOKEN` if not provided |
 | `UNIQUES_GITHUB_ACCESS_TOKEN` | no | GitHub personal access token, used if `GITHUB_ACCESS_TOKEN` is not provided |
+| `SATIS_COMPOSER_ACCESS_TOKEN` | no | Token for `satis.unqs.ca`, the Uniques Composer registry. Required when the repository has a `composer.json` |
 | `NODE_AUTH_TOKEN` | no | Access token for authentication with the NPM registry |
 | `ENV_VARIABLES` | no | JSON object of variables the config files are rendered with. A secret rather than an input, because it holds the environment's credentials |
 
@@ -114,7 +115,7 @@ each conditional on the repository having it:
 
 | Condition | What runs |
 |---|---|
-| `composer.json` in `composer_working_directory` | `./task.sh composer install`, authenticated with `UNIQUES_GITHUB_ACCESS_TOKEN` |
+| `composer.json` in `composer_working_directory` | `./task.sh composer install`, authenticated against `satis.unqs.ca` with `SATIS_COMPOSER_ACCESS_TOKEN` |
 | `package.json` and `yarn.lock` | `./task.sh yarn install`, retried once without `yarn.lock` on a `401 Unauthorized` |
 | `package.json`, no `yarn.lock` | `./task.sh npm install` |
 | `./task.sh supports clear-cache` | `./task.sh clear-cache` |

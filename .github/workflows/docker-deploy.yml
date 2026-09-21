@@ -7,10 +7,13 @@ on:
         description: 'SSH private key to use to connect to the host'
         required: true
       GITHUB_ACCESS_TOKEN:
-        description: 'GitHub personal access token for cloning private repositories and container registry authentication'
+        description: 'GitHub personal access token for container registry authentication'
         required: false
       UNIQUES_GITHUB_ACCESS_TOKEN:
         description: 'GitHub personal access token, fallback if GITHUB_ACCESS_TOKEN is not provided'
+        required: false
+      SATIS_COMPOSER_ACCESS_TOKEN:
+        description: 'Token for satis.unqs.ca, the Uniques Composer registry'
         required: false
       NODE_AUTH_TOKEN:
         description: 'Access token for authentication with the NPM registry'
@@ -253,7 +256,10 @@ jobs:
             # Whatever stops this script names itself, writes that down and carries its status out,
             # so a failure ten commands deep is not reported as "the last thing I ran was fine".
             # Not `-E`: an ERR trap inherited by the subshell of a `cmd | while read` would report
-            # the failure twice, once from inside and once from the pipeline itself
+            # the failure twice, once from inside and once from the pipeline itself.
+            # A deliberate stop is raised as `( exit N )`, because a bare `exit` skips this trap
+            # and leaves the verification step with nothing but a missing status file. Uninherited,
+            # the trap fires once, on the subshell returning non-zero
             trap 'status=$?; set +x; echo "❌ Deployment failed at line $LINENO: $BASH_COMMAND (exit $status)"; echo "failed at line $LINENO: $BASH_COMMAND (exit $status)" > "$DEPLOYMENT_STATUS_FILE"; exit $status' ERR
 
             # Change into the directory
@@ -381,16 +387,18 @@ jobs:
             rm -f ${{ inputs.composer_working_directory }}/auth.json
             if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
               echo "Installing composer dependencies"
-              # Fall back to UNIQUES_GITHUB_ACCESS_TOKEN if GITHUB_ACCESS_TOKEN is not provided
-              GH_TOKEN="${{ secrets.GITHUB_ACCESS_TOKEN }}"
-              if [ -z "$GH_TOKEN" ]; then
-                GH_TOKEN="${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}"
-                if [ -n "$GH_TOKEN" ]; then
-                  echo "⚠️  UNIQUES_GITHUB_ACCESS_TOKEN is deprecated and will be removed in v12. Use GITHUB_ACCESS_TOKEN instead."
-                fi
+
+              # Uniques packages come from satis.unqs.ca, which authenticates with HTTP basic and
+              # the literal username `token`. Checked before the install because an unchanged
+              # composer.lock installs from `vendor/` without ever reaching satis - a missing
+              # token surfaces only on the deployment that does move a private package
+              SATIS_TOKEN="${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}"
+              if [ -z "$SATIS_TOKEN" ]; then
+                echo "❌ SATIS_COMPOSER_ACCESS_TOKEN is empty - Composer cannot authenticate against satis.unqs.ca"
+                ( exit 1 )
               fi
               # Tracing off in a subshell: `set -x` prints the token as an expanded argument
-              ( set +x; ./task.sh composer config --auth github-oauth.github.com "$GH_TOKEN" )
+              ( set +x; ./task.sh composer config --auth http-basic.satis.unqs.ca token "$SATIS_TOKEN" )
               ./task.sh composer install
             fi
             rm -f ${{ inputs.composer_working_directory }}/auth.json
@@ -424,7 +432,7 @@ jobs:
                   else
                     # Failed for a reason other than 401, show error output
                     echo "$output"
-                    exit $exit_code
+                    ( exit $exit_code )
                   fi
                 fi
             

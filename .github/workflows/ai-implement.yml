@@ -1499,9 +1499,10 @@ jobs:
 
           echo "::warning title=Command overrode the plan::The plan was written against '$PLAN_BASE', the command asked for '$REQUESTED'"
 
-      # What the checks on this commit actually printed, fetched from the artifacts the QA
+      # What the failing checks on this commit printed, fetched from the artifacts the QA
       # workflows upload. This is the answer to a red check: the agent cannot read job logs,
-      # and a check run carries only `Process completed with exit code 1`.
+      # and a check run carries only `Process completed with exit code 1`. A check that passed
+      # uploads nothing, so what arrives here is the failures.
       #
       # Discovered by name rather than by passing artifact ids around: any run on this commit
       # may have uploaded one, including runs nothing here triggered. Missing is normal - the
@@ -2504,12 +2505,13 @@ jobs:
               comment still means the same item; an older plan may have no ids at all, in
               which case its steps go by their titles.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
-            - `.ai-reports/` - what the checks on this commit actually printed, one directory
-              per CI job. A failing `check` in the feedback almost certainly has its output in
-              here, and reading it beats inferring what the check meant from its name. It is
-              empty when the checks have not finished, when the reports have expired, or when
-              this repository does not upload any - in which case say what you could not see
-              rather than guessing.
+            - `.ai-reports/` - what the checks on this commit printed, one directory per CI
+              job and only for the checks that failed. A failing `check` in the feedback almost
+              certainly has its output in here, and reading it beats inferring what the check
+              meant from its name. A long report has its middle cut out, with a line saying so
+              where the cut is. It is empty when nothing failed, when the checks have not
+              finished, when the reports have expired, or when this repository does not upload
+              any - in which case say what you could not see rather than guessing.
 
             If `.ai-review/feedback.json` is missing or unreadable, stop straight away and say
             exactly that as your final message.

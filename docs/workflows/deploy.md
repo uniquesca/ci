@@ -23,7 +23,7 @@ jobs:
       ref: develop
     secrets:
       SSH_KEY: ${{ secrets.SSH_KEY }}
-      UNIQUES_GITHUB_ACCESS_TOKEN: ${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}
+      SATIS_COMPOSER_ACCESS_TOKEN: ${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}
       NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 ```
 
@@ -32,7 +32,8 @@ jobs:
 | Secret | Required | Description |
 |---|---|---|
 | `SSH_KEY` | yes | SSH private key used to connect to the host |
-| `UNIQUES_GITHUB_ACCESS_TOKEN` | yes | Access token for cloning Uniques private repositories |
+| `SATIS_COMPOSER_ACCESS_TOKEN` | yes | Token for `satis.unqs.ca`, the Uniques Composer registry |
+| `UNIQUES_GITHUB_ACCESS_TOKEN` | no | Accepted and ignored. Removed in v12 |
 | `NODE_AUTH_TOKEN` | no | Access token for authentication with the NPM registry |
 
 ## Inputs
@@ -81,8 +82,9 @@ not a place to keep anything that is not either in git or ignored.
 
 ### What it installs
 
-* Composer, when there is a `composer.json`: `composer install --no-dev`, authenticated with
-  `UNIQUES_GITHUB_ACCESS_TOKEN`. Any `auth.json` is removed before and after.
+* Composer, when there is a `composer.json`: `composer install --no-dev`, authenticated against
+  `satis.unqs.ca` with `SATIS_COMPOSER_ACCESS_TOKEN` over HTTP basic, username `token`. Any
+  `auth.json` is removed before and after.
 * Yarn, when there is a `package.json`, under `node_version` via `nvm`. An `.npmrc` pointing
   `@uniquesca` at `npm.pkg.github.com` is written for the install and **deleted afterwards**, so the
   token does not stay on disk. A `401 Unauthorized` failure is retried once with `yarn.lock` removed
@@ -100,7 +102,7 @@ configuration is not called `phinx.php`.
 
 ### How a failure is detected
 
-The remote script runs under `set -euxo pipefail` with an `ERR` trap, so the first command that
+The remote script runs under `set -euo pipefail` with an `ERR` trap, so the first command that
 fails stops the deployment and names itself:
 
 ```

@@ -69,6 +69,14 @@ runs:
           echo "branch=$BRANCH"
         } >> "$GITHUB_OUTPUT"
 
+    # `$AI_REPORT` is what caps the fixer's own report below. Installing it here rather than
+    # relying on the caller is what lets this action be called on its own with a `report_dir`
+    - name: Prepare the check reports
+      if: ${{ steps.gate.outputs.enabled == 'true' && inputs.report_dir != '' }}
+      uses: uniquesca/ci/qa-report@v11
+      with:
+        report_dir: ${{ inputs.report_dir }}
+
     # Fixing and landing are one step, because landing can send us back to fixing. Every leg of a
     # matrix fixes and tries to push, and a ref update is atomic, so one of them wins a round - the
     # losers start over from the tip the winner just made and run the fixer again over what is there
@@ -160,6 +168,9 @@ runs:
           local status=0
           if [[ -n "$log" ]]; then
             bash -c "$CMD" 2>&1 | tee -a "$log" || status=$?
+            # The log accumulates over every attempt, and a fixer with a lot to say can outgrow
+            # what the agent reading it can hold
+            "$AI_REPORT" trim cs-fix.log
           else
             bash -c "$CMD" 2>&1 || status=$?
           fi

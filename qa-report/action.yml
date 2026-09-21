@@ -1,0 +1,109 @@
+name: Prepare the check reports
+
+description: 'Creates the directory the QA checks write their reports into, and installs the helper that runs a check and keeps what it printed only when it failed, capped to a size an agent can read'
+
+inputs:
+  report_dir:
+    description: 'Directory the reports are written into. Anchored to the workspace by default rather than relative, so a job that sets a `working-directory` still writes where the upload looks'
+    required: false
+    default: ''
+  max_bytes:
+    description: 'Longest report to keep. Anything over is cut down to the first and last half of this, with a line saying so where the cut is - the agent reads every byte of what is here before it can act, and a test suite can print more than a context window holds'
+    required: false
+    default: '200000'
+
+outputs:
+  report_dir:
+    description: 'Directory the reports are written into. Use it for the `upload-artifact` path, so the run and the upload agree on one place'
+    value: ${{ steps.install.outputs.report_dir }}
+
+runs:
+  using: 'composite'
+  steps:
+    # The helper is generated rather than committed because the checks run in the caller's
+    # checkout, which does not have this repository's files in it
+    - name: Install the report helper
+      id: install
+      shell: bash
+      env:
+        REPORT_DIR: ${{ inputs.report_dir }}
+        MAX_BYTES: ${{ inputs.max_bytes }}
+      run: |
+        report_dir="${REPORT_DIR:-$GITHUB_WORKSPACE/.ai-reports}"
+        mkdir -p "$report_dir"
+        echo "report_dir=$report_dir" >> "$GITHUB_OUTPUT"
+
+        helper="$RUNNER_TEMP/qa-report"
+
+        # The settings are baked in rather than read from the environment, so that a step calling
+        # the helper cannot change where the reports go by exporting a variable of its own
+        {
+          printf '#!/usr/bin/env bash\n'
+          printf 'report_dir=%q\nmax_bytes=%q\n' "$report_dir" "$MAX_BYTES"
+          cat <<'SCRIPT'
+        # Runs a QA check and keeps what it printed, for an implementing agent that cannot read job
+        # logs. Only a failing check leaves a report: what a passing one printed tells the agent
+        # nothing its green check does not, and every byte here is a byte it reads before it can act.
+        #
+        #   qa-report run <report> <command> [args...]   # exits with the command's own status
+        #   qa-report trim <report>                      # cap a report written some other way
+        set -uo pipefail
+
+        usage() {
+          echo 'usage: qa-report run <report> <command> [args...] | qa-report trim <report>' >&2
+          exit 2
+        }
+
+        # Keeps the first and last half of an oversized report. Both ends carry something: a check
+        # states its findings from the top, and states how many of them there are at the bottom.
+        trim() {
+          local path="$report_dir/$1" size half
+          [[ -f "$path" ]] || return 0
+
+          size=$(wc -c < "$path")
+          (( size > max_bytes )) || return 0
+          half=$(( max_bytes / 2 ))
+
+          {
+            head -c "$half" "$path"
+            printf '\n\n[qa-report: %s bytes cut from the middle of this report, which is %s bytes long]\n\n' \
+              "$(( size - 2 * half ))" "$size"
+            tail -c "$half" "$path"
+          } > "$path.part"
+          mv "$path.part" "$path"
+
+          echo "::warning title=Check report trimmed::$1 is $size bytes, kept the first and last $half"
+        }
+
+        case "${1:-}" in
+          run)
+            shift
+            (( $# >= 2 )) || usage
+            report="$1"
+            shift
+
+            mkdir -p "$report_dir"
+            status=0
+            "$@" 2>&1 | tee "$report_dir/$report" || status=$?
+
+            if (( status == 0 )); then
+              rm -f "$report_dir/$report"
+            else
+              trim "$report"
+            fi
+            exit "$status"
+            ;;
+          trim)
+            shift
+            (( $# == 1 )) || usage
+            trim "$1"
+            ;;
+          *)
+            usage
+            ;;
+        esac
+        SCRIPT
+        } > "$helper"
+
+        chmod +x "$helper"
+        echo "AI_REPORT=$helper" >> "$GITHUB_ENV"

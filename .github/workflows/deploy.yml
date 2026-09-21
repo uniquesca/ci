@@ -6,9 +6,14 @@ on:
       SSH_KEY:
         description: 'SSH private key to use to connect to the host'
         required: true
-      UNIQUES_GITHUB_ACCESS_TOKEN:
-        description: 'Access token for cloning Uniques private repositories from GitHub'
+      SATIS_COMPOSER_ACCESS_TOKEN:
+        description: 'Token for satis.unqs.ca, the Uniques Composer registry'
         required: true
+      # Declared so that a caller still passing it is not rejected outright. Nothing reads it -
+      # Composer authenticates against satis. Removed in v12
+      UNIQUES_GITHUB_ACCESS_TOKEN:
+        description: 'Accepted and ignored. Removed in v12'
+        required: false
       NODE_AUTH_TOKEN:
         description: 'Access token for authentication with the NPM registry'
         required: false
@@ -86,8 +91,11 @@ jobs:
             # Making it more strict for the script to fail in case of an error.
             # `pipefail` because without it only the last command of a pipeline is allowed to fail
             # the script, and the failure of anything upstream of a `|` is discarded - `curl ... |
-            # bash` installing nvm reported success on a download that never happened
-            set -euxo pipefail;
+            # bash` installing nvm reported success on a download that never happened.
+            # No `-x`: sourcing nvm and `nvm use` are shell functions, so tracing them buries the
+            # deployment in more than a thousand lines of nvm internals. The ERR trap below names
+            # the line and the command that failed, which is what a trace was being read for
+            set -euo pipefail;
 
             # Where this script records its verdict for the verification step below. The run and
             # attempt number make it this deployment's alone, so no previous run's file can be
@@ -95,8 +103,10 @@ jobs:
             DEPLOYMENT_STATUS_FILE="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
 
             # Whatever stops this script names itself, writes that down and carries its status out,
-            # so a failure ten commands deep is not reported as "the last thing I ran was fine"
-            trap 'status=$?; set +x; echo "❌ Deployment failed at line $LINENO: $BASH_COMMAND (exit $status)"; echo "failed at line $LINENO: $BASH_COMMAND (exit $status)" > "$DEPLOYMENT_STATUS_FILE"; exit $status' ERR
+            # so a failure ten commands deep is not reported as "the last thing I ran was fine".
+            # A deliberate stop is raised as `( exit N )`, because a bare `exit` skips this trap
+            # and leaves the verification step with nothing but a missing status file
+            trap 'status=$?; echo "❌ Deployment failed at line $LINENO: $BASH_COMMAND (exit $status)"; echo "failed at line $LINENO: $BASH_COMMAND (exit $status)" > "$DEPLOYMENT_STATUS_FILE"; exit $status' ERR
 
             echo "Changing work dir"
             cd ${{ inputs.deployment_path }}
@@ -159,8 +169,18 @@ jobs:
               fi
               echo "Installing Composer dependencies"
               chmod +x composer.phar
-              # Tracing off in a subshell: `set -x` prints the token as an expanded argument
-              ( set +x; php composer.phar config --auth github-oauth.github.com '${{ secrets.UNIQUES_GITHUB_ACCESS_TOKEN }}' )
+
+              # Uniques packages come from satis.unqs.ca, which authenticates with HTTP basic and
+              # the literal username `token`. Checked before the install because an unchanged
+              # composer.lock installs from `vendor/` without ever reaching satis - a missing
+              # token surfaces only on the deployment that does move a private package
+              satis_token='${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}'
+              if [ -z "$satis_token" ]; then
+                echo "❌ SATIS_COMPOSER_ACCESS_TOKEN is empty - Composer cannot authenticate against satis.unqs.ca"
+                ( exit 1 )
+              fi
+              php composer.phar config --auth http-basic.satis.unqs.ca token "$satis_token"
+
               php composer.phar install --no-dev
             fi
             rm -f auth.json
@@ -168,8 +188,6 @@ jobs:
             rm -f .npmrc
             if [ -f "package.json" ]; then
               echo "Preparing .npmrc file"
-              # Heredoc rather than `echo`: a heredoc body is untraced, so the token stays out
-              # of the `set -x` log
               cat > .npmrc <<'CI_NPMRC'
             @uniquesca:registry=https://npm.pkg.github.com/
             //npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}
@@ -194,24 +212,27 @@ jobs:
               fi
 
               echo "Installing NPM/Yarn dependencies"
-              # Commands below run yarn in a way it doesn't emit non-zero exit code, so we don't stop,
-              # yet we capture stderr, so we can check it
-              output=$(yarn install 2>&1 || true)
+              # `|| exit_code=$?` keeps the failure away from errexit and the ERR trap, so the 401
+              # retry below is reached. Every other failure is re-raised - swallowing it deployed
+              # a tree whose dependencies had never been installed and called the job a success
+              exit_code=0
+              output=$(yarn install 2>&1) || exit_code=$?
               echo "$output"
-              # Check for "401 Unauthorized" in stderr - this is a workaround for the intermittent bug 
-              # with yarn authentication
-              if echo "$output" | grep -q "401 Unauthorized"; then
-                echo "Could not install yarn dependencies, retrying..."
-                cat > .npmrc <<'CI_NPMRC'
-            @uniquesca:registry=https://npm.pkg.github.com/
-            //npm.pkg.github.com/:_authToken=${{ secrets.NODE_AUTH_TOKEN }}
-            always-auth=true
-            CI_NPMRC
-                rm yarn.lock
-                npm cache clean --force
-                yarn cache clean 
-                echo "Deleted yarn.lock, running yarn install again..."
-                yarn install
+
+              if [ $exit_code -ne 0 ]; then
+                # Retry on 401 only: yarn's authentication against the package registry fails
+                # intermittently, and resolving again with no yarn.lock and the caches emptied
+                # gets past it
+                if echo "$output" | grep -q "401 Unauthorized" && [ -f "yarn.lock" ]; then
+                  echo "Could not install yarn dependencies, retrying..."
+                  rm yarn.lock
+                  npm cache clean --force
+                  yarn cache clean
+                  echo "Deleted yarn.lock, running yarn install again..."
+                  yarn install
+                else
+                  ( exit $exit_code )
+                fi
               fi
             fi
             rm -f .npmrc
