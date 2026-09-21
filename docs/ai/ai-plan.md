@@ -124,6 +124,7 @@ dropped as well as adding what it now asks for.
 | `agent_timeout_minutes` | number | `30` | How long the planning agent itself may run before it is given up on |
 | `timeout_minutes` | number | `45` | How long the whole job may run. Keep it above `agent_timeout_minutes` plus what installing this project's dependencies costs |
 | `install_dependencies` | boolean | `true` | Install this project's Composer and NPM dependencies before the agent starts, so it plans against [what the project really depends on](#what-the-agent-can-and-cannot-do). Detected from the repository - a manifest is what decides |
+| `node_working_directory` | string | `.` | Directory holding the `package.json` the JavaScript dependencies are installed from, when it is not the repository root - `ng-src` for a PHP repository with an Angular workspace under it. Composer is always installed from the root |
 | `node_version` | number | `20` | Node version the JavaScript dependencies are installed under. The same default as [`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow) |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch [`ai-implement`](ai-implement.md) pushes to, used to find the pull request already implementing this issue. Keep the two the same |
 | `progress_label` | string | `ai:planning` | Label put on the issue while the run is planning, and taken off however it ends. Created if the repository has not got it, then left alone, so recolouring it there sticks. Empty to not label anything |
@@ -149,7 +150,12 @@ written into the checkout by [`ai-stage-issue`](../actions/ai-stage-issue.md) fi
 what keeps issue text out of the workflow file. Dependencies reach it the same way, a
 `composer.json` getting `vendor/` and a `package.json` getting `node_modules`, so it plans against
 the signature a library actually exposes; an install that fails leaves a warning and a plan written
-from the code alone.
+from the code alone. The installed copy answers which version resolves today and not which versions
+exist, so every release of this project's private `@uniquesca` packages is read out of the
+registries beforehand and staged as `.ai-plan/private-packages.json`, with the dependency and peer
+ranges each one declares - which is what lets a plan for an upgrade name a version rather than a
+step to go and find one. Public packages are not in there, and a question about one of those stays
+an unknown in the plan.
 
 The step is read-only in two independent ways: the job holds `contents: read`, and the editing,
 writing and shell tools are switched off. If you extend this workflow, keep `contents: read` - it

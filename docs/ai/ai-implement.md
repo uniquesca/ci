@@ -223,6 +223,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [what it is given to check with](#what-the-agent-is-given-to-check-with). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
+| `node_working_directory` | string | `.` | Directory holding the `package.json` the JavaScript dependencies are installed from, when it is not the repository root - `ng-src` for a PHP repository with an Angular workspace under it. Composer is always installed from the root, and naming a directory puts the JavaScript install and checks on the runner rather than in the container |
 | `node_version` | number | `20` | Node version the JavaScript dependencies are installed under. The same default as [`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow), so the two agree unless both are changed |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
