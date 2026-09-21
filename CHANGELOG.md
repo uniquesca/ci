@@ -1331,3 +1331,10 @@
 ## v11.19.0
 
 * New: introduce AI cost observability (1d13b73 by George Shestayev)
+
+## v11.20.0
+
+* Fix: fixed satis authentication in deployment jobs (88450a7 by George Shestayev)
+* Update: prevent checks from uploading success reports (88450a7 by George Shestayev)
+* Update: tightened deployment jobs to install yarn consistently with install-packages (which is also reliably) (88450a7 by George Shestayev)
+* Update: improved AI agents on producing workflow file patches to match our code style (0a7fc4b by George Shestayev)
