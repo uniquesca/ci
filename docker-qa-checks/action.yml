@@ -29,12 +29,9 @@ runs:
       shell: bash
       run: ${{ inputs.setup_cmd }}
 
-    - name: Prepare the report directory
-      shell: bash
-      # Anchored to the workspace, not relative: this is a composite action, so a caller that
-      # sets a working-directory would otherwise write the reports somewhere the upload below
-      # does not look
-      run: mkdir -p "$GITHUB_WORKSPACE/.ai-reports"
+    - name: Prepare the check reports
+      id: reports
+      uses: uniquesca/ci/qa-report@v11
 
     - name: Check whether the code style can be fixed automatically
       id: cs_fix_support
@@ -45,9 +42,9 @@ runs:
           echo "supported=true" >> "$GITHUB_OUTPUT"
         fi
 
-    # Every check below tees its output to a file as well as the log, and the files go up as an
-    # artifact at the end - an implementing agent cannot read job logs, and a check run on its own
-    # carries nothing but `Process completed with exit code 1`.
+    # Every check below runs through `$AI_REPORT`, which keeps what it printed for an implementing
+    # agent to read back - an agent cannot read job logs, and a check run on its own carries nothing
+    # but `Process completed with exit code 1`. The reports go up as an artifact at the end.
 
     # A failure here is held back for the fixer below, and reported by the re-check after it.
     # Without a fixer to run, it is reported here.
@@ -62,7 +59,7 @@ runs:
         fi
 
         status=0
-        ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log" || status=$?
+        "$AI_REPORT" run cs-check.log ./task.sh cs-check || status=$?
         if (( status != 0 )) && [[ "$FIXABLE" == 'true' ]]; then
           echo 'failed=true' >> "$GITHUB_OUTPUT"
           exit 0
@@ -76,38 +73,39 @@ runs:
       with:
         cmd: './task.sh cs-fix'
         token: ${{ inputs.autofix_token }}
-        report_dir: ${{ github.workspace }}/.ai-reports
+        report_dir: ${{ steps.reports.outputs.report_dir }}
 
     # What the fixer could not fix, which is the failure the check above held back
     - name: Re-run code quality checks
       if: ${{ steps.cs_fix.outcome == 'success' }}
       shell: bash
       run: |
-        ./task.sh cs-check 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/cs-check.log"
+        "$AI_REPORT" run cs-check.log ./task.sh cs-check
 
     - name: Run tests
       shell: bash
       run: |
         if ./task.sh supports test > /dev/null; then
-          ./task.sh test 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/test.log"
+          "$AI_REPORT" run test.log ./task.sh test
         fi
 
     - name: Run Psalm
       shell: bash
       run: |
         if ./task.sh supports psalm > /dev/null; then
-          ./task.sh psalm 2>&1 | tee "$GITHUB_WORKSPACE/.ai-reports/psalm.log"
+          "$AI_REPORT" run psalm.log ./task.sh psalm
         fi
 
-    # `always()`, because the only run anybody wants these from is the one that failed - and a
-    # failed step skips everything after it by default. Short retention: this is written to be read
-    # by the next implementing round, within minutes, not kept.
+    # `always()`, because a failed check is what leaves a report and a failed step skips everything
+    # after it by default. A run where everything passed uploads nothing at all, and neither does one
+    # that died before the report directory existed. Short retention: this is written to be read by
+    # the next implementing round, within minutes, not kept.
     - name: Upload the check reports
-      if: always()
+      if: ${{ always() && steps.reports.outputs.report_dir != '' }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.report_name }}
-        path: ${{ github.workspace }}/.ai-reports
+        path: ${{ steps.reports.outputs.report_dir }}
         retention-days: 1
         # `.ai-reports` is a dot-directory, and upload-artifact excludes hidden files by
         # default - without this the report is written and then silently dropped

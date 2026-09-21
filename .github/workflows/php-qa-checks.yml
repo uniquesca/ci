@@ -85,10 +85,6 @@ jobs:
     runs-on: ${{ matrix.setup.os }}
     env:
       phpunit: 0
-      # Where each check's output is kept, and what gets uploaded as an artifact at the end.
-      # An implementing agent cannot read job logs, and a check run on its own carries nothing
-      # but `Process completed with exit code 1` - this is how it finds out what actually broke
-      AI_REPORT_DIR: ${{ github.workspace }}/.ai-reports
     strategy:
       fail-fast: false
       matrix:
@@ -110,8 +106,13 @@ jobs:
       - name: Run setup cmd (if specified)
         run: ${{ inputs.setup_cmd }}
 
-      - name: Prepare the report directory
-        run: mkdir -p "$AI_REPORT_DIR"
+      # Each check below runs through `$AI_REPORT`, which keeps what it printed for an
+      # implementing agent to read back. An agent cannot read job logs, and a check run on its own
+      # carries nothing but `Process completed with exit code 1` - this is how it finds out what
+      # actually broke.
+      - name: Prepare the check reports
+        id: reports
+        uses: uniquesca/ci/qa-report@v11
 
       - name: Check if we have PHPUnit
         run: |
@@ -205,7 +206,7 @@ jobs:
           fi
 
           status=0
-          ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log" || status=$?
+          "$AI_REPORT" run phpcs.log ./vendor/bin/phpcs || status=$?
           if (( status != 0 )) && [[ "$AUTO_FIX" == 'true' ]]; then
             echo 'failed=true' >> "$GITHUB_OUTPUT"
             exit 0
@@ -228,7 +229,7 @@ jobs:
         uses: uniquesca/ci/cs-fix@v11
         with:
           token: ${{ secrets.AUTOFIX_ACCESS_TOKEN }}
-          report_dir: ${{ env.AI_REPORT_DIR }}
+          report_dir: ${{ steps.reports.outputs.report_dir }}
           # One attempt per leg of the matrix: that is how many jobs can be racing to land a fix,
           # and every one that wins costs the others the attempt they were mid-way through
           attempts: ${{ strategy.job-total }}
@@ -237,7 +238,7 @@ jobs:
       - name: Re-run PHP Codesniffer
         if: steps.cs_fix.outcome == 'success'
         run: |
-          ./vendor/bin/phpcs 2>&1 | tee "$AI_REPORT_DIR/phpcs.log"
+          "$AI_REPORT" run phpcs.log ./vendor/bin/phpcs
 
       - name: Run PHPUnit
         if: env.phpunit == 1
@@ -246,31 +247,32 @@ jobs:
         env:
           XDEBUG_MODE: coverage
         run: |
-          php ./vendor/bin/phpunit 2>&1 | tee "$AI_REPORT_DIR/phpunit.log"
+          "$AI_REPORT" run phpunit.log php ./vendor/bin/phpunit
 
       - name: Run Psalm
         run: |
           if [[ -f "psalm.xml" ]]; then
-            ./vendor/bin/psalm 2>&1 | tee "$AI_REPORT_DIR/psalm.log"
+            "$AI_REPORT" run psalm.log ./vendor/bin/psalm
           elif [[ -f "psalm.xml.dist" ]]; then
-            ./vendor/bin/psalm --config=psalm.xml.dist 2>&1 | tee "$AI_REPORT_DIR/psalm.log"
+            "$AI_REPORT" run psalm.log ./vendor/bin/psalm --config=psalm.xml.dist
           else
             echo "No Psalm configuration file found, skipping code check."
           fi
 
-      # `always()`, because the only run anybody wants these from is the one that failed - and a
-      # failed step skips everything after it by default. Short retention: this is written to be
-      # read by the next implementing round, within minutes, not kept.
+      # `always()`, because a failed check is what leaves a report and a failed step skips
+      # everything after it by default. A leg where everything passed uploads nothing at all, and
+      # neither does one that died before the report directory existed. Short retention: this is
+      # written to be read by the next implementing round, within minutes, not kept.
       #
       # The name carries the matrix leg because artifact names have to be unique within a run,
       # and because which PHP version went red is part of the answer. `artifact_suffix` is what
       # keeps two calls of this workflow in one file from landing on the same names.
       - name: Upload the check reports
-        if: always()
+        if: always() && steps.reports.outputs.report_dir != ''
         uses: actions/upload-artifact@v7
         with:
           name: ai-report-php-${{ matrix.setup.php.version }}-${{ matrix.setup.os }}${{ inputs.artifact_suffix && format('-{0}', inputs.artifact_suffix) || '' }}
-          path: ${{ env.AI_REPORT_DIR }}
+          path: ${{ steps.reports.outputs.report_dir }}
           retention-days: 1
           # `.ai-reports` is a dot-directory, and upload-artifact excludes hidden files by
           # default - without this the report is written and then silently dropped

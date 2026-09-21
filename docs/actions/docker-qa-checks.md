@@ -47,17 +47,18 @@ application running already, usually via [`docker-spin-up`](docker-spin-up.md).
 
 ### The reports, and who reads them
 
-Every check tees its output to `.ai-reports/<check>.log` in the workspace, and the directory goes up
-as an artifact with one day of retention. This exists because **an AI implementing round cannot read
-job logs** - a red check run on its own carries nothing but `Process completed with exit code 1`.
-Any artifact whose name starts with `ai-report-` is picked up by
+Every check runs through [`qa-report`](qa-report.md), which writes what it printed to
+`.ai-reports/<check>.log` in the workspace and keeps it where the check failed, and the directory
+goes up as an artifact with one day of retention. This exists because **an AI implementing round
+cannot read job logs** - a red check run on its own carries nothing but `Process completed with exit
+code 1`. Any artifact whose name starts with `ai-report-` is picked up by
 [`ai-implement`](../ai/ai-implement.md), which is why that is the default prefix.
 
 Artifact names have to be unique within a run, so give each leg its own `report_name` if this action
 runs more than once.
 
-Each check runs under `pipefail`, so `tee` cannot report success for a task that failed.
-The upload runs on `always()`, since a failed run is the only one anybody wants the reports from.
+The upload runs on `always()`, because a failed step skips everything after it - and on a run where
+every check passed there is nothing to upload.
 
 ### Code style fixing
 

@@ -155,21 +155,23 @@ in [Dig deeper](#dig-deeper).
 `.ai-reports/` before each round, and the agent is told to read it.
 [`docker-qa-checks`](../actions/docker-qa-checks.md) and
 [`php-qa-checks`](../qa-checks.md#php-qa-checks-workflow) already upload one; for a check of your
-own:
+own, [`qa-report`](../actions/qa-report.md) is the piece they use:
 
 ```yaml
+      - name: Prepare the check reports
+        id: reports
+        uses: uniquesca/ci/qa-report@v11
+
+      # Keeps what the check printed when it fails, capped. A passing check leaves nothing behind
       - name: Run the thing
-        run: |
-          set -o pipefail
-          mkdir -p .ai-reports
-          ./run-e2e 2>&1 | tee .ai-reports/e2e.log
+        run: '"$AI_REPORT" run e2e.log ./run-e2e'
 
       - name: Upload the report
-        if: always()
+        if: always() && steps.reports.outputs.report_dir != ''
         uses: actions/upload-artifact@v7
         with:
           name: ai-report-e2e
-          path: .ai-reports
+          path: ${{ steps.reports.outputs.report_dir }}
           retention-days: 1
           include-hidden-files: true
           if-no-files-found: ignore
@@ -276,6 +278,10 @@ is running lands on the next one. Threads and failing checks are read by **state
 What those rules exclude is staged separately as the settled record: threads already answered or
 resolved, and earlier reviews. None of it is work. Where the feedback asks again for something the
 record shows was settled, the round replies saying where it was settled and leaves the code alone.
+
+What the checks printed reaches the round only where a check went red: a report is kept for a
+failing check, deleted for a passing one and capped at 200 KB, so `.ai-reports/` holds failures and
+nothing else, and an all-green run uploads no artifact at all.
 
 Every round uploads all of it as an `ai-context-implement` artifact, together with the replies the
 agent wrote and the check reports it read.
