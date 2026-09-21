@@ -1347,3 +1347,7 @@
 ## v11.20.2
 
 * Fix: fixed AI PR showing plan cost instead of implementation cost (842d4e9 by George Shestayev)
+
+## v11.20.3
+
+* Update: introduced an ability to ai-plan and ai-implement agents to deal with repos where npm should not be installed in root (7b0cf57 by George Shestayev)
