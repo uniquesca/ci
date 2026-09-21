@@ -1343,3 +1343,7 @@
 
 * Fix: fixed AI agents wrapping github comment bodies in a code fence (f8d60f8 by George Shestayev)
 * Update: removed /etc/hosts mapping for php-fpm containers - use network alias instead in compose.yaml file(s) (6dd76a6 by George Shestayev)
+
+## v11.20.2
+
+* Fix: fixed AI PR showing plan cost instead of implementation cost (842d4e9 by George Shestayev)
