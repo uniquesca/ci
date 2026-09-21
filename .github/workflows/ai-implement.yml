@@ -2424,8 +2424,9 @@ jobs:
             reviewer: what changed and why, anything in the plan you deliberately did not
             do and why, what you ran to verify it and what the result was, and anything
             that needs a human decision. Markdown, no preamble, no sign-off, well under
-            10000 characters. Do not add a title, a link to the issue, or a footer - the
-            workflow adds those.
+            10000 characters. It is the body itself rather than a document inside it, so do
+            not wrap it in a code fence. Do not add a title, a link to the issue, or a footer
+            - the workflow adds those.
 
             Cite the plan's ids in it, in brackets after what you are already saying -
             "moved the retry loop into the client (S3)", "the changelog suite passes (C2)".
@@ -2592,8 +2593,9 @@ jobs:
             Your final message is posted as a comment on the pull request, so write it for the
             reviewer: what you changed this round, what you declined and why, what you ran and
             what it said, and anything still needing a decision. Markdown, no preamble, no
-            sign-off, well under 10000 characters. Do not add a title or a footer - the
-            workflow adds those.
+            sign-off, well under 10000 characters. It is the comment body itself rather than a
+            document inside it, so do not wrap it in a code fence. Do not add a title or a
+            footer - the workflow adds those.
 
             Cite the plan's ids in it, in brackets after what you are already saying - "the
             retry now backs off (S3)", "the changelog suite passes (C2)". Never an id on its

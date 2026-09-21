@@ -147,6 +147,34 @@ runs:
                   | if ($r.terminal_reason // "") == "api_error" then ""
                     else ($r.result // "") end' "$EXECUTION_FILE" > "$out/result.md" 2>/dev/null || true
 
+          # A final message fenced from top to bottom renders as a wall of source wherever a
+          # caller posts it, and a model does this occasionally whatever the prompt asks for.
+          # So it is undone here, once, for every caller - none of them can tell from the file.
+          #
+          # Only a fence around the whole message goes: the opening fence has to be the first
+          # thing in the file and the fence that closes it the last, which is what separates a
+          # wrapped report from one that legitimately contains code blocks. The awk exits
+          # non-zero when there is nothing to undo, and always prints the message either way,
+          # so a rewrite that decided nothing cannot empty the file.
+          if unfenced=$(awk '
+            { line[NR] = $0; if ($0 !~ /^[[:space:]]*$/) { if (!first) first = NR; last = NR } }
+            END {
+              strip = 0
+              if (first && match(line[first], /^(`{3,}|~{3,})[^`~]*$/)) {
+                fence = line[first]; sub(/[^`~].*$/, "", fence)
+                for (i = first + 1; i <= NR && !close_at; i++)
+                  if (line[i] ~ "^" substr(fence, 1, 1) "{" length(fence) ",}[[:space:]]*$") close_at = i
+                if (close_at == last) strip = 1
+              }
+              if (strip) { for (i = first + 1; i < close_at; i++) print line[i] }
+              else       { for (i = 1; i <= NR; i++) print line[i] }
+              exit strip ? 0 : 1
+            }
+          ' "$out/result.md"); then
+            printf '%s\n' "$unfenced" > "$out/result.md"
+            echo "::warning title=The agent fenced its whole final message::It came back as one code block, which would have posted as a wall of source - the fence was removed"
+          fi
+
           if [[ -s "$out/result.md" && -n "$(tr -d '[:space:]' < "$out/result.md")" ]]; then
             has_result='true'
             result_file="$out/result.md"
@@ -203,6 +231,11 @@ runs:
           # The token counters stay separate here, unlike in the prose: cache reads are most of
           # the volume and a fraction of the price, and a rise in spend cannot be explained
           # without them.
+          #
+          # The model comes off the last assistant message, which is the one that produced the
+          # result. Not from the result's `modelUsage`: that lists every model the run had
+          # configured - the main one and the small one the harness keeps for its own chores -
+          # with no usage figures to tell them apart, so any pick from it is a guess.
           cost_line=$(
             jq -rs --arg kind "$KIND" \
                    --arg repo "${GITHUB_REPOSITORY:-}" \
@@ -227,7 +260,7 @@ runs:
                  output_tokens: $r.usage.output_tokens,
                  cache_read_tokens: $r.usage.cache_read_input_tokens,
                  cache_write_tokens: $r.usage.cache_creation_input_tokens,
-                 model: ((($r.modelUsage // {}) | keys | first) // $a.message.model),
+                 model: $a.message.model,
                  completed: (($r.subtype // "") == "success" and $r.is_error != true)}
               | with_entries(select(.value != null and .value != ""))
               | "<!-- ai-cost " + tojson + " -->"' "$EXECUTION_FILE" 2>/dev/null || true

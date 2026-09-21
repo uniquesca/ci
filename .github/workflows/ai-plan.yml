@@ -647,7 +647,9 @@ jobs:
             Your final message is the plan. It is posted verbatim as a comment on the
             issue, so it is the plan and nothing else - no preamble about what you are
             about to do, no sign-off, no commentary on how the investigation went. Say
-            what you like in the messages before it; only the last one is published.
+            what you like in the messages before it; only the last one is published. It is
+            the comment body itself rather than a document inside it, so do not wrap it in a
+            code fence.
 
             The issue has already been fetched for you. Read these two files first:
 
