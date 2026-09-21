@@ -102,6 +102,12 @@ runs:
         # Everything under the heading, up to the next one. `^## ` needs the space, so a `###`
         # subheading inside the section survives rather than ending it.
         #
+        # A horizontal rule ends it too. The criteria are the last section a plan has, so there
+        # is no heading after them - what follows is the plan's own footer, and copying that
+        # into a pull request puts what the planning run cost where a reader takes it for what
+        # the implementation cost. The rule is what the footer opens with. HTML comments go for
+        # the same reason: the footer carries the plan's `<!-- ai-cost -->` line.
+        #
         # The `Retired:` line goes. It is where a revised plan records the ids it has dropped, so
         # it is bookkeeping between two versions of the plan - a tester reading this list should
         # see what they have to test and nothing else, and the plan on the issue still has it.
@@ -114,7 +120,9 @@ runs:
             if (heading == section) { found = 1 }
             next
           }
+          found && /^---[[:space:]]*$/ { exit }
           found && /^[*_[:space:]]*Retired:/ { next }
+          found && /^[[:space:]]*<!--/ { next }
           found { print }
         ' "$PLAN_FILE" > "$tmp/raw.md"
 
