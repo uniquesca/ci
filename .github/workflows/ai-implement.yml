@@ -141,6 +141,11 @@ on:
         required: false
         default: ''
         type: string
+      node_working_directory:
+        description: 'Directory holding the `package.json` the JavaScript dependencies are installed from, when it is not the repository root - `ng-src` for a PHP repository with an Angular workspace under it. Configured rather than detected, because a repository with several `package.json` files has no single right answer and installing the wrong one is silent. Composer is always installed from the root, and a project whose checks run in its container is driven by `task.sh` from the root whatever this says'
+        required: false
+        default: '.'
+        type: string
       node_version:
         description: 'Node version the JavaScript dependencies are installed under, and the one the agent runs this project''s Node tooling with. The same default as the NPM QA checks workflow, so the two agree unless both are changed. `_ci_environment.json` describes only PHP, so there is nothing in the repository to read this from'
         required: false
@@ -1782,11 +1787,17 @@ jobs:
           # checker, the framework CLI, the test runner are all binaries it unpacks - so there is
           # always something for the agent to run, whether or not the package declares a script
           # this workflow knows the name of.
+          #
+          # `node_dir` is where the manifest is, which is the root unless the caller says
+          # otherwise. It is the runner's route only: a project whose install and checks go
+          # through `task.sh` is driven from the root, because the container knows its own layout
+          # and this workflow has no business second-guessing it.
+          node_dir='${{ inputs.node_working_directory }}'
           node='false'
           node_runner='false'
           npm_cmd='npm install'
           yarn_cmd='yarn install --production=false'
-          if [[ -f 'package.json' ]]; then
+          if [[ -f "$node_dir/package.json" ]]; then
             node='true'
 
             # Yarn is chosen by `.yarnrc`, which is the test install-packages and npm-qa-checks
@@ -1796,17 +1807,21 @@ jobs:
             # commits its working tree: `npm install` rewrites `package-lock.json`, and where the
             # repository tracks that file the rewrite goes into the pull request as a change
             # nobody asked for.
-            if [[ -f '.yarnrc' ]]; then
+            if [[ -f "$node_dir/.yarnrc" ]]; then
               manager='yarn'
-              [[ -f 'yarn.lock' ]] && yarn_cmd='yarn install --frozen-lockfile --production=false'
+              [[ -f "$node_dir/yarn.lock" ]] && yarn_cmd='yarn install --frozen-lockfile --production=false'
             else
               manager='npm'
-              [[ -f 'package-lock.json' ]] && npm_cmd='npm ci'
+              [[ -f "$node_dir/package-lock.json" ]] && npm_cmd='npm ci'
             fi
 
             # The same package manager either way, run where this project's toolchain is:
             # `node_modules` holds platform binaries, and the two machines cannot use each other's.
-            if supports "$manager"; then
+            #
+            # A manifest below the root goes to the runner even where the container could take it.
+            # `task.sh` is driven from the root and this workflow does not know what directory it
+            # would install in, so the only install it can place with certainty is its own.
+            if [[ "$node_dir" == '.' ]] && supports "$manager"; then
               if [[ "$manager" == 'yarn' ]]; then
                 yarn_cmd="./task.sh $yarn_cmd"
                 echo "Yarn is what this package is installed with, in the container: $yarn_cmd"
@@ -1834,14 +1849,22 @@ jobs:
             # `jq`'s stderr is left alone: a `package.json` it cannot parse says so in the log
             # rather than looking like a package that declares no scripts.
             for script in lint test; do
-              if jq -e ".scripts.\"$script\"" package.json > /dev/null; then
+              if jq -e ".scripts.\"$script\"" "$node_dir/package.json" > /dev/null; then
                 if [[ "$node_runner" == 'true' ]]; then
-                  commands+=("npm run $script")
+                  # A subshell rather than a bare `cd`, so the agent can paste the line anywhere
+                  # in a session without the directory it leaves behind changing what runs next.
+                  if [[ "$node_dir" == '.' ]]; then
+                    commands+=("npm run $script")
+                  else
+                    commands+=("(cd $node_dir && npm run $script)")
+                  fi
                 else
                   commands+=("./task.sh $manager run $script")
                 fi
               fi
             done
+          elif [[ "$node_dir" != '.' ]]; then
+            echo "::warning title=node_working_directory has no package.json::\`$node_dir\` was given as the directory the JavaScript dependencies are installed from, and there is no \`package.json\` in it. Nothing is installed for Node, and the agent is told it cannot run this project's JavaScript checks"
           fi
 
           # A container install fills the container's cache volume, leaving the runner directory
@@ -1864,6 +1887,7 @@ jobs:
             printf 'php_runner=%s\n' "$php_runner"
             printf 'node=%s\n' "$node"
             printf 'node_runner=%s\n' "$node_runner"
+            printf 'node_dir=%s\n' "$node_dir"
             printf 'composer_cmd=%s\n' "$composer_cmd"
             printf 'npm_cmd=%s\n' "$npm_cmd"
             printf 'yarn_cmd=%s\n' "$yarn_cmd"
@@ -1930,21 +1954,29 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
         run: |
+          # Each pattern is anchored, so the JavaScript ones carry the directory the install
+          # actually runs in - left at the root they exclude nothing a nested workspace writes.
+          node_dir='${{ steps.verify.outputs.node_dir }}'
+          node_prefix=''
+          [[ -n "$node_dir" && "$node_dir" != '.' ]] && node_prefix="/${node_dir#./}"
+
           {
             printf '/composer.lock\n'
             printf '/vendor/\n'
-            printf '/package-lock.json\n'
-            printf '/yarn.lock\n'
-            printf '/node_modules/\n'
+            printf '%s/package-lock.json\n' "$node_prefix"
+            printf '%s/yarn.lock\n' "$node_prefix"
+            printf '%s/node_modules/\n' "$node_prefix"
           } >> .git/info/exclude
 
           # What the install is measured against below. Bringing the application up renders this
           # repository's config templates, and those are not the install's doing.
           git diff --name-only | sort > "$RUNNER_TEMP/tracked-before-install"
 
-      # One call for both ecosystems: the action installs whichever manifest is there, the skip
-      # flags keep it to the ones detected above, and each command carries its own route - the
-      # container's through `task.sh`, the runner's not.
+      # A call per ecosystem, because the action installs one directory and the two manifests
+      # need not share one: a PHP application with an Angular workspace under it keeps
+      # `composer.json` at the root and `package.json` below it. Each command carries its own
+      # route - the container's through `task.sh`, the runner's not - and a container install is
+      # driven from the root whatever directory the manifest is in, because `task.sh` runs there.
       #
       # `--no-scripts` for the same reason php-qa-checks uses it: Composer's post-install scripts
       # are arbitrary code out of the repository, and this job can mint a Claude API token from its
@@ -1963,18 +1995,31 @@ jobs:
       #
       # `continue-on-error`, because a round the agent cannot check itself in is worth more than
       # an issue that hears nothing at all.
-      - name: Install the dependencies
-        id: install
+      - name: Install the Composer dependencies
+        id: install_composer
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
+          && steps.verify.outputs.php == 'true' }}
         continue-on-error: true
         uses: uniquesca/ci/install-packages@v11
         with:
-          skip_composer: ${{ steps.verify.outputs.php != 'true' }}
+          skip_npm_yarn: true
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
           composer_cmd: ${{ steps.verify.outputs.composer_cmd }}
-          skip_npm_yarn: ${{ steps.verify.outputs.node != 'true' }}
+          cache_key: ${{ steps.verify.outputs.cache_key }}
+
+      - name: Install the NPM dependencies
+        id: install_npm
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.verify.outputs.node == 'true' }}
+        continue-on-error: true
+        uses: uniquesca/ci/install-packages@v11
+        with:
+          # The runner's directory. A container install goes through `task.sh` at the root, and
+          # its command already carries that route.
+          working_directory: ${{ steps.verify.outputs.node_runner == 'true' && steps.verify.outputs.node_dir || '.' }}
+          skip_composer: true
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
           npm_install_cmd: ${{ steps.verify.outputs.npm_cmd }}
           yarn_install_cmd: ${{ steps.verify.outputs.yarn_cmd }}
@@ -1993,7 +2038,9 @@ jobs:
           ${{ always() && env.PROCEED == 'true'
           && (steps.verify.outputs.php == 'true' || steps.verify.outputs.node == 'true') }}
         run: |
-          for leftover in auth.json .npmrc; do
+          # Each install writes its credentials into its own working directory, so the sweep
+          # covers both: Composer's at the root, NPM's wherever the manifest is.
+          for leftover in auth.json .npmrc '${{ inputs.node_working_directory }}/.npmrc'; do
             if [[ -f "$leftover" ]]; then
               echo "::warning title=The install left a credential file behind::$leftover was still in the working tree after the install, so it was deleted before the agent could read it or the round could commit it. The install step's log has why it did not clean up after itself"
               rm -f "$leftover"
@@ -2006,7 +2053,8 @@ jobs:
       - name: Say the dependencies could not be installed
         if: >-
           ${{ success() && env.PROCEED == 'true'
-          && steps.install.outcome == 'failure' }}
+          && (steps.install_composer.outcome == 'failure'
+          || steps.install_npm.outcome == 'failure') }}
         run: |
           echo "::warning title=The dependencies could not be installed::The agent implements without them: it is told they are missing and to leave them alone, and the artifact reports are what CI says about its work. Worth fixing even so - a round that can run the checks is a round that catches its own mistakes. The step's log has why, and a private registry with no token configured, a token that has expired, and a lock file the branch itself broke, are the three to look at first"
 
@@ -2055,14 +2103,20 @@ jobs:
           # different in a repository with a `composer.json` than in one without.
           PHP: ${{ steps.verify.outputs.php }}
           NODE: ${{ steps.verify.outputs.node }}
+          # Where the JavaScript install put `node_modules`. The container route leaves nothing on
+          # the runner to find, and an empty value here reads the root - which is the truth then.
+          NODE_DIR: ${{ steps.verify.outputs.node_runner == 'true' && steps.verify.outputs.node_dir || '.' }}
         run: |
           # Named by directory rather than by ecosystem, because a repository can have a
           # `composer.json` this workflow installs nothing for and a `package.json` it does - and
           # "your dependencies are installed" would then be a claim about a `vendor/` that is not
           # there.
+          node_modules='node_modules'
+          [[ -n "$NODE_DIR" && "$NODE_DIR" != '.' ]] && node_modules="${NODE_DIR%/}/node_modules"
+
           installed=()
           [[ -d 'vendor' ]] && installed+=('`vendor/`')
-          [[ -d 'node_modules' ]] && installed+=('`node_modules`')
+          [[ -d "$node_modules" ]] && installed+=("\`$node_modules\`")
 
           # A command is only worth naming where the install behind it is on the disk.
           commands=()
@@ -2082,7 +2136,7 @@ jobs:
               # with and an agent that does not know they are there reaches for a global install.
               # Unplaced deliberately: `./node_modules/.bin` is a container install's binaries
               # named on the machine that cannot execute them.
-              if [[ -d 'node_modules' ]]; then
+              if [[ -d "$node_modules" ]]; then
                 echo
                 echo "This project's own JavaScript tooling is among them: its type checker, its"
                 echo 'framework CLI and its test runner are binaries it unpacked, and running one'

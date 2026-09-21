@@ -77,6 +77,11 @@ on:
         required: false
         default: true
         type: boolean
+      node_working_directory:
+        description: 'Directory holding the `package.json` the JavaScript dependencies are installed from, when it is not the repository root - `ng-src` for a PHP repository with an Angular workspace under it. Configured rather than detected, because a repository with several `package.json` files has no single right answer and installing the wrong one is silent. Composer is always installed from the root'
+        required: false
+        default: '.'
+        type: string
       node_version:
         description: 'Node version the JavaScript dependencies are installed under. The same default as the NPM QA checks workflow, so the two agree unless both are changed. `_ci_environment.json` describes only PHP, so there is nothing in the repository to read this from'
         required: false
@@ -437,24 +442,33 @@ jobs:
 
           # A lock file is installed from rather than resolved against - not because anything here
           # is committed, but because it is faster and it is the tree CI would have had.
+          #
+          # `node_dir` is where the manifest is, which is the root unless the caller says
+          # otherwise. A caller that names a directory without a `package.json` in it has made a
+          # mistake worth hearing about: left silent it is indistinguishable from a repository
+          # with no JavaScript in it at all.
+          node_dir='${{ inputs.node_working_directory }}'
           node='false'
           npm_cmd='npm install --ignore-scripts'
           yarn_cmd='yarn install --production=false --ignore-scripts'
-          if [[ -f 'package.json' ]]; then
+          if [[ -f "$node_dir/package.json" ]]; then
             node='true'
 
             # Yarn is chosen by `.yarnrc`, which is the test install-packages and npm-qa-checks
             # both make.
-            if [[ -f '.yarnrc' ]]; then
-              [[ -f 'yarn.lock' ]] && yarn_cmd='yarn install --frozen-lockfile --production=false --ignore-scripts'
+            if [[ -f "$node_dir/.yarnrc" ]]; then
+              [[ -f "$node_dir/yarn.lock" ]] && yarn_cmd='yarn install --frozen-lockfile --production=false --ignore-scripts'
             else
-              [[ -f 'package-lock.json' ]] && npm_cmd='npm ci --ignore-scripts'
+              [[ -f "$node_dir/package-lock.json" ]] && npm_cmd='npm ci --ignore-scripts'
             fi
+          elif [[ "$node_dir" != '.' ]]; then
+            echo "::warning title=node_working_directory has no package.json::\`$node_dir\` was given as the directory the JavaScript dependencies are installed from, and there is no \`package.json\` in it. Nothing is installed for Node, and the agent plans from the code alone"
           fi
 
           {
             printf 'php=%s\n' "$php"
             printf 'node=%s\n' "$node"
+            printf 'node_dir=%s\n' "$node_dir"
             printf 'npm_cmd=%s\n' "$npm_cmd"
             printf 'yarn_cmd=%s\n' "$yarn_cmd"
           } >> "$GITHUB_OUTPUT"
@@ -491,8 +505,10 @@ jobs:
           node-version: ${{ inputs.node_version }}
           package-manager-cache: false
 
-      # One call for both ecosystems: the action installs whichever manifest is there, and the skip
-      # flags keep it to the ones detected above.
+      # A call per ecosystem, because the action installs one directory and the two manifests
+      # need not share one: a PHP application with an Angular workspace under it keeps
+      # `composer.json` at the root and `package.json` below it, and that is the combination this
+      # workflow is most often pointed at.
       #
       # Nothing here runs an install script. Composer's `--no-scripts` is what php-qa-checks uses,
       # because they are arbitrary code out of the repository and this job can mint a Claude API
@@ -504,17 +520,24 @@ jobs:
       # `continue-on-error`, because a plan written without the dependencies is what this workflow
       # produced before it installed any - so a registry that refuses is a thinner plan rather than
       # an issue that hears nothing at all.
-      - name: Install the dependencies
-        id: install
-        if: >-
-          ${{ steps.deps.outputs.php == 'true' || steps.deps.outputs.node == 'true' }}
+      - name: Install the Composer dependencies
+        id: install_composer
+        if: ${{ steps.deps.outputs.php == 'true' }}
         continue-on-error: true
         uses: uniquesca/ci/install-packages@v11
         with:
-          skip_composer: ${{ steps.deps.outputs.php != 'true' }}
+          skip_npm_yarn: true
           composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
           composer_cmd: 'composer install --no-scripts'
-          skip_npm_yarn: ${{ steps.deps.outputs.node != 'true' }}
+
+      - name: Install the NPM dependencies
+        id: install_npm
+        if: ${{ steps.deps.outputs.node == 'true' }}
+        continue-on-error: true
+        uses: uniquesca/ci/install-packages@v11
+        with:
+          working_directory: ${{ steps.deps.outputs.node_dir }}
+          skip_composer: true
           npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
           npm_install_cmd: ${{ steps.deps.outputs.npm_cmd }}
           yarn_install_cmd: ${{ steps.deps.outputs.yarn_cmd }}
@@ -533,7 +556,9 @@ jobs:
           ${{ always() && steps.task.outputs.has_task == 'true'
           && (steps.deps.outputs.php == 'true' || steps.deps.outputs.node == 'true') }}
         run: |
-          for leftover in auth.json .npmrc; do
+          # Each install writes its credentials into its own working directory, so the sweep
+          # covers both: Composer's at the root, NPM's wherever the manifest is.
+          for leftover in auth.json .npmrc '${{ inputs.node_working_directory }}/.npmrc'; do
             if [[ -f "$leftover" ]]; then
               echo "::warning title=The install left a credential file behind::$leftover was still in the working tree after the install, so it was deleted before the agent could read it. The install step's log has why it did not clean up after itself"
               rm -f "$leftover"
@@ -546,9 +571,104 @@ jobs:
       # Reads the step's own outcome, because `continue-on-error` leaves the job successful - there
       # is nothing in the job's state to notice.
       - name: Say the dependencies could not be installed
-        if: ${{ steps.install.outcome == 'failure' }}
+        if: >-
+          ${{ steps.install_composer.outcome == 'failure'
+          || steps.install_npm.outcome == 'failure' }}
         run: |
           echo "::warning title=The dependencies could not be installed::The agent plans from this repository's own code, without the source of what it depends on - so expect a thinner plan, and an assumption where it would have read a signature. The step's log has why: a private registry with no token configured, a token that has expired, and a lock file the branch itself broke, are the three to look at first"
+
+      # The installs above give the agent the version that resolves today. They cannot tell it
+      # which versions exist, and that is the question an upgrade plan turns on - "is there an
+      # Angular 19 build of `@uniquesca/field-framework`" is unanswerable from a tree holding one
+      # release of it. So the registries are asked here and the answer is staged as a file, the
+      # same trade the issue and the framework catalogue are staged under: the agent stays without
+      # a shell or a network, and the thing it would have needed them for is already on disk.
+      #
+      # Only the private scopes. A public package is a lookup the agent cannot do either, but it
+      # is one a reader of the plan can do in a browser in seconds, and every package added here
+      # is a request on every run - whereas `@uniquesca` and `uniquesca/` are the ones nobody
+      # outside this organisation can check at all.
+      #
+      # `continue-on-error`, on the same terms as the installs: a registry that refuses leaves a
+      # plan with the unknown it would have had anyway.
+      - name: Look up the private packages in their registries
+        id: registry
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        continue-on-error: true
+        env:
+          NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+          # Composer reads its credentials out of the environment given this shape, which keeps
+          # them out of the working tree the agent reads - unlike an `auth.json`, there is nothing
+          # here to forget to delete.
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_ACCESS_TOKEN && format('{{"http-basic":{{"satis.unqs.ca":{{"username":"token","password":"{0}"}}}}}}', secrets.COMPOSER_ACCESS_TOKEN) || '' }}
+        run: |
+          mkdir -p .ai-plan
+          echo '{}' > "$RUNNER_TEMP/registry.json"
+
+          # The registry's own package document, rather than `npm view`. One request returns every
+          # version with the peer ranges each declares, and peers per version are the whole point:
+          # the version list alone says a 3.0.0 exists, not that it is the Angular 19 one.
+          npm_dir='${{ inputs.node_working_directory }}'
+          if [[ -n "$NPM_ACCESS_TOKEN" && -f "$npm_dir/package.json" ]]; then
+            for pkg in $(jq -r '[.dependencies, .devDependencies, .peerDependencies | select(. != null) | keys[]] | unique[] | select(startswith("@uniquesca/"))' "$npm_dir/package.json"); do
+              encoded="${pkg/\//%2f}"
+              if curl -sfL --max-time 30 -H "Authorization: Bearer $NPM_ACCESS_TOKEN" \
+                  "https://npm.pkg.github.com/$encoded" > "$RUNNER_TEMP/packument.json"; then
+                jq --arg pkg "$pkg" --slurpfile doc "$RUNNER_TEMP/packument.json" \
+                  '.npm[$pkg] = {
+                     latest: $doc[0]["dist-tags"].latest,
+                     versions: ($doc[0].versions | map_values({peerDependencies, dependencies}))
+                   }' "$RUNNER_TEMP/registry.json" > "$RUNNER_TEMP/registry.next.json"
+                mv "$RUNNER_TEMP/registry.next.json" "$RUNNER_TEMP/registry.json"
+                echo "Read $pkg from npm.pkg.github.com"
+              else
+                echo "::warning title=A private package could not be looked up::$pkg was not readable on npm.pkg.github.com, so the plan is written without knowing which versions of it exist"
+              fi
+            done
+          fi
+
+          # Satis is an ordinary Composer repository, so `composer show` answers against the
+          # `repositories` block this project already declares - no install and no lock file.
+          # Version list only: the requirements of a version other than the newest cost a request
+          # each, and the plan needs them rarely enough not to pay that on every run.
+          if [[ -n "$COMPOSER_AUTH" && -f 'composer.json' ]]; then
+            for pkg in $(jq -r '[.require, .["require-dev"] | select(. != null) | keys[]] | unique[] | select(startswith("uniquesca/"))' composer.json); do
+              if composer show --all "$pkg" --format=json --no-interaction > "$RUNNER_TEMP/show.json" 2>/dev/null; then
+                jq --arg pkg "$pkg" --slurpfile doc "$RUNNER_TEMP/show.json" \
+                  '.composer[$pkg] = {versions: $doc[0].versions, requires: $doc[0].requires}' \
+                  "$RUNNER_TEMP/registry.json" > "$RUNNER_TEMP/registry.next.json"
+                mv "$RUNNER_TEMP/registry.next.json" "$RUNNER_TEMP/registry.json"
+                echo "Read $pkg from satis.unqs.ca"
+              else
+                echo "::warning title=A private package could not be looked up::$pkg was not readable on satis.unqs.ca, so the plan is written without knowing which versions of it exist"
+              fi
+            done
+          fi
+
+          # The paragraph is written only where the file has something in it. An agent told to
+          # read a file listing no packages spends a turn finding out that it does not.
+          {
+            echo 'instructions<<PROMPT'
+            if [[ "$(jq -r 'length' "$RUNNER_TEMP/registry.json")" != '0' ]]; then
+              cp "$RUNNER_TEMP/registry.json" .ai-plan/private-packages.json
+              echo '`.ai-plan/private-packages.json` lists every version of this project'"'"'s private'
+              echo '`@uniquesca` packages that the registries hold, with the dependency and peer'
+              echo 'ranges each version declares. Read it before you plan anything that turns on'
+              echo 'which release of one of them exists - an upgrade, a version bump, a feature'
+              echo 'that needs a newer one. It is the registry'"'"'s answer rather than an inference'
+              echo 'from the copy installed here, so a version you cannot find in it has not been'
+              echo 'published, and that is a fact to plan around rather than an unknown to record.'
+              echo
+              echo 'It covers the private scopes only. A public package is not in there, and you'
+              echo 'have no way to look one up - so a question about which version of a public'
+              echo 'package to move to stays an unknown.'
+            else
+              echo 'You cannot look a package up in a registry, so which versions of a dependency'
+              echo 'exist is not something you can settle here. Where a plan turns on that, record'
+              echo 'it as an unknown and write the step that checks it.'
+            fi
+            echo 'PROMPT'
+          } >> "$GITHUB_OUTPUT"
 
       # What the agent is told about the dependency directories, and it has to be the truth: an
       # agent told to read a `vendor/` that is not there spends turns finding out, and one not told
@@ -565,9 +685,13 @@ jobs:
         id: deps_prompt
         if: ${{ steps.task.outputs.has_task == 'true' }}
         run: |
+          node_dir='${{ inputs.node_working_directory }}'
+          node_modules='node_modules'
+          [[ "$node_dir" != '.' ]] && node_modules="$node_dir/node_modules"
+
           installed=()
           [[ -d 'vendor' ]] && installed+=('`vendor/`')
-          [[ -d 'node_modules' ]] && installed+=('`node_modules`')
+          [[ -d "$node_modules" ]] && installed+=("\`$node_modules\`")
 
           {
             echo 'instructions<<PROMPT'
@@ -681,6 +805,8 @@ jobs:
             built on assumptions about what it probably does.
 
             ${{ steps.deps_prompt.outputs.instructions }}
+
+            ${{ steps.registry.outputs.instructions }}
 
             ${{ steps.catalogue.outputs.instructions }}
 
