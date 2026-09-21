@@ -1338,3 +1338,8 @@
 * Update: prevent checks from uploading success reports (88450a7 by George Shestayev)
 * Update: tightened deployment jobs to install yarn consistently with install-packages (which is also reliably) (88450a7 by George Shestayev)
 * Update: improved AI agents on producing workflow file patches to match our code style (0a7fc4b by George Shestayev)
+
+## v11.20.1
+
+* Fix: fixed AI agents wrapping github comment bodies in a code fence (f8d60f8 by George Shestayev)
+* Update: removed /etc/hosts mapping for php-fpm containers - use network alias instead in compose.yaml file(s) (6dd76a6 by George Shestayev)
