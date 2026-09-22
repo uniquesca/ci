@@ -69,7 +69,7 @@ jobs:
           working_directory: ${{ inputs.working_directory }}
           npm_access_token: ${{ secrets.NODE_AUTH_TOKEN }}
           skip_composer: true
-          npm_install_cmd: npm install --no-audit --no-fund --prefer-offline --no-progress --loglevel=error
+          npm_install_cmd: npm install --no-audit --no-fund --no-progress --loglevel=error
 
       - name: Run build command if specified
         if: ${{ inputs.build_cmd != '' }}
