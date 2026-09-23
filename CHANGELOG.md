@@ -1355,3 +1355,7 @@
 ## v11.20.4
 
 * Fix: removed --prefer-offline flag from npm publication as it can cause issues when using stale cache (0780d61 by George Shestayev)
+
+## v11.20.5
+
+* Update: AI harness upgraded to Opus 5.5 (2303500 by George Shestayev)
