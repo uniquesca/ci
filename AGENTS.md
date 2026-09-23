@@ -17,6 +17,13 @@ you to judge by hand. Create the `v12` branch off `main` in the same change. `se
 on a reference left behind, so a new action added at `@main` does not get past a pull request.
 A reference that belongs off the branch carries `# pin-ci-version: skip` and a comment saying why.
 
+## Changing the default model
+
+The AI workflows run the model through `anthropics/claude-code-action`, which has to support it
+first. Before moving the `model` default, check that the action's current release supports the
+new model. A model the API offers is not automatically one the action runs. Claude Opus 5.5
+(`claude-opus-5-5`) was not supported when it launched.
+
 # Documentation and comments
 
 Write documentation and code comments in plain, easily readable English, and
