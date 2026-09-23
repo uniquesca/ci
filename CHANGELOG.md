@@ -1359,3 +1359,7 @@
 ## v11.20.5
 
 * Update: AI harness upgraded to Opus 5.5 (2303500 by George Shestayev)
+
+## v11.20.6
+
+* Fix: AI workflows default back to claude-opus-5, as claude-code-action does not support claude-opus-5-5 yet (65be42b by George Shestayev)
