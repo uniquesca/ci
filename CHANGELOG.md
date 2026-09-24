@@ -1370,3 +1370,7 @@
 * Fix: fixed self-ai-cost-report workflow schedule (290384d by George Shestayev)
 * Update: switching to Opus 5.5 again (849e9c7 by George Shestayev)
 * Update: switched some secrets to variables in self-ai-cost-report workflow (849e9c7 by George Shestayev)
+
+## v11.20.8
+
+* Update: improved docker-deploy workflow to upload configs between code sync and application restart (needed for Angular apps) (74b19e9 by George Shestayev)
