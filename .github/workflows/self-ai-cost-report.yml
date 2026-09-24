@@ -8,7 +8,7 @@ name: AI cost report
 # anybody adding it here.
 
 on:
-  schedule:
+  #schedule:
     # The 1st, early enough that the month is closed everywhere and late enough that a run
     # started on the 31st has finished commenting. Deliberately off the hour: every scheduled
     # workflow on Github asking for :00 is queued behind every other one.
@@ -86,8 +86,8 @@ jobs:
           CLIENT_ID: ${{ secrets.MICROSOFT_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
-          SENDER: ${{ secrets.AI_COST_REPORT_SENDER }}
-          RECIPIENTS: ${{ inputs.recipients || secrets.AI_COST_REPORT_RECIPIENTS }}
+          SENDER: ${{ vars.AI_COST_REPORT_SENDER }}
+          RECIPIENTS: ${{ inputs.recipients || vars.AI_COST_REPORT_RECIPIENTS }}
         run: |
           missing=()
           [[ -n "$CLIENT_ID" ]] || missing+=('MICROSOFT_CLIENT_ID')
@@ -117,8 +117,8 @@ jobs:
           CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
           TENANT_ID: ${{ secrets.MICROSOFT_TENANT_ID }}
           # The mailbox the report arrives from, and the one the app is scoped to send as
-          SENDER: ${{ secrets.AI_COST_REPORT_SENDER }}
-          RECIPIENTS: ${{ inputs.recipients || secrets.AI_COST_REPORT_RECIPIENTS }}
+          SENDER: ${{ vars.AI_COST_REPORT_SENDER }}
+          RECIPIENTS: ${{ inputs.recipients || vars.AI_COST_REPORT_RECIPIENTS }}
           SUBJECT: ${{ steps.report.outputs.subject }}
         run: |
           # The form body is built by jq and handed over on stdin, so the client secret is

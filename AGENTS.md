@@ -21,8 +21,8 @@ A reference that belongs off the branch carries `# pin-ci-version: skip` and a c
 
 The AI workflows run the model through `anthropics/claude-code-action`, which has to support it
 first. Before moving the `model` default, check that the action's current release supports the
-new model. A model the API offers is not automatically one the action runs. Claude Opus 5.5
-(`claude-opus-5-5`) was not supported when it launched.
+new model, and that the API key the callers use can reach it. A model the API offers is not
+automatically one the action runs or the key is allowed.
 
 # Documentation and comments
 
