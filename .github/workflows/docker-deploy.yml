@@ -199,19 +199,6 @@ jobs:
           PATHS=$(jq -r '[.configs[]?.path] + ["_ci_environment.json"] | join(",")' _ci_environment.json)
           echo "paths=$PATHS" >> $GITHUB_OUTPUT
 
-      - name: Upload configs
-        # An empty source uploads the whole working directory, so the paths have to be there
-        if: ${{ inputs.prepare_environment && steps.upload_paths.outputs.paths != '' }}
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ inputs.host }}
-          username: ${{ inputs.username }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ inputs.port }}
-          source: ${{ steps.upload_paths.outputs.paths }}
-          target: ${{ inputs.deployment_path }}
-          command_timeout: 1m
-
       - name: Checking if the repo was just initialized
         id: previously_initialized
         # Read through the environment rather than interpolated into the script: this is output
@@ -231,7 +218,7 @@ jobs:
 
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
 
-      - name: Connect and deploy
+      - name: Sync the code
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ inputs.host }}
@@ -248,7 +235,7 @@ jobs:
             # green run this guards against
             set -euxo pipefail;
 
-            # Where this script records its verdict for the verification step below. The run and
+            # Where this and the build step record their verdict for the verification step below. The run and
             # attempt number make it this deployment's alone, so no previous run's file can be
             # mistaken for this one's
             DEPLOYMENT_STATUS_FILE="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
@@ -264,39 +251,6 @@ jobs:
 
             # Change into the directory
             cd ${{ inputs.deployment_path }}
-
-            # Check if the repo was previously initialized
-            INITALIZED="${{ steps.previously_initialized.outputs.result }}"
-
-            # Always parse init_script from JSON (if the file exists). A repository without one has
-            # no init script either, and `set -e` above would otherwise end the deployment here
-            if [ -f "_ci_environment.json" ]; then
-              INIT_SCRIPT="$(jq -r '.init_script // empty' _ci_environment.json)"
-            else
-              echo "⚠️ _ci_environment.json not found — skipping init_script"
-              INIT_SCRIPT=""
-            fi
-
-            # Run init script if it's provided and it's a freshly initialized repo
-            if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
-              # Create a secure temporary file
-              VARIABLES_FILE=$(mktemp)
-            
-              # Quoted delimiter, so a quote or a `$` anywhere in the secret is text and not
-              # code. A heredoc body is also untraced, which keeps it out of the `set -x` log
-              cat > "$VARIABLES_FILE" <<'CI_ENV_VARIABLES'
-            ${{ secrets.ENV_VARIABLES }}
-            CI_ENV_VARIABLES
-
-              # Export so INIT_SCRIPT can access it
-              export VARIABLES_FILE
-              
-              echo "Running init script: $INIT_SCRIPT"
-              bash "$INIT_SCRIPT"
-              
-              # Cleanup
-              rm -f "$VARIABLES_FILE"
-            fi
 
             echo "Cleaning git"
             git clean -fd
@@ -374,7 +328,74 @@ jobs:
                 git reset --hard $ref
               fi
             fi
+
+      # Between the two steps on purpose: the sync resets and cleans the checkout, which would
+      # undo an upload made before it, and images built by `up --build` need the configs in place
+      - name: Upload configs
+        # An empty source uploads the whole working directory, so the paths have to be there
+        if: ${{ inputs.prepare_environment && steps.upload_paths.outputs.paths != '' }}
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          source: ${{ steps.upload_paths.outputs.paths }}
+          target: ${{ inputs.deployment_path }}
+          command_timeout: 1m
+
+      - name: Build and start
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ inputs.port }}
+          timeout: ${{ inputs.timeout }}
+          command_timeout: ${{ inputs.timeout }}
+          script: |
+            # Strictness, status file and trap as in the sync step above
+            set -euxo pipefail;
+
+            DEPLOYMENT_STATUS_FILE="/tmp/ci-deployment-${{ github.run_id }}-${{ github.run_attempt }}.status"
+
+            trap 'status=$?; set +x; echo "❌ Deployment failed at line $LINENO: $BASH_COMMAND (exit $status)"; echo "failed at line $LINENO: $BASH_COMMAND (exit $status)" > "$DEPLOYMENT_STATUS_FILE"; exit $status' ERR
+
+            cd ${{ inputs.deployment_path }}
+
+            # Check if the repo was previously initialized
+            INITALIZED="${{ steps.previously_initialized.outputs.result }}"
+
+            # Always parse init_script from JSON (if the file exists). A repository without one has
+            # no init script either, and `set -e` above would otherwise end the deployment here
+            if [ -f "_ci_environment.json" ]; then
+              INIT_SCRIPT="$(jq -r '.init_script // empty' _ci_environment.json)"
+            else
+              echo "⚠️ _ci_environment.json not found — skipping init_script"
+              INIT_SCRIPT=""
+            fi
+
+            # Run init script if it's provided and it's a freshly initialized repo
+            if [ "$INITALIZED" = "0" ] && [ -n "$INIT_SCRIPT" ]; then
+              # Create a secure temporary file
+              VARIABLES_FILE=$(mktemp)
             
+              # Quoted delimiter, so a quote or a `$` anywhere in the secret is text and not
+              # code. A heredoc body is also untraced, which keeps it out of the `set -x` log
+              cat > "$VARIABLES_FILE" <<'CI_ENV_VARIABLES'
+            ${{ secrets.ENV_VARIABLES }}
+            CI_ENV_VARIABLES
+
+              # Export so INIT_SCRIPT can access it
+              export VARIABLES_FILE
+              
+              echo "Running init script: $INIT_SCRIPT"
+              bash "$INIT_SCRIPT"
+              
+              # Cleanup
+              rm -f "$VARIABLES_FILE"
+            fi
+
             echo "Stopping Docker Services"
             ./task.sh down
             

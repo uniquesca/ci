@@ -1,8 +1,8 @@
 # Docker deploy
 
-Deploys over SSH to a Docker host. Renders the config files on the runner and uploads them, resets
-the checkout on the server to a ref, restarts the containers through `task.sh`, then installs
-dependencies, clears the cache and migrates inside them.
+Deploys over SSH to a Docker host. Resets the checkout on the server to a ref, uploads the config
+files rendered on the runner, restarts the containers through `task.sh`, then installs dependencies,
+clears the cache and migrates inside them.
 
 For a server that runs the application without containers use [`deploy`](deploy.md).
 
@@ -72,8 +72,9 @@ rendered files - plus `_ci_environment.json` itself - into `deployment_path`.
 Uploading the environment file as well is what makes a deployment work the first time a repository
 introduces one: the server's checkout may not have it yet at the point the remote script reads it.
 
-The upload happens **after** the initialize step below and **before** the containers restart, so the
-containers come up against the configuration this deployment intends.
+The upload happens **after** the checkout is reset and **before** `./task.sh up`, so the reset cannot
+undo it and an image built during the deployment - an Angular app, for example - is built with the
+configuration this deployment intends.
 
 **`prepare_environment: false` turns all of that off** - no checkout on the runner, no rendering, no
 upload. The containers come up against whatever configuration is on the server already, which is what
@@ -87,8 +88,9 @@ and it does not need an environment file.
 
 The first step over SSH checks for `deployment_path/.git` and, if there is none, clones the
 repository with the server's own SSH key and checks out `ref`. It reports back which of the two
-happened, and an `init_script` from `_ci_environment.json` is run on the server **only on a fresh
-clone** - one-time setup belongs there, and running it on every deployment would undo the point.
+happened, and an `init_script` from `_ci_environment.json` is run on the server, after the configs
+are uploaded, **only on a fresh clone** - one-time setup belongs there, and running it on every
+deployment would undo the point.
 
 So unlike [`deploy`](deploy.md), this workflow can be pointed at an empty directory. The server does
 need SSH access to Github for the clone.
