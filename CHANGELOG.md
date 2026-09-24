@@ -1363,3 +1363,10 @@
 ## v11.20.6
 
 * Fix: AI workflows default back to claude-opus-5, as claude-code-action does not support claude-opus-5-5 yet (65be42b by George Shestayev)
+
+## v11.20.7
+
+* Fix: fixed executables' permissions (13257f9 by George Shestayev)
+* Fix: fixed self-ai-cost-report workflow schedule (290384d by George Shestayev)
+* Update: switching to Opus 5.5 again (849e9c7 by George Shestayev)
+* Update: switched some secrets to variables in self-ai-cost-report workflow (849e9c7 by George Shestayev)
