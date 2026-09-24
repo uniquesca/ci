@@ -8,7 +8,7 @@ name: AI cost report
 # anybody adding it here.
 
 on:
-  schedule:
+  #schedule:
     # The 1st, early enough that the month is closed everywhere and late enough that a run
     # started on the 31st has finished commenting. Deliberately off the hour: every scheduled
     # workflow on Github asking for :00 is queued behind every other one.
