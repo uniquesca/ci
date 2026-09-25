@@ -72,20 +72,23 @@ what the last plan recorded, which is how you correct a plan written against the
 
 ## How the plan is numbered
 
+The plan opens with one plain-English paragraph on what is to be done, then the sections below, in
+this order.
+
 Every item carries an id, and feedback can use it - "S4 and S5 are the wrong way round" lands
 precisely without quoting a paragraph back:
 
 | Prefix | Section | What it is |
 |---|---|---|
-| `S1`, `S2` | Steps | The work, in the order it should be done |
-| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong |
+| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong. The section is only there when the developer has something to act on |
 | `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
-| `C1`, `C2` | Checks | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
-| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code. Each names the steps it covers, as `QA1 (S2, S5)` |
+| `S1`, `S2` | Steps | The work, in the order it should be done |
+| `C1`, `C2` | Checks, folded away | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
+| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. `None - ` and a reason when nothing can be tested from outside |
 
 **Ids are stable across revisions.** An item that survives keeps its number even if it was
 reworded, new work takes the next number the plan has never used, and a dropped one is struck
-through on its section's `Retired:` line rather than renumbered away - so gaps are normal, and
+through on the single `Retired:` line at the end of the steps rather than renumbered away - so gaps are normal, and
 steps are listed in the order to work in rather than in numeric order.
 
 ## Adjusting the plan
