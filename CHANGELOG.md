@@ -1378,3 +1378,7 @@
 ## v11.20.9
 
 * Update: generating coverage report in a format that can be rendered in github (c4a0f95 by George Shestayev)
+
+## v11.20.10
+
+* Update: improving plan structure and format (588b2ef by George Shestayev)
