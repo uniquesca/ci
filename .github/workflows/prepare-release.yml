@@ -88,7 +88,7 @@ on:
         default: 'coverage.svg'
         type: string
       generate_coverage_report:
-        description: 'Whether an HTML unit test coverage report needs to be generated and committed'
+        description: 'Whether a Markdown unit test coverage report needs to be generated and committed'
         required: false
         default: false
         type: boolean
@@ -274,13 +274,69 @@ jobs:
         run: |
           coverage_args=()
           if [[ -n "$COVERAGE_REPORT_DIR" ]]; then
-            # PHPUnit writes into the directory without clearing it first, so a class that has
-            # been deleted keeps the page it had at the last release until the directory goes
-            rm -rf "$COVERAGE_REPORT_DIR"
-            coverage_args=(--coverage-html "$COVERAGE_REPORT_DIR")
+            coverage_args=(--coverage-clover "$RUNNER_TEMP/coverage-report.xml")
           fi
 
           php ./vendor/bin/phpunit --configuration phpunit.xml "${coverage_args[@]}"
+
+      - name: Generate coverage report
+        if: env.phpunit == 1 && inputs.generate_coverage_report
+        env:
+          COVERAGE_REPORT_DIR: ${{ inputs.coverage_report_dir }}
+        run: |
+          # Emptied first so a deleted file does not keep its report from the last release
+          rm -rf "$COVERAGE_REPORT_DIR"
+          mkdir -p "$COVERAGE_REPORT_DIR"
+
+          # Markdown, because Github renders `README.md` when the directory is opened and shows
+          # HTML only as source
+          php -- "$RUNNER_TEMP/coverage-report.xml" "$PWD/" > "$COVERAGE_REPORT_DIR/README.md" <<'PHP'
+          <?php
+          [, $clover, $root] = $argv;
+          $xml = simplexml_load_file($clover) ?: exit(1);
+
+          $percent = fn ($covered, $total) => $total > 0 ? sprintf('%.2f%%', 100 * $covered / $total) : 'n/a';
+          $ranges = function (array $lines): string {
+              $out = [];
+              foreach ($lines as $i => $line) {
+                  if ($i > 0 && $line === $lines[$i - 1] + 1) {
+                      $out[count($out) - 1][1] = $line;
+                  } else {
+                      $out[] = [$line, $line];
+                  }
+              }
+              return implode(', ', array_map(fn ($r) => $r[0] === $r[1] ? $r[0] : "$r[0]-$r[1]", $out));
+          };
+
+          $m = $xml->project->metrics;
+          echo "# Unit test coverage\n\n";
+          echo "| Lines | Methods |\n|---|---|\n";
+          printf("| %s (%d / %d) | %s (%d / %d) |\n\n",
+              $percent((int) $m['coveredstatements'], (int) $m['statements']), $m['coveredstatements'], $m['statements'],
+              $percent((int) $m['coveredmethods'], (int) $m['methods']), $m['coveredmethods'], $m['methods']);
+
+          $files = [];
+          foreach ($xml->xpath('//file') as $file) {
+              $uncovered = [];
+              foreach ($file->line as $line) {
+                  if ((string) $line['type'] === 'stmt' && (int) $line['count'] === 0) {
+                      $uncovered[] = (int) $line['num'];
+                  }
+              }
+              $name = str_starts_with((string) $file['name'], $root) ? substr((string) $file['name'], strlen($root)) : (string) $file['name'];
+              $files[$name] = [$file->metrics, $uncovered];
+          }
+          ksort($files);
+
+          echo "| File | Lines | Methods | Uncovered lines |\n|---|---|---|---|\n";
+          foreach ($files as $name => [$fm, $uncovered]) {
+              sort($uncovered);
+              printf("| `%s` | %s | %s | %s |\n", $name,
+                  $percent((int) $fm['coveredstatements'], (int) $fm['statements']),
+                  $percent((int) $fm['coveredmethods'], (int) $fm['methods']),
+                  $ranges($uncovered));
+          }
+          PHP
 
       - name: Generate coverage badge
         if: ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}
