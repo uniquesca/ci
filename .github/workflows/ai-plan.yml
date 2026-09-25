@@ -818,26 +818,55 @@ jobs:
             unknowns and assumptions section described below. A plan with a stated unknown
             is worth far more than no plan.
 
+            The plan is read by two audiences: the developer who approves it, and the
+            agent that implements it. Write for the developer first. Say each thing once,
+            in plain words, and cut anything that does not change what somebody does.
+
             The plan is markdown, in this order:
 
-            - A short summary of the approach, in prose. If you are revising an earlier
+            - One paragraph, no heading: what is going to be done, in simple English that
+              somebody who has never seen the code can follow. No class names, no file
+              paths, no jargon - those belong in the steps. If you are revising an earlier
               plan, open with one sentence on what changed and why, said in ids: "S4
               dropped, S7 and S8 added, R2 no longer applies".
+            - `## Risks, unknowns and assumptions` - only when there is something the
+              developer should act on before the work starts: a decision that is theirs to
+              make, a question you could not settle from the code, a real chance of
+              breaking something. `**R1**` for a risk, `**U1**` for something you could
+              not determine or an assumption you are proceeding on. Say what you need from
+              the developer for each. Leave out anything routine, anything the steps
+              already handle, and anything they would not change their mind over. When
+              nothing qualifies, leave the whole section out - an empty or padded one
+              teaches readers to skip it.
             - `## Steps` - a markdown task list, `- [ ] **S1** Short imperative title`,
               each followed by an indented paragraph on what to do and why, and the real
-              files it touches. Note explicitly where a step depends on an earlier one.
-            - `## Risks, unknowns and assumptions` - `**R1**` for a risk, `**U1**` for
-              something you could not determine and for an assumption you are proceeding
-              on regardless. Where you could not settle something from the code, say so
-              plainly rather than filling the gap with a guess.
-            - `## Checks` - `**C1**` each: the concrete checks that prove the work is
-              done. The command to run, the test that passes, the linter that comes back
-              clean. These belong to the agent that implements the plan, and it runs them.
+              files, classes and methods it touches. This is what the implementing agent
+              works from, so be precise and leave out nothing it needs. Note explicitly
+              where a step depends on an earlier one.
+            - Checks, folded away, because they are for the implementing agent and not the
+              developer. Exactly this shape, with no heading inside:
+
+              <details>
+              <summary>Checks for the implementing agent</summary>
+
+              **C1** ...
+
+              </details>
+
+              `**C1**` each: the concrete checks that prove the work is done. The command
+              to run, the test that passes, the linter that comes back clean.
             - `## QA acceptance criteria` - `**QA1**` each, written for a tester who will
               not read the code and cannot run anything in the repository: what to do,
               and what should happen, observable from outside through the interface, the
               API or the data. Name the steps each one covers - `**QA1** (S2, S5)`.
               Anything that needs the repository to check is a `C`, not a `QA`.
+              Say where the tester finds it: the path through the interface they click
+              ("Company Settings -> Business Hours"), not only a URL or endpoint, and
+              every place and every kind of user it reaches when there is more than one.
+              When nothing in the change is observable from outside - a refactor, a
+              dependency bump, CI or tooling, a change only tests exercise - write no
+              criteria. Put a single line under the heading instead: `None - ` and why,
+              so the tester knows there is nothing to do rather than guessing.
 
             Every item carries an id, and every id is permanent. They are how this plan
             gets talked about: feedback comes back as "S3 is in the wrong order" or "C2
@@ -849,10 +878,12 @@ jobs:
             it into a lie.
 
             Items you drop keep their ids as well, collapsed into a single `Retired:` line
-            at the end of the section they were in - `Retired: ~~S4~~ superseded by S7,
-            ~~S6~~ no longer needed.` One line for all of them, no paragraph each. Leaving
-            it out is not an option: it is where the next revision reads which numbers have
-            been used, and it is what keeps an older comment citing `S4` readable.
+            at the end of `## Steps` - `Retired: ~~S4~~ superseded by S7, ~~R2~~ settled,
+            ~~C3~~ no longer needed.` One line for every dropped item, whatever section it
+            came from, no paragraph each. It lives under Steps because that section is
+            always there, while Risks can disappear with its last item. Leaving it out is
+            not an option: it is where the next revision reads which numbers have been
+            used, and it is what keeps an older comment citing `S4` readable.
 
             List the steps in the order they should be worked in. After a revision or two
             that is no longer numeric order, which is fine - the number identifies a step,
@@ -988,6 +1019,11 @@ jobs:
             cat "$PLAN_FILE"
             printf '\n\n'
             printf -- '---\n\n'
+            # In the footer, right under the criteria, because the copy step stops at the
+            # rule above - a line inside the section would be copied into the pull request too
+            if grep -q '^## QA acceptance criteria' "$PLAN_FILE"; then
+              printf 'The QA acceptance criteria are copied into the pull request body when the work starts.\n\n'
+            fi
             printf 'Requested by @%s.' "$COMMENTER"
             # Said out loud, not only in the metadata line above, because a plan can inherit
             # its branch from the one before it without anybody naming it on this run - and a
