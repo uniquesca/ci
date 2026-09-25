@@ -1374,3 +1374,7 @@
 ## v11.20.8
 
 * Update: improved docker-deploy workflow to upload configs between code sync and application restart (needed for Angular apps) (74b19e9 by George Shestayev)
+
+## v11.20.9
+
+* Update: generating coverage report in a format that can be rendered in github (c4a0f95 by George Shestayev)
