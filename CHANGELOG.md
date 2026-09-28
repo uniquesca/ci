@@ -1386,3 +1386,7 @@
 ## v11.20.11
 
 * Fix: enforcing AI plan to be posted properly (47e97f6 by George Shestayev)
+
+## v11.20.12
+
+* Fix: fixed recording PR starting commit that leads to failing checks not re-triggering AI agent (7a7c66e by George Shestayev)
