@@ -843,18 +843,6 @@ jobs:
               files, classes and methods it touches. This is what the implementing agent
               works from, so be precise and leave out nothing it needs. Note explicitly
               where a step depends on an earlier one.
-            - Checks, folded away, because they are for the implementing agent and not the
-              developer. Exactly this shape, with no heading inside:
-
-              <details>
-              <summary>Checks for the implementing agent</summary>
-
-              **C1** ...
-
-              </details>
-
-              `**C1**` each: the concrete checks that prove the work is done. The command
-              to run, the test that passes, the linter that comes back clean.
             - `## QA acceptance criteria` - `**QA1**` each, written for a tester who will
               not read the code and cannot run anything in the repository: what to do,
               and what should happen, observable from outside through the interface, the
@@ -867,6 +855,18 @@ jobs:
               dependency bump, CI or tooling, a change only tests exercise - write no
               criteria. Put a single line under the heading instead: `None - ` and why,
               so the tester knows there is nothing to do rather than guessing.
+            - Checks, folded away, because they are for the implementing agent and not the
+              developer. Exactly this shape, with no heading inside:
+
+              <details>
+              <summary>Checks for the implementing agent</summary>
+
+              **C1** ...
+
+              </details>
+
+              `**C1**` each: the concrete checks that prove the work is done. The command
+              to run, the test that passes, the linter that comes back clean.
 
             Every item carries an id, and every id is permanent. They are how this plan
             gets talked about: feedback comes back as "S3 is in the wrong order" or "C2
@@ -911,7 +911,10 @@ jobs:
             agent to do work that gets thrown away.
 
             Do not implement the task. Do not modify, create, commit or push any file.
-            Writing the plan as your final message is the whole job.
+            Writing the plan as your final message is the whole job. That message is the
+            complete plan, from the opening paragraph to the checks, in one piece - never a
+            note on what you found or what comes next, however much it reads like the
+            opening paragraph.
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
@@ -1005,6 +1008,14 @@ jobs:
             exit 1
           fi
 
+          # The model now and then ends its turn on a message that is only the plan's opening
+          # paragraph. Steps and checks are what the implementing agent works from, and every
+          # plan has both.
+          if ! grep -q '^## Steps' "$PLAN_FILE" || ! grep -Eq '\*\*C[0-9]+\*\*' "$PLAN_FILE"; then
+            echo "::error title=Incomplete plan::The agent's final message is missing its steps or checks, so it was not posted - run the request again"
+            exit 1
+          fi
+
           # The marker and the footer are added here rather than asked of the model, so
           # they are always present and always exactly right
           #
@@ -1019,8 +1030,8 @@ jobs:
             cat "$PLAN_FILE"
             printf '\n\n'
             printf -- '---\n\n'
-            # In the footer, right under the criteria, because the copy step stops at the
-            # rule above - a line inside the section would be copied into the pull request too
+            # In the footer, because the copy step stops at the rule above - a line inside
+            # the criteria would be copied into the pull request too
             if grep -q '^## QA acceptance criteria' "$PLAN_FILE"; then
               printf 'The QA acceptance criteria are copied into the pull request body when the work starts.\n\n'
             fi

@@ -83,8 +83,8 @@ precisely without quoting a paragraph back:
 | `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong. The section is only there when the developer has something to act on |
 | `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
 | `S1`, `S2` | Steps | The work, in the order it should be done |
-| `C1`, `C2` | Checks, folded away | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 | `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. `None - ` and a reason when nothing can be tested from outside |
+| `C1`, `C2` | Checks, folded away | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 
 **Ids are stable across revisions.** An item that survives keeps its number even if it was
 reworded, new work takes the next number the plan has never used, and a dropped one is struck
@@ -175,6 +175,9 @@ out over the limit, which happens because the limit is not enforced on a long ru
 ([#1577](https://github.com/anthropics/claude-code-action/issues/1577)). The plan is complete, so it
 is posted with a warning on the run instead. A run genuinely cut off part-way reports
 `error_max_turns`, and that one fails with nothing posted.
+
+**A plan without `## Steps` or any `C` check is not posted.** The model sometimes ends its turn on the
+opening paragraph alone. The run fails with `Incomplete plan`; request the plan again.
 
 The `Show what the agent did` step is printed on every run, failed ones included, and the run
 summary carries a copy of the finished plan. `debug: true` adds the raw transcript - never on a
