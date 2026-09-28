@@ -1382,3 +1382,7 @@
 ## v11.20.10
 
 * Update: improving plan structure and format (588b2ef by George Shestayev)
+
+## v11.20.11
+
+* Fix: enforcing AI plan to be posted properly (47e97f6 by George Shestayev)
