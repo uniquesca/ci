@@ -320,6 +320,10 @@ jobs:
       # are named here because the workflow and the action have to agree on them.
       QA_MARKER: '<!-- ai-qa-criteria -->'
       QA_END_MARKER: '<!-- /ai-qa-criteria -->'
+      # Hidden line in the pull request body naming the commit the first run pushed. It stands in
+      # for the round record until the first round closes, so a red check on that commit still
+      # starts a round.
+      OPENED_MARKER: 'ai-implement-opened'
       # First line of a review the reviewing workflow submitted. Identity is not enough to
       # recognise one: which login the reviewer arrives as is the caller's to decide - the AI
       # Review app is named per repository, and a caller still on a machine user's token reads
@@ -615,7 +619,7 @@ jobs:
           PR: ${{ steps.event.outputs.pull_request }}
           PREFIX: ${{ inputs.branch_prefix }}
         run: |
-          gh pr view "$PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
+          gh pr view "$PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository,body \
             > "$RUNNER_TEMP/pull-request.json"
 
           state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
@@ -1154,6 +1158,7 @@ jobs:
           PR: ${{ steps.event.outputs.pull_request }}
           HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
           LAST_ROUND_SHA: ${{ steps.stage_pr.outputs.last_round_sha }}
+          ROUNDS_CLOSED: ${{ steps.stage_pr.outputs.round != '1' }}
           FIX_SUBJECT: ${{ inputs.autofix_commit_subject }}
         run: |
           stand_down() {
@@ -1162,13 +1167,19 @@ jobs:
             exit 0
           }
 
+          # Before the first round, the commit the first run opened the pull request on
+          if [[ -z "$LAST_ROUND_SHA" && "$ROUNDS_CLOSED" == 'false' ]]; then
+            LAST_ROUND_SHA=$(jq -r --arg marker "$OPENED_MARKER" '
+              .body // "" | capture("<!-- " + $marker + " (?<sha>[0-9a-f]{40}) -->").sha // ""
+            ' "$RUNNER_TEMP/pull-request.json")
+          fi
+
           if [[ "$LAST_ROUND_SHA" == "$HEAD_SHA" ]]; then
             echo "#$PR is still on $HEAD_SHA, which the last round pushed"
             exit 0
           fi
 
-          # Empty before the first round has closed, and for any round that ran before the
-          # commit was being recorded
+          # Empty when neither a round nor the run that opened the pull request recorded a commit
           if [[ -z "$LAST_ROUND_SHA" ]]; then
             stand_down "No round on #$PR recorded the commit it left, so nothing says this head is the agent's."
           fi
@@ -3240,6 +3251,24 @@ jobs:
           plan_url: ${{ steps.stage_issue.outputs.plan_url }}
           marker: ${{ env.QA_MARKER }}
           end_marker: ${{ env.QA_END_MARKER }}
+
+      # Replaces any earlier line, so a reopened pull request names the commit this run pushed
+      - name: Record the commit the pull request was opened on
+        if: ${{ success() && env.PROCEED == 'true' && steps.pr.outputs.number != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.push.outputs.head }}
+        run: |
+          # Without it the first red check waits for the command, which is not worth failing over
+          if ! body=$(gh api "repos/$GH_REPO/pulls/$PR" --jq '.body // ""'); then
+            echo "::warning title=Commit not recorded::A red check on #$PR will wait for the command"
+            exit 0
+          fi
+          body=$(grep -vE "^<!-- $OPENED_MARKER [0-9a-f]{40} -->$" <<< "$body" || true)
+          printf -v body '%s\n\n<!-- %s %s -->' "$body" "$OPENED_MARKER" "$HEAD_SHA"
+          gh api "repos/$GH_REPO/pulls/$PR" --method PATCH -f body="$body" > /dev/null \
+            || echo "::warning title=Commit not recorded::A red check on #$PR will wait for the command"
 
       # The issue is where the work was asked for, so the pull request has to be findable
       # from it. This is also the hand-off: after this comment, the issue is only for the
