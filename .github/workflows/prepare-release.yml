@@ -270,11 +270,14 @@ jobs:
         # reports, so turning it on here is what keeps them from reading zero
         env:
           XDEBUG_MODE: coverage
-          COVERAGE_REPORT_DIR: ${{ (inputs.generate_coverage_report && inputs.coverage_report_dir) || '' }}
+          COVERAGE: ${{ inputs.generate_coverage_badge || inputs.generate_coverage_report }}
         run: |
+          # A path given here overrides the one in `phpunit.xml`. It is the badge action's default
+          # and inside the workspace, which is all its container can see. `git clean` in the
+          # commit step removes it
           coverage_args=()
-          if [[ -n "$COVERAGE_REPORT_DIR" ]]; then
-            coverage_args=(--coverage-clover "$RUNNER_TEMP/coverage-report.xml")
+          if [[ "$COVERAGE" == true ]]; then
+            coverage_args=(--coverage-clover clover.xml)
           fi
 
           php ./vendor/bin/phpunit --configuration phpunit.xml "${coverage_args[@]}"
@@ -290,7 +293,7 @@ jobs:
 
           # Markdown, because Github renders `README.md` when the directory is opened and shows
           # HTML only as source
-          php -- "$RUNNER_TEMP/coverage-report.xml" "$PWD/" > "$COVERAGE_REPORT_DIR/README.md" <<'PHP'
+          php -- clover.xml "$PWD/" > "$COVERAGE_REPORT_DIR/README.md" <<'PHP'
           <?php
           [, $clover, $root] = $argv;
           $xml = simplexml_load_file($clover) ?: exit(1);
