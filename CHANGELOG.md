@@ -1390,3 +1390,7 @@
 ## v11.20.12
 
 * Fix: fixed recording PR starting commit that leads to failing checks not re-triggering AI agent (7a7c66e by George Shestayev)
+
+## v11.20.13
+
+* Fix: restored clover.xml coverage report generation to ensure coverage badge can be created (df2feb1 by George Shestayev)
