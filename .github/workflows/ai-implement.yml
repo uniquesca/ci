@@ -121,10 +121,10 @@ on:
         required: false
         default: true
         type: boolean
-      review_check_patterns:
-        description: 'Case-insensitive regular expression matching the reviewing agent own check runs. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Deliberately separate from `ignore_check_patterns`, which hides those same check runs from the feedback - the gate has to see what the feedback must not'
+      review_label:
+        description: 'Label the reviewing agent puts on the pull request while it works - its `progress_label`. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Empty means it never waits for the reviewer'
         required: false
-        default: 'ai.review'
+        default: 'ai:reviewing'
         type: string
       provision_checks:
         description: 'Set the runner up before the agent starts - bring this repository''s application up in Docker with its config templates rendered, install its dependencies - and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: what is there decides what is done. The master switch for all of it: turn it off and nothing is prepared, and the agent works out what it can run for itself'
@@ -1092,7 +1092,7 @@ jobs:
       # round with both sources already in the feedback.
       #
       # There is no handshake between the two. Both questions are answered by Github's own state
-      # on this commit, so neither has to know the other exists, and a lost or duplicated
+      # on this pull request, so neither has to know the other exists, and a lost or duplicated
       # trigger cannot deadlock it.
       #
       # Only unattended rounds wait. Somebody who typed the command wants a round now, not
@@ -1104,20 +1104,19 @@ jobs:
           && steps.event.outputs.attended == 'false' }}
         env:
           HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          PR: ${{ steps.event.outputs.pull_request }}
           CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
-          REVIEW_PATTERNS: ${{ inputs.review_check_patterns }}
+          REVIEW_LABEL: ${{ inputs.review_label }}
         run: |
-          # The reviewer's own check run is hidden from the staged feedback by
-          # `ignore_check_patterns`, so it has to be counted separately here. Asking whether it
+          # The reviewer labels the pull request while it works. A dispatched review runs on the
+          # default branch, so it has no check run on this commit to look for. Asking whether it
           # is still working - rather than whether a review has arrived - is what stops this
-          # waiting forever for a reviewer that was never turned on, or that died: neither has
-          # a check run in progress.
-          review_pending=$(gh api --paginate --slurp \
-            "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" 2> /dev/null \
-            | jq --arg re "$REVIEW_PATTERNS" '
-                [ (map(.check_runs) | flatten)[]
-                  | select(.status != "completed")
-                  | select(.name | test($re; "i")) ] | length' 2> /dev/null || echo '')
+          # waiting forever for a reviewer that was never turned on: it never adds the label.
+          review_pending=0
+          if [[ -n "$REVIEW_LABEL" ]]; then
+            review_pending=$(gh api "repos/$GH_REPO/issues/$PR/labels" 2> /dev/null \
+              | jq --arg label "$REVIEW_LABEL" 'map(select(.name == $label)) | length' 2> /dev/null || echo '')
+          fi
 
           # An unreadable answer must not hold the round back for ever - carry on and let the
           # feedback be whatever has landed so far
