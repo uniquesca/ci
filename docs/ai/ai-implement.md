@@ -57,15 +57,15 @@ jobs:
       dispatch_review: true
     secrets:
       # This one pushes and opens pull requests, so it needs an app of its own
-      AI_IMPLEMENT_APP_ID: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+      AI_IMPLEMENT_APP_ID: ${{ vars.AI_IMPLEMENT_APP_ID }}
       AI_IMPLEMENT_PRIVATE_KEY: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
       # Rendered into this project's config templates to spin the Docker sandbox up. The
       # agent has a shell there, so give it a test environment's and never production's
       ENV_VARIABLES: ${{ secrets.ENV_VARIABLES }}
       # The agent works from this project's dependencies. Pass whichever of the two
       # ecosystems this repository has private packages in
-      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.GHA_PRIVATE_ACCESS_TOKEN }}
 ```
 
 ## Starting the work

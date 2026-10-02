@@ -43,14 +43,15 @@ jobs:
     secrets:
       # The agent plans against this project's dependencies. Pass whichever of the two
       # ecosystems this repository has private packages in
-      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.GHA_PRIVATE_ACCESS_TOKEN }}
 ```
 
 ## Triggering the planner
 
 Comment `/ai-plan` on an issue, with the command at the very beginning. **The issue body is what
-gets planned** - prose typed after the command is ignored, so put the task in the issue. Only
+gets planned.** Text after the command is read like any other comment - feedback on the previous
+plan, or a steer for the first one - so put the task itself in the issue. Only
 collaborators with admin or write access can run it, and the plan comes back as a single comment a
 few minutes later.
 
