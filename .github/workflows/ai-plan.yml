@@ -1182,13 +1182,15 @@ jobs:
           USAGE: ${{ steps.report.outputs.summary }}
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMAND: ${{ inputs.command }}
         run: |
           {
             printf '@%s the planning agent did not finish, so there is no plan for this issue.\n\n' "$COMMENTER"
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
-            printf 'The run log has the detail: %s\n' "$RUN_URL"
+            printf 'The run log has the detail: %s\n\n' "$RUN_URL"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi

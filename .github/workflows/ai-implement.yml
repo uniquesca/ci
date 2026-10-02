@@ -3561,7 +3561,9 @@ jobs:
         env:
           TARGET: ${{ steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
+          ACTOR_TYPE: ${{ steps.event.outputs.actor_type }}
           MODE: ${{ steps.event.outputs.mode }}
+          COMMAND: ${{ inputs.command }}
           # Why the agent stopped, where it recorded one. It turns "the run went red" into
           # something actionable - an exhausted credit balance and a genuine bug look
           # identical otherwise.
@@ -3576,19 +3578,32 @@ jobs:
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # A round a check started was started by a bot, and mentioning it notifies nobody. Each
+          # round asks the person who started it for a review, so that is who is waiting.
+          mention="@$ACTOR "
+          if [[ "$ACTOR_TYPE" != 'User' ]]; then
+            mention=$(gh api "repos/$GH_REPO/pulls/$TARGET/requested_reviewers" \
+              --jq '[.users[] | select(.type == "User") | "@" + .login] | join(" ")' 2> /dev/null || echo '')
+            [[ -n "$mention" ]] && mention="$mention "
+          fi
+
+          if [[ "$MODE" == 'initial' ]]; then
+            opening='the implementation did not finish, so there is no pull request for this issue.'
+          else
+            opening='this round did not finish, so the feedback on this pull request has not been acted on.'
+          fi
+          [[ -n "$mention" ]] || opening=${opening^}
+
           {
-            if [[ "$MODE" == 'initial' ]]; then
-              printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$ACTOR"
-            else
-              printf '@%s this round did not finish, so the feedback on this pull request has not been acted on.\n\n' "$ACTOR"
-            fi
+            printf '%s%s\n\n' "$mention" "$opening"
             if [[ -n "$PUSH_REASON" ]]; then
               printf 'The work was written but could not be pushed: %s\n\n' "$PUSH_REASON"
             fi
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
-            printf 'The run log has the detail: %s\n' "$RUN_URL"
+            printf 'The run log has the detail: %s\n\n' "$RUN_URL"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi
