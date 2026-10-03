@@ -389,10 +389,15 @@ jobs:
       - name: Stage the CI framework catalogue
         id: catalogue
         if: ${{ steps.task.outputs.has_task == 'true' }}
-        env:
-          WORKFLOW_REF: ${{ github.job_workflow_ref }}
-          WORKFLOW_SHA: ${{ github.job_workflow_sha }}
         run: |
+          # `github.job_workflow_ref` and `job_workflow_sha` are empty inside a reusable workflow's
+          # steps. The job's OIDC token carries both as claims.
+          claims=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" \
+            | jq -r '.value | split(".")[1] | gsub("-"; "+") | gsub("_"; "/")
+                     | . + ("=" * ((4 - length % 4) % 4)) | @base64d') || claims='{}'
+          WORKFLOW_REF=$(jq -r '.job_workflow_ref // empty' <<< "$claims")
+          WORKFLOW_SHA=$(jq -r '.job_workflow_sha // empty' <<< "$claims")
+
           repository=$(cut -d/ -f1,2 <<< "$WORKFLOW_REF")
 
           if [[ -z "$WORKFLOW_SHA" || "$repository" != */* ]]; then
@@ -1177,13 +1182,15 @@ jobs:
           USAGE: ${{ steps.report.outputs.summary }}
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMAND: ${{ inputs.command }}
         run: |
           {
             printf '@%s the planning agent did not finish, so there is no plan for this issue.\n\n' "$COMMENTER"
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
-            printf 'The run log has the detail: %s\n' "$RUN_URL"
+            printf 'The run log has the detail: %s\n\n' "$RUN_URL"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi

@@ -57,15 +57,15 @@ jobs:
       dispatch_review: true
     secrets:
       # This one pushes and opens pull requests, so it needs an app of its own
-      AI_IMPLEMENT_APP_ID: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+      AI_IMPLEMENT_APP_ID: ${{ vars.AI_IMPLEMENT_APP_ID }}
       AI_IMPLEMENT_PRIVATE_KEY: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
       # Rendered into this project's config templates to spin the Docker sandbox up. The
       # agent has a shell there, so give it a test environment's and never production's
       ENV_VARIABLES: ${{ secrets.ENV_VARIABLES }}
       # The agent works from this project's dependencies. Pass whichever of the two
       # ecosystems this repository has private packages in
-      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.GHA_PRIVATE_ACCESS_TOKEN }}
 ```
 
 ## Starting the work
@@ -219,7 +219,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `dispatch_review` | boolean | `false` | Ask [`ai-review`](ai-review.md) to look at the work as soon as it is pushed, with a `repository_dispatch` event. Turn it on only once a workflow is subscribed to that event |
 | `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
-| `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#what-starts-a-round-and-what-it-reads). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
+| `review_label` | string | `ai:reviewing` | The reviewing agent's `progress_label`, which the [wait](#what-starts-a-round-and-what-it-reads) looks for on the pull request. Empty never waits for the reviewer |
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [what it is given to check with](#what-the-agent-is-given-to-check-with). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
@@ -253,8 +253,8 @@ there are none and to leave it that way, and verifies by reading and names what 
 ### What starts a round, and what it reads
 
 After a round pushes, your QA workflows and the reviewing agent run in parallel and finish in either
-order, so each one starting a round asks Github whether the other is still reporting on that commit:
-the first to finish exits having posted nothing, and the second runs the round with both sets of
+order, so each one starting a round asks Github whether the other is still working - checks still
+reporting on the commit, or the reviewer's label still on the pull request: the first to finish exits having posted nothing, and the second runs the round with both sets of
 feedback. There is no handshake between them, so a duplicated or lost trigger cannot wedge it, and
 nothing waits for a reviewer that was never dispatched. These rounds count as unattended against
 [the round cap](#the-round-cap), which is what stops the round → push → CI → round cycle running

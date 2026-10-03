@@ -27,9 +27,25 @@ GET /repositories/{owner}/{repo}/pulls/{number}/context
 GET /repositories/{owner}/{repo}/pulls/{number}/rounds
 ```
 
+- broker GitHub App tokens, so callers need only `id-token: write`;
+- serve reads across the organisation: other repositories, package source, the package-to-repository graph.
+
+Hosted at `mcp.unqs.ca`, authenticated by GitHub Actions OIDC (`repository_owner`, `job_workflow_ref`).
+
 ### Do not start here
 
 A persistent service adds operations, auth, retention and migration concerns. Start with file/artifact-backed MCP first.
+
+## Organisation-wide GitHub App
+
+A webhook-driven App instead of `issue_comment` triggers in every repository: instant acknowledgement, even when Actions
+fails to start, no skipped runs, no per-repository trigger wiring. It dispatches a one-file caller in each repository,
+which keeps the runner, secrets and OIDC identity per repository. Needs the persistent service.
+
+## Multi-repository implementer
+
+One run pushing linked branches in several repositories. Needs the repository in branch names, round state across pull
+requests and `workflow_run` events routed to one coordinator. Only if child issues per repository prove inadequate.
 
 ## Explicit PR loop state machine
 
@@ -156,7 +172,9 @@ Prevents the implementation agent from chasing browser flakes or environment fai
 
 ## Evaluation suite from historical rounds
 
-Use replay packages as evaluation fixtures.
+Record a replay package for important rounds: plan, feedback package, CI reports, check manifest, edit policy, prompt
+version, MCP server version, agent output and result metadata. A developer can reproduce locally what the agent saw,
+and the packages become evaluation fixtures.
 
 ### Example evals
 
@@ -203,6 +221,9 @@ Potential specialized agents:
 - migration reviewer;
 - documentation reviewer;
 - release-note assistant.
+
+Also worth an experiment: Explore subagents on Haiku for discovery inside the implementer. That needs a guard against
+the agent waiting on subagents.
 
 ### Caution
 
