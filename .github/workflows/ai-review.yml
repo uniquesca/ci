@@ -590,6 +590,7 @@ jobs:
             - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - the shape of it.
             - `.ai-review/pull-request.json` - the title and description the author gave it.
               ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Context around the plan below.' || '**This is the specification.** What the author says the change is for is what to measure it against, and a description that does not match the diff is itself worth saying.' }}
+            ${{ steps.pull_request.outputs.ai_authored == 'true' && '- `.ai-review/last-report.json` - what the implementing agent says it did and left undone. Judge the change against it, do not retell it. Missing when it left no report.' || '' }}
             - `.ai-plan/plan.md` - the approved plan the change was built from, when this pull
               request answers to an issue carrying one. If the file is not there, it does not,
               and nothing is missing. Where it is there it is the specification, and "this does
