@@ -3758,3 +3758,23 @@ jobs:
 
           gh api "repos/$GH_REPO/issues/$TARGET/labels/$name" --method DELETE > /dev/null \
             || echo "::warning title=Could not unlabel #$TARGET::'$LABEL' is still on it with nothing running - take it off by hand"
+
+  # A command that will not run - not at the start of the comment, or on the wrong kind of page - would
+  # otherwise get silence, which looks exactly like a run that is still working. No `permissions:`, so
+  # this job asks for nothing beyond what the caller already grants.
+  hint:
+    name: Point at the right way to run the command
+    if: >-
+      ${{ github.event_name == 'issue_comment'
+      && github.event.action == 'created'
+      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      && contains(github.event.comment.body, inputs.command)
+      && !startsWith(github.event.comment.body, inputs.command) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: uniquesca/ci/ai-command-hint@v11
+        with:
+          command: ${{ inputs.command }}
+          works_on: both
+          token: ${{ secrets.GITHUB_TOKEN }}
