@@ -143,6 +143,7 @@ out.
 | [`ai-run-report`](actions/ai-run-report.md) | Reads an agent execution log - the final message, the cost, and why the run stopped |
 | [`ai-react`](actions/ai-react.md) | Reacts on the comment or review that started an AI run, to show it was picked up and how it ended |
 | [`ai-command-hint`](actions/ai-command-hint.md) | Answers an AI command that will not run, because it is not at the start of the comment or is on the wrong page |
+| [`ai-style-guide`](actions/ai-style-guide.md) | The writing rules every AI agent's prompt carries |
 
 ## Pinning a version
 

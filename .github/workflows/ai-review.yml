@@ -547,6 +547,11 @@ jobs:
           echo "Staged what changed since $SHA was approved at $AT:" \
                "$(git diff --shortstat "$SHA..HEAD")"
 
+      - name: Read the style guide
+        id: style
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
+
       - name: Review the change
         id: agent
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -731,6 +736,10 @@ jobs:
                 for a finding about the change as a whole.
               - `refs` - ${{ steps.stage_issue.outputs.has_plan == 'true' && 'the plan ids the finding is about, such as `S3` or `QA2`. They are printed after the title.' || 'leave it empty.' }}
             - `qa_focus` - QA criteria a tester should check first, by id. Usually empty.
+
+            ${{ steps.style.outputs.text }}
+
+            A code comment in the diff that restates what the code does is a `nit`.
 
             Your final message is not published anywhere. Put everything you want said in
             `review.json`; the final message is only for the run log, so a sentence on what
