@@ -3404,6 +3404,7 @@ jobs:
           # step that held it back appended one
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          CHECKS_WORKFLOW: ${{ github.event.workflow_run.name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the round cost, as one hidden line for a report to read back
@@ -3453,6 +3454,8 @@ jobs:
             [[ "$REVISED" == 'true' ]] && printf ' Worked to a revised plan.'
             if [[ "$TRIGGER" == 'review' ]]; then
               printf ' Started by @%s requesting changes.' "$ACTOR"
+            elif [[ "$TRIGGER" == 'checks' ]]; then
+              printf ' Started by `%s` finishing.' "$CHECKS_WORKFLOW"
             else
               printf ' Requested by @%s.' "$ACTOR"
             fi
