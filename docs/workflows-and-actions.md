@@ -141,6 +141,7 @@ out.
 | [`ai-post-review-replies`](actions/ai-post-review-replies.md) | Posts an agent's answer to each review thread it was given |
 | [`ai-qa-criteria`](actions/ai-qa-criteria.md) | Copies the plan's QA acceptance criteria into the pull request body, and keeps them in step with the plan |
 | [`ai-run-report`](actions/ai-run-report.md) | Reads an agent execution log - the final message, the cost, and why the run stopped |
+| [`ai-react`](actions/ai-react.md) | Reacts on the comment or review that started an AI run, to show it was picked up and how it ended |
 
 ## Pinning a version
 

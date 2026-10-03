@@ -172,6 +172,14 @@ jobs:
           echo "::error title=Permission denied::@$COMMENTER ($PERMISSION) is not allowed to run $COMMAND"
           exit 1
 
+      - name: Acknowledge the command
+        id: ack
+        uses: uniquesca/ci/ai-react@v11
+        with:
+          subject: ${{ github.event.comment.node_id }}
+          add: EYES
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       # Two questions, answered together because they gate the same thing: is there anything
       # to plan, and which branch should it be planned against. Either one coming out wrong
       # stands the run down through `has_task`, which is what every step below already keys
@@ -1201,6 +1209,15 @@ jobs:
 
           cat failure-comment.md >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$ISSUE" --body-file failure-comment.md
+
+      - name: Say how it ended
+        if: ${{ always() && steps.ack.outcome == 'success' }}
+        uses: uniquesca/ci/ai-react@v11
+        with:
+          subject: ${{ github.event.comment.node_id }}
+          remove: EYES
+          add: ${{ job.status != 'success' && 'CONFUSED' || steps.post.outcome == 'success' && 'ROCKET' || '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Last in the job, after whatever the reporters above have to say. `always()` because a
       # label describing a run in progress is wrong the moment the run stops, however it stopped -
