@@ -2722,6 +2722,7 @@ jobs:
       # opening. Retention is left at the default, which is long enough to read a month of rounds
       # side by side and work out what the agent had to rediscover on each one.
       - name: Upload the context the agent was given
+        id: context
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -3297,6 +3298,8 @@ jobs:
           PR_URL: ${{ steps.pr.outputs.url }}
           ACTOR: ${{ steps.event.outputs.actor }}
           USAGE: ${{ steps.report.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the run cost, as one hidden line for a report to read back. The prose in the
           # footer is for whoever opens the issue; this is the only copy a machine can add up.
           COST: ${{ steps.report.outputs.cost_line }}
@@ -3310,6 +3313,8 @@ jobs:
             printf -- '---\n\n'
             printf 'Requested by @%s.' "$ACTOR"
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+            printf ' [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"
@@ -3399,6 +3404,8 @@ jobs:
           # step that held it back appended one
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the round cost, as one hidden line for a report to read back
           COST: ${{ steps.report.outputs.cost_line }}
           REVISED: ${{ steps.revision.outputs.revised }}
@@ -3452,6 +3459,8 @@ jobs:
             [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' Answered %s review thread(s).' "$POSTED"
             [[ "$PUSHED" != 'true' ]] && printf ' **No file changed this round.**'
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+            printf ' [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, and never second: the round metadata above is read by line number, so a
             # line added anywhere but the end would take `ai-stage-pull-request` with it

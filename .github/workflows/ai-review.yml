@@ -755,6 +755,7 @@ jobs:
       # opening. Retention is left at the default, which is long enough to read a month of runs
       # side by side and work out what the agent had to rediscover on each one.
       - name: Upload the context the agent was given
+        id: context
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -814,10 +815,14 @@ jobs:
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
           USAGE: ${{ steps.report.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
         run: |
           footer=''
           [[ "$AI_AUTHORED" == 'true' ]] && footer="Round $ROUND"
           [[ -n "$USAGE" ]] && footer="${footer:+$footer - }$USAGE"
+          footer="${footer:+$footer. }[Run]($RUN_URL)"
+          [[ -n "$CONTEXT_URL" ]] && footer="$footer · [Context]($CONTEXT_URL)"
           printf 'text=%s\n' "$footer" >> "$GITHUB_OUTPUT"
 
       # This is where the loop turns, on a branch the implementing workflow pushed. The app's
