@@ -41,8 +41,9 @@ Used by [`ai-plan`](../ai/ai-plan.md) and [`ai-implement`](../ai/ai-implement.md
 | File | Contents |
 |---|---|
 | `issue.json` | `number`, `title` and `body` |
-| `comments.json` | Every comment, as `author`, `is_bot`, `created_at`, `url` and `body`, oldest first |
-| `plan.md` | The plan, when the issue has one. Absent otherwise |
+| `comments.json` | Every comment, as `author`, `is_bot`, `created_at`, `url` and `body`, oldest first. A plan's hidden data is taken out of its body |
+| `plan.md` | The plan as posted, when the issue has one. Absent otherwise |
+| `plan.json` | The plan's data, read out of the comment it was posted in. Absent for a plan posted without it |
 
 ### Why files and not step outputs
 
