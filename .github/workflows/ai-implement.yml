@@ -3405,6 +3405,7 @@ jobs:
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
           USAGE: ${{ steps.report.outputs.summary }}
           CHECKS_WORKFLOW: ${{ github.event.workflow_run.name }}
+          COMMAND: ${{ inputs.command }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the round cost, as one hidden line for a report to read back
@@ -3436,6 +3437,18 @@ jobs:
               printf ' The whole branch was reconciled against the revision, not only the feedback below'
               [[ -n "$PLAN_URL" ]] && printf ' - [read it](%s)' "$PLAN_URL"
               printf '.\n\n'
+            fi
+
+            # Github starts no `pull_request_review` run while the pull request conflicts with its
+            # base - undocumented, seen on officio#1163 - so the next "Request changes" would start
+            # no round and nobody would be told. `mergeable` is UNKNOWN until Github works it out.
+            for attempt in 1 2 3; do
+              mergeable=$(gh pr view "$PR" --json mergeable --jq '.mergeable' 2> /dev/null || echo '')
+              [[ "$mergeable" == 'UNKNOWN' ]] || break
+              sleep 5
+            done
+            if [[ "$mergeable" == 'CONFLICTING' ]]; then
+              printf '> **This branch conflicts with its base.** Reviews start no round until that is resolved - `%s` still does.\n\n' "$COMMAND"
             fi
 
             if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
