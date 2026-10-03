@@ -13,6 +13,9 @@ all three share is in [AI assisted development](../ai.md#integrating-a-repositor
 
 ```yaml
 name: AI Implement
+# Every comment, review and finished check starts a run, so without this the Actions list cannot
+# tell them apart
+run-name: "AI Implement ${{ github.event.workflow_run.head_branch || format('#{0}', github.event.issue.number || github.event.pull_request.number) }}"
 
 on:
   issue_comment:
