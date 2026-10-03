@@ -1,0 +1,20 @@
+name: AI style guide
+
+description: The writing rules every AI agent's prompt carries, as an output to interpolate into it
+
+outputs:
+  text:
+    description: 'The style guide, as markdown'
+    value: ${{ steps.read.outputs.text }}
+
+runs:
+  using: composite
+  steps:
+    - id: read
+      shell: bash
+      run: |
+        {
+          echo 'text<<AI_STYLE_GUIDE'
+          cat "$GITHUB_ACTION_PATH/style.md"
+          echo 'AI_STYLE_GUIDE'
+        } >> "$GITHUB_OUTPUT"
