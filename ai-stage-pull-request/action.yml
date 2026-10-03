@@ -143,6 +143,14 @@ runs:
 
         title=$(jq -r '.title // ""' "$DIR/pull-request.json" | tr -d '\r\n')
 
+        # What the last implementing run reported, carried hidden in the status block at the top
+        # of the body - see `src/ai-report.js`. Absent until a run has written one.
+        jq -r '.body // ""' "$DIR/pull-request.json" \
+          | grep -oE '<!-- ai-report:[A-Za-z0-9+/=]+ -->' | head -n 1 \
+          | sed -E 's/<!-- ai-report:([^ ]+) -->/\1/' | base64 -d 2> /dev/null \
+          | jq '.' > "$DIR/last-report.json" 2> /dev/null || true
+        [[ -s "$DIR/last-report.json" ]] || rm -f "$DIR/last-report.json"
+
         # The pull request conversation is the issues comment list - Github stores both in
         # one place, which is also why `gh issue comment` works on a pull request number.
         gh api --paginate --slurp "repos/$GH_REPO/issues/$PR/comments" \

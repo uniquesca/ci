@@ -1094,7 +1094,7 @@ jobs:
               '**The plan was revised after the last round, so the branch you are in was not built to the plan you are reading.**' \
               'Reconcile the whole branch against `.ai-plan/plan.md`, not only the feedback items.' \
               'Work the plan now asks for that the branch does not have is yours to add, and work it no longer asks for is yours to take back out - a dropped step whose code stayed behind is exactly what a revision is meant to correct.' \
-              'Read the plan end to end before you start, and say in your final message what you changed for the revision and what you deliberately left alone, citing the ids after each point.' \
+              'Read the plan end to end before you start, and report what you changed for the revision and what you deliberately left alone.' \
               "A revised plan opens by saying what moved in those ids - which steps were dropped, which are new - so that sentence is the shortest route to what this round owes. Ids are stable across a revision, so an item that kept its number is the same item, and a retired one is listed struck through rather than renumbered." \
               'Where the revision and the feedback disagree, the feedback still wins on anything about code somebody has read.'
             printf 'AI_IMPLEMENT_REVISION\n'
@@ -2192,8 +2192,8 @@ jobs:
               echo "are worth more spent on the plan, so treat every one of the plan's checks as"
               echo 'something that cannot be run here.'
               echo
-              echo 'Verify by reading instead, and be plain in your final message about which'
-              echo 'checks went unrun and why. CI runs them against what is pushed and reports back'
+              echo 'Verify by reading instead, and report the checks that went unrun as `not_run`,'
+              echo 'with why. CI runs them against what is pushed and reports back'
               echo 'on the pull request, so what you leave unproven is picked up there and can be'
               echo 'acted on in a later round.'
             fi
@@ -2362,15 +2362,20 @@ jobs:
               echo '- Do not change any file under `.github/workflows/`. Github refuses a push'
               echo '  touching one from the identity this work is pushed with, so the edit cannot'
               echo '  reach the branch. Where the work needs one - including where the plan or'
-              echo '  the feedback asks for it - do the rest around it, and in your final message'
-              echo '  say which file, what it should say and what it is for, so that somebody can'
-              echo '  apply it by hand.'
+              echo '  the feedback asks for it - do the rest around it, and in your report'"'"'s'
+              echo '  `not_done` say which file, what it should say and what it is for, so that'
+              echo '  somebody can apply it by hand.'
               echo '  Anything you do edit there is taken back out before the commit and reported'
               echo '  as a patch, so do not describe it as something you changed.'
             fi
 
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
+
+      - name: Read the style guide
+        id: style
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
 
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
@@ -2437,8 +2442,8 @@ jobs:
             like it came from somewhere else is a change that gets rewritten.
 
             The plan is the scope. Where you think it is wrong or has missed something, do
-            the work as written and say so in your final message - deciding for yourself
-            what the task should have been leaves a pull request nobody agreed to.
+            the work as written and say so in your report - deciding for yourself what the
+            task should have been leaves a pull request nobody agreed to.
 
             This repository may commit its dependencies. Nothing under `node_modules`,
             `vendor`, `dist` or `build` is yours to change, and none of it is worth
@@ -2447,8 +2452,8 @@ jobs:
             the binaries it installed.
 
             You have a shell. The plan's `C` checks are yours to execute, not to list. If
-            you cannot get one passing, say so in your final message rather than leaving it
-            quietly broken.
+            you cannot get one passing, report it as failing rather than leaving it quietly
+            broken.
 
             ${{ steps.verify_prompt.outputs.instructions }}
 
@@ -2470,17 +2475,16 @@ jobs:
             You have no persistent memory. Recording one is not among your tools, so the
             attempt is refused at the cost of a turn, and this runner is thrown away when
             the run ends - nothing written there would be read again. Do not mention having
-            tried, either: your final message is the body of the pull request, where a
-            refused tool call reads as a warning to whoever opens it.
+            tried in your report.
 
             Where the plan is many small pieces of the same work, work through them one
             after another. Fifteen of forty written, with the twenty-five you did not
-            reach named in your final message, is a good run - the branch has fifteen of
+            reach named in your report, is a good run - the branch has fifteen of
             them on it that it did not have before, and the next round starts there.
             Stopping early because forty looked like too many for one run is not, and it
             is how a run ends up delivering one file out of forty. Where something is
-            unresolved, finish everything that does not depend on it and say what you
-            left and why in your final message.
+            unresolved, finish everything that does not depend on it and report what you
+            left and why.
 
             What you must not do:
 
@@ -2498,21 +2502,33 @@ jobs:
             Leave your work in the working tree as uncommitted changes. That is what gets
             committed for you.
 
-            Your final message becomes the body of the pull request, so write it for a
-            reviewer: what changed and why, anything in the plan you deliberately did not
-            do and why, what you ran to verify it and what the result was, and anything
-            that needs a human decision. Markdown, no preamble, no sign-off, well under
-            10000 characters. It is the body itself rather than a document inside it, so do
-            not wrap it in a code fence. Do not add a title, a link to the issue, or a footer
-            - the workflow adds those.
+            When you are done, write `.ai-review/report.json`. The workflow lays it out as the
+            pull request description, so your final message is only for the run log:
 
-            Cite the plan's ids in it, in brackets after what you are already saying -
-            "moved the retry loop into the client (S3)", "the changelog suite passes (C2)".
-            Never an id on its own: the plan lives on the issue, and somebody reading this
-            pull request has your words and nothing else. `C2` alone tells them nothing,
-            while the sentence with `C2` after it tells them everything and lets them go
-            and find it. Do not add a table of ids either - the ids belong in the prose,
-            not instead of it.
+            ```json
+            {
+              "headline": "One sentence: where the work stands.",
+              "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
+              "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
+              "verification": [{"command": "composer test", "result": "pass", "note": "212 tests"}],
+              "decisions": [{"ask": "Keep the old endpoint for one release?", "refs": ["U2"]}]
+            }
+            ```
+
+            - `headline` - where the work stands, in one sentence.
+            - `done` - what changed, one line per change a reviewer would recognise. Not
+              every file, and not the plan retold.
+            - `not_done` - anything in the plan you did not do, did differently or left
+              unfinished, and why.
+            - `verification` - every check you ran, with `result` `pass`, `fail` or
+              `not_run`.
+            - `decisions` - only what a person has to decide.
+            - `refs` - the plan ids an item is about. They are printed after it, so the text
+              does not repeat them.
+
+            Leave a list empty rather than filling it.
+
+            ${{ steps.style.outputs.text }}
 
             Once this is open as a pull request, the review happens there and you will be
             asked for changes on the lines themselves. Make that easy: small commits of
@@ -2584,6 +2600,9 @@ jobs:
               comment still means the same item; an older plan may have no ids at all, in
               which case its steps go by their titles.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
+            - `.ai-review/last-report.json` - what the previous run reported, in the shape you
+              write below. Start from it rather than working out again where things stand. It
+              is missing when the previous run left no report.
             - `.ai-reports/` - what the checks on this commit printed, one directory per CI
               job and only for the checks that failed. A failing `check` in the feedback almost
               certainly has its output in here, and reading it beats inferring what the check
@@ -2620,7 +2639,7 @@ jobs:
             place of it - "the guard now covers the empty case (S5)". Use only
             `reply_target` values that appear in the feedback - invented ones are discarded.
             Items whose `reply_target` is null have no thread to answer; cover those in your
-            final message instead.
+            report instead.
 
             You have a shell. Use it: read the code around a comment before you change it,
             run this project's tests and linters, and fix what you break. A failing check in
@@ -2644,12 +2663,11 @@ jobs:
             You have no persistent memory. Recording one is not among your tools, so the
             attempt is refused at the cost of a turn, and this runner is thrown away when
             the run ends - nothing written there would be read again. Do not mention having
-            tried, either: your final message is posted as a comment on the pull request,
-            where a refused tool call reads as a warning to the reviewer.
+            tried in your report or your replies.
 
             Where the feedback asks for many small pieces of the same work, work through them
             one after another. Fifteen of forty done, with the twenty-five you did not reach
-            named in your final message, is a good round - the next round starts from your
+            named in your report, is a good round - the next round starts from your
             fifteen and the reviewer can see the count moving. A round that changes no file
             at all is the worst outcome available to you: it pushes nothing, so nothing
             re-triggers, and the pull request simply stops where it is. Where something is
@@ -2660,7 +2678,7 @@ jobs:
             - Do not commit, push, or comment anywhere. The workflow does all of that after
               you finish, including posting your replies.
             - Do not modify anything under `.ai-plan/`, and do not modify anything under
-              `.ai-review/` other than by creating `replies.json`.
+              `.ai-review/` other than by creating `replies.json` and `report.json`.
             - Do not touch `CHANGELOG.md`. Every repository here generates it from the git log
               when it releases, so an entry written by hand is overwritten or left conflicting.
               This holds even where the feedback asks for one - reply saying so.
@@ -2668,19 +2686,34 @@ jobs:
 
             Leave your work in the working tree as uncommitted changes.
 
-            Your final message is posted as a comment on the pull request, so write it for the
-            reviewer: what you changed this round, what you declined and why, what you ran and
-            what it said, and anything still needing a decision. Markdown, no preamble, no
-            sign-off, well under 10000 characters. It is the comment body itself rather than a
-            document inside it, so do not wrap it in a code fence. Do not add a title or a
-            footer - the workflow adds those.
+            When you are done, write `.ai-review/report.json`. The workflow lays it out as the
+            round comment and keeps the summary at the top of the pull request from it, so your
+            final message is only for the run log:
 
-            Cite the plan's ids in it, in brackets after what you are already saying - "the
-            retry now backs off (S3)", "the changelog suite passes (C2)". Never an id on its
-            own: the plan lives on the issue, and somebody reading this pull request has your
-            words and nothing else. `C2` alone tells them nothing, while the sentence with `C2`
-            after it tells them everything and lets them go and find it. That goes for a
-            revision too - name what changed, and put the ids after it.
+            ```json
+            {
+              "headline": "One sentence: where the work stands.",
+              "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
+              "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
+              "verification": [{"command": "composer test", "result": "pass", "note": "212 tests"}],
+              "decisions": [{"ask": "Keep the old endpoint for one release?", "refs": ["U2"]}]
+            }
+            ```
+
+            - `headline` - where the pull request stands after this round, in one sentence.
+            - `done` - what you changed this round, one line each. Not earlier rounds.
+            - `not_done` - feedback you declined or could not finish, and why. An item whose
+              thread you answered in `replies.json` is covered there; do not repeat it here.
+            - `verification` - every check you ran this round, with `result` `pass`, `fail` or
+              `not_run`.
+            - `decisions` - every decision still open, including ones carried over from
+              `.ai-review/last-report.json` that nobody has settled.
+            - `refs` - the plan ids an item is about. They are printed after it, so the text
+              does not repeat them.
+
+            Leave a list empty rather than filling it.
+
+            ${{ steps.style.outputs.text }}
           # The prompt above names what this list leaves out - a tool the agent reaches for
           # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
@@ -2776,6 +2809,17 @@ jobs:
 
           echo "::warning title=The implementing agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The work is complete, so it was pushed anyway - raise max_turns if this keeps happening."
 
+      # Before the workflow changes are held back, which append their patch to what this renders
+      - name: Render the agent's report
+        id: render
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-render-report@v11
+        with:
+          fallback_file: ${{ steps.report.outputs.result_file }}
+          label: ${{ steps.event.outputs.mode == 'initial' && 'After the first run' || format('After round {0}', steps.stage_pr.outputs.round) }}
+          # The first run's body goes under the status block that opens the pull request
+          under_status: ${{ steps.event.outputs.mode == 'initial' }}
+
       # The edit the agent was told not to make, taken back out of the working tree before it
       # is committed - Github refuses a push carrying it, and a refusal here loses everything
       # else the run did as well. What the agent wanted is not lost with it: the patch is
@@ -2797,8 +2841,8 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && !inputs.allow_workflow_changes }}
         env:
-          # The agent's final message, which this appends to. Empty on a run that produced none
-          REPORT_FILE: ${{ steps.report.outputs.result_file }}
+          # The agent's rendered report, which this appends to. Empty on a run that produced none
+          REPORT_FILE: ${{ steps.render.outputs.body_file }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           git add --intent-to-add -- .github/workflows/ 2> /dev/null || true
@@ -3160,9 +3204,10 @@ jobs:
           BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
-          # The agent's own final message, carrying the held-back workflow patch where the
-          # step that held it back appended one
-          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
+          # The agent's rendered report, carrying the held-back workflow patch where the step
+          # that held it back appended one
+          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
+          STATUS_FILE: ${{ steps.render.outputs.status_file }}
           COMMAND: ${{ inputs.command }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
           # What the pull request being revived used to target. Only differs from BASE when its
@@ -3209,6 +3254,7 @@ jobs:
             # auto-closing the issue on the first merge cuts that short - as does merging a
             # partial implementation.
             {
+              [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
               printf 'Implements #%s.\n\n' "$ISSUE"
               [[ -n "$PLAN_URL" ]] && printf 'Built from the [approved plan](%s).\n\n' "$PLAN_URL"
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
@@ -3400,9 +3446,9 @@ jobs:
           CHECK_COUNT: ${{ steps.stage_pr.outputs.check_count }}
           PUSHED: ${{ steps.push.outputs.pushed }}
           POSTED: ${{ steps.replies.outputs.posted }}
-          # The agent's own final message, carrying the held-back workflow patch where the
-          # step that held it back appended one
-          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
+          # The agent's rendered report, carrying the held-back workflow patch where the step
+          # that held it back appended one
+          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
           USAGE: ${{ steps.report.outputs.summary }}
           CHECKS_WORKFLOW: ${{ github.event.workflow_run.name }}
           COMMAND: ${{ inputs.command }}
@@ -3487,6 +3533,16 @@ jobs:
 
           cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$PR" --body-file "$RUNNER_TEMP/round-comment.md"
+
+      # After the round comment, so the block at the top of the pull request never describes a
+      # round that did not finish. The reviewer and the next round read the report back out of it.
+      - name: Update the status at the top of the pull request
+        if: ${{ success() && env.PROCEED == 'true' && steps.close.outcome == 'success' && steps.render.outputs.rendered == 'true' }}
+        uses: uniquesca/ci/ai-render-report@v11
+        with:
+          label: ${{ format('After round {0}', steps.stage_pr.outputs.round) }}
+          pull_request: ${{ steps.event.outputs.pull_request }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Put the work back in a person's review queue. Submitting a review clears their pending
       # request, so without this a round they asked for finishes with nobody assigned to look at
