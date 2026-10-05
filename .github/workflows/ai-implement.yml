@@ -131,6 +131,11 @@ on:
         required: false
         default: 60
         type: number
+      review_check_patterns:
+        description: 'Deprecated, and does nothing - the wait recognises the reviewer by `review_label`. Accepted so a caller still passing it keeps working, with a warning. Will be removed in v12'
+        required: false
+        default: ''
+        type: string
       provision_checks:
         description: 'Set the runner up before the agent starts - bring this repository''s application up in Docker with its config templates rendered, install its dependencies - and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: what is there decides what is done. The master switch for all of it: turn it off and nothing is prepared, and the agent works out what it can run for itself'
         required: false
@@ -432,6 +437,10 @@ jobs:
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
           directory: ${{ runner.temp }}/existing-plan-check
+
+      - name: Warn about deprecated inputs
+        if: ${{ inputs.review_check_patterns != '' }}
+        run: echo "::warning title=Deprecated input::review_check_patterns does nothing and will be removed in v12 - take it out of the caller. The wait recognises the reviewer by review_label"
 
       # Two event shapes carry the same work, and nothing below should have to care which one
       # it got. Everything after this reads these outputs rather than `github.event`, which is

@@ -221,6 +221,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
 | `review_label` | string | `ai:reviewing` | The reviewing agent's `progress_label`, put on the pull request when a review is dispatched and looked for by the [wait](#what-starts-a-round-and-what-it-reads). Empty never waits for the reviewer |
 | `review_label_minutes` | number | `60` | How long the reviewer's label counts as a review still coming. Older, a round takes it off and goes ahead. Keep it above the reviewing workflow's `timeout_minutes` plus queue time |
+| `review_check_patterns` | string | `''` | Deprecated, does nothing, and warns when set. Will be removed in v12 |
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [what it is given to check with](#what-the-agent-is-given-to-check-with). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
