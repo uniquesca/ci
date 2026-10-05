@@ -245,17 +245,17 @@ jobs:
     # tokens are spent either way. A queued duplicate is cheap, because the first round's push
     # moves the head SHA and the gate below then stands the duplicate down in seconds.
     #
-    # Keyed on whatever the event can say about the work, which is not the same thing in each
-    # of them, and no expression here can look anything up. A `workflow_run` carries only the
-    # branch. A comment on an *issue* carries only the issue number - and a round can start from
-    # one, so it is keyed on the branch that issue builds rather than on the number, which is
-    # what puts it in the same group as the QA-triggered rounds already running on that branch.
+    # Keyed on the branch wherever the event names it, and no expression here can look anything
+    # up. A `workflow_run` and a review both carry the branch, which is what keeps the round QA
+    # starts and the round the reviewer starts from running side by side when the two finish
+    # together. A comment on an *issue* carries only the issue number - and a round can start
+    # from one, so it is keyed on the branch that issue builds rather than on the number.
     #
-    # A comment on a pull request, and a review, carry only the number: neither payload says
-    # which branch it is about, so those two share a group with each other and cannot be made to
-    # share one with the other two without a separate job to resolve the branch first. What that
-    # leaves is two people acting on the same work in the same minute - and the loser of that
-    # race has its push refused as non-fast-forward rather than pushing over anything.
+    # A comment on a pull request carries only the number: its payload does not say which branch
+    # it is about, so it cannot share a group with the others without a separate job to resolve
+    # the branch first. What that leaves is a person typing the command in the same minute a
+    # round starts - and the loser of that race has its push refused as non-fast-forward rather
+    # than pushing over anything.
     concurrency:
       group: >-
         ai-implement-${{ github.repository }}-${{
@@ -263,7 +263,7 @@ jobs:
             && github.event.issue.number
             && format('{0}issue-{1}', inputs.branch_prefix, github.event.issue.number)
           || github.event.issue.number
-          || github.event.pull_request.number
+          || github.event.pull_request.head.ref
           || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     permissions:
