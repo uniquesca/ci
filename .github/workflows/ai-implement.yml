@@ -126,6 +126,11 @@ on:
         required: false
         default: 'ai:reviewing'
         type: string
+      review_label_minutes:
+        description: 'How long the reviewer''s label counts as a review still coming. A label older than this was left by a review that never ran - nothing subscribed to the dispatch, say - so a round takes it off, warns, and goes ahead. Keep it above the reviewing workflow''s `timeout_minutes` plus the time a review can sit queued'
+        required: false
+        default: 60
+        type: number
       provision_checks:
         description: 'Set the runner up before the agent starts - bring this repository''s application up in Docker with its config templates rendered, install its dependencies - and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: what is there decides what is done. The master switch for all of it: turn it off and nothing is prepared, and the agent works out what it can run for itself'
         required: false
@@ -1112,6 +1117,7 @@ jobs:
           PR: ${{ steps.event.outputs.pull_request }}
           CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
           REVIEW_LABEL: ${{ inputs.review_label }}
+          LABEL_MINUTES: ${{ inputs.review_label_minutes }}
         run: |
           # The reviewer's label is on the pull request from the dispatch until the review ends.
           # A dispatched review runs on the default branch, so it has no check run on this
@@ -1121,12 +1127,44 @@ jobs:
           review_pending=0
           if [[ -n "$REVIEW_LABEL" ]]; then
             review_pending=$(gh api "repos/$GH_REPO/issues/$PR/labels" 2> /dev/null \
-              | jq --arg label "$REVIEW_LABEL" 'map(select(.name == $label)) | length' 2> /dev/null || echo '')
+              | jq --arg name "$REVIEW_LABEL" 'map(select(.name == $name)) | length' 2> /dev/null || echo '')
           fi
 
           # An unreadable answer must not hold the round back for ever - carry on and let the
           # feedback be whatever has landed so far
           [[ -z "$review_pending" ]] && review_pending=0
+
+          # The label comes off only after the review is submitted, so a round that review
+          # started - or checks that finish in the seconds between - still finds it on. A review
+          # of this commit already posted is the reviewer finished, whatever the label says. Of
+          # this commit and no other: a review of an earlier push says nothing about one still
+          # queued for this one.
+          if [[ "$review_pending" -gt 0 ]] \
+             && reviews=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/reviews?per_page=100" 2> /dev/null); then
+            reviewed=$(jq -s --arg sha "$HEAD_SHA" --arg marker "$REVIEW_MARKER" \
+              'add // [] | map(select(.commit_id == $sha and ((.body // "") | startswith($marker)))) | length' \
+              <<< "$reviews" 2> /dev/null || echo 0)
+            [[ "${reviewed:-0}" -gt 0 ]] && review_pending=0
+          fi
+
+          # A dispatch Github accepted but no workflow picked up leaves the label on with nothing
+          # coming to take it off, and every round after would stand down for it. Past its time
+          # it is taken as that. An age that cannot be read keeps the label in force - a late
+          # review is the likelier story than a lost one - and so does a partial read, which
+          # could hold an older dispatch's event and not this one's.
+          if [[ "$review_pending" -gt 0 ]] \
+             && events=$(gh api --paginate "repos/$GH_REPO/issues/$PR/events?per_page=100" 2> /dev/null); then
+            labelled_at=$(jq -rs --arg name "$REVIEW_LABEL" \
+              'add // [] | map(select(.event == "labeled" and .label.name == $name)) | last | .created_at // empty' \
+              <<< "$events" 2> /dev/null || echo '')
+            if [[ -n "$labelled_at" ]] \
+               && (( $(date +%s) - $(date -d "$labelled_at" +%s) > ${LABEL_MINUTES%.*} * 60 )); then
+              echo "::warning title=Stale review label::'$REVIEW_LABEL' has been on #$PR since $labelled_at with no review finishing - taken off, and the round goes ahead without one"
+              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
+              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null 2>&1 || true
+              review_pending=0
+            fi
+          fi
 
           qa_pending="${CHECKS_PENDING:-0}"
           echo "On $HEAD_SHA: $qa_pending QA check(s) pending, $review_pending reviewer run(s) pending"
