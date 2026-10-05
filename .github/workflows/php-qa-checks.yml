@@ -117,7 +117,7 @@ jobs:
       - name: Check if we have PHPUnit
         run: |
           if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
-            echo "phpunit=1" >> $GITHUB_ENV
+            echo "phpunit=1" >> "$GITHUB_ENV"
           else
             echo "No PHPUnit configuration file found, skipping tests."
           fi
@@ -150,8 +150,8 @@ jobs:
               composer_cmd="composer update --no-scripts"
             fi
           fi
-          echo "lock_file=$lock_file" >> $GITHUB_OUTPUT
-          echo "cmd=$composer_cmd" >> $GITHUB_OUTPUT
+          echo "lock_file=$lock_file" >> "$GITHUB_OUTPUT"
+          echo "cmd=$composer_cmd" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@v11

@@ -1,0 +1,8 @@
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      # actionlint's own list of this action's inputs predates its workload identity federation
+      # inputs, which the action does declare
+      - 'input "anthropic_[a-z_]+" is not defined in action "anthropics/claude-code-action@v1"'
+      # Single-quoted backticks are markdown going into comments and prompts, not a missed expansion
+      - 'SC2016:'
