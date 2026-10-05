@@ -1,14 +1,14 @@
-name: Tests
+name: QA Checks
 
 on:
   push:
     branches:
-      - develop
+      - 'develop'
       - 'release/**'
       - 'hotfix/**'
   pull_request:
     branches:
-      - develop
+      - 'develop'
 
 defaults:
   run:
