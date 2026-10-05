@@ -8,6 +8,21 @@ release makes. **Your commit message is the changelog entry.** Prefix it `BREAKI
 `Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
 holds for every Uniques repository, not only this one.
 
+## Checking a change before the pull request
+
+Read what you wrote as if somebody else wrote it, and go through this on every change:
+
+- **Waits and handoffs.** Anything that waits on another run, or hands work to one: what happens if
+  the other side is slow, still queued, or never starts? Follow it across both files.
+- **Commands the user is told to type.** "Comment `/ai-do` to try again" must give back the same
+  request, arguments included.
+- **Names that changed.** For any input, output, label or behaviour you changed, grep `docs/` and
+  the other workflows for its name.
+- **Comments are claims.** A comment saying something is safe is what you are checking, not proof.
+
+Then have it reviewed by an agent that did not write it (`/code-review high` in Claude Code) before
+the pull request goes up. The author shares their own blind spots.
+
 ## Moving to the next major version
 
 The workflows and actions reference each other at the active version branch, so a caller on it
