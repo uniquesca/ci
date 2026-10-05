@@ -122,7 +122,7 @@ on:
         default: true
         type: boolean
       review_label:
-        description: 'Label the reviewing agent puts on the pull request while it works - its `progress_label`. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Empty means it never waits for the reviewer'
+        description: 'Label the reviewing agent keeps on the pull request while it works - its `progress_label`. Put on here when a review is dispatched, so it covers a review still queued. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Empty means it never waits for the reviewer'
         required: false
         default: 'ai:reviewing'
         type: string
@@ -1113,10 +1113,11 @@ jobs:
           CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
           REVIEW_LABEL: ${{ inputs.review_label }}
         run: |
-          # The reviewer labels the pull request while it works. A dispatched review runs on the
-          # default branch, so it has no check run on this commit to look for. Asking whether it
-          # is still working - rather than whether a review has arrived - is what stops this
-          # waiting forever for a reviewer that was never turned on: it never adds the label.
+          # The reviewer's label is on the pull request from the dispatch until the review ends.
+          # A dispatched review runs on the default branch, so it has no check run on this
+          # commit to look for. Asking whether it is still working - rather than whether a review
+          # has arrived - is what stops this waiting forever for a reviewer that was never turned
+          # on: nothing is dispatched for it, so nothing adds the label.
           review_pending=0
           if [[ -n "$REVIEW_LABEL" ]]; then
             review_pending=$(gh api "repos/$GH_REPO/issues/$PR/labels" 2> /dev/null \
@@ -3510,6 +3511,12 @@ jobs:
       #
       # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
       # produces the same review, and the loop would turn without moving.
+      #
+      # The reviewer's label goes on here, before the dispatch. The QA checks on this push can
+      # finish while the review is still queued, and the wait in the next round only sees a
+      # reviewer that has its label on - so the reviewer labelling itself would leave a gap in
+      # which that round runs without the review, and the review then starts a second one. The
+      # reviewing workflow takes the label off however a dispatched run ends.
       - name: Ask for a review
         id: dispatch
         if: >-
@@ -3519,10 +3526,22 @@ jobs:
         env:
           PR: ${{ steps.event.outputs.pull_request || steps.pr.outputs.number }}
           DISPATCH_TYPE: ${{ inputs.review_dispatch_type }}
+          REVIEW_LABEL: ${{ inputs.review_label }}
         run: |
           if [[ -z "$PR" ]]; then
             echo "::warning title=No pull request to review::Nothing was dispatched"
             exit 0
+          fi
+
+          labelled='false'
+          if [[ -n "$REVIEW_LABEL" ]]; then
+            gh label create "$REVIEW_LABEL" --color 'fbca04' --description 'An AI workflow is working on this' \
+              2> /dev/null || true
+            if gh api "repos/$GH_REPO/issues/$PR/labels" --method POST -f "labels[]=$REVIEW_LABEL" > /dev/null; then
+              labelled='true'
+            else
+              echo "::warning title=Could not label #$PR::'$REVIEW_LABEL' was not added, so the next round may not wait for this review"
+            fi
           fi
 
           jq -n --arg type "$DISPATCH_TYPE" --argjson pr "$PR" \
@@ -3535,6 +3554,13 @@ jobs:
             echo "Asked for a '$DISPATCH_TYPE' review of #$PR"
           else
             echo "::warning title=Could not ask for a review::The $DISPATCH_TYPE dispatch for #$PR failed - review it yourself, or comment on it to start another round"
+
+            # Nothing is coming to take it off, and left on it holds every unattended round back
+            if [[ "$labelled" == 'true' ]]; then
+              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
+              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \
+                || echo "::warning title=Could not unlabel #$PR::'$REVIEW_LABEL' is still on it with no review coming - take it off by hand"
+            fi
           fi
 
       # A failed run is otherwise invisible from the issue or the pull request - whoever asked
@@ -3564,6 +3590,12 @@ jobs:
           ACTOR_TYPE: ${{ steps.event.outputs.actor_type }}
           MODE: ${{ steps.event.outputs.mode }}
           COMMAND: ${{ inputs.command }}
+          # An initial run has no work branch yet, so a retry without the base the person asked
+          # for falls back to the plan's base or the default branch
+          RETRY_BASE: >-
+            ${{ steps.event.outputs.mode == 'initial'
+            && steps.event.outputs.base_given == 'true'
+            && steps.event.outputs.requested_base || '' }}
           # Why the agent stopped, where it recorded one. It turns "the run went red" into
           # something actionable - an exhausted credit balance and a genuine bug look
           # identical otherwise.
@@ -3603,7 +3635,7 @@ jobs:
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
             printf 'The run log has the detail: %s\n\n' "$RUN_URL"
-            printf 'Comment `%s` here to try again.\n' "$COMMAND"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi

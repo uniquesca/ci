@@ -980,15 +980,28 @@ jobs:
       # Last in the job, after whatever the reporters above have to say. `always()` because a
       # label describing a run in progress is wrong the moment the run stops, however it stopped -
       # and the output rather than the outcome, because a skipped step's outputs read as empty.
+      #
+      # A dispatched run takes it off even when it stood down before labelling anything. The
+      # implementing workflow labels the pull request before it dispatches, and its next round
+      # waits for as long as the label stays on.
       - name: Take the label back off
-        if: ${{ always() && steps.label.outputs.added == 'true' }}
+        if: >-
+          ${{ always() && inputs.progress_label != ''
+          && (steps.label.outputs.added == 'true' || github.event_name == 'repository_dispatch') }}
         env:
           LABEL: ${{ inputs.progress_label }}
-          PR: ${{ steps.pull_request.outputs.number }}
+          PR: ${{ steps.pull_request.outputs.number || github.event.client_payload.pull_request }}
+          ADDED: ${{ steps.label.outputs.added }}
         run: |
+          [[ "$PR" =~ ^[0-9]+$ ]] || exit 0
+
           # The label name is a path segment here, so anything awkward in a name a repository
           # chose has to be encoded rather than sent as typed
           name=$(jq -rn --arg name "$LABEL" '$name | @uri')
 
-          gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \
-            || echo "::warning title=Could not unlabel #$PR::'$LABEL' is still on it with nothing running - take it off by hand"
+          # Only a label this run put on is known to be there - the dispatcher's may not have
+          # landed, and a 404 for it is not worth a warning
+          if ! gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null 2>&1 \
+             && [[ "$ADDED" == 'true' ]]; then
+            echo "::warning title=Could not unlabel #$PR::'$LABEL' is still on it with nothing running - take it off by hand"
+          fi
