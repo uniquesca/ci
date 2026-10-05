@@ -3509,7 +3509,7 @@ jobs:
             # Github starts no `pull_request_review` run while the pull request conflicts with its
             # base - undocumented, seen on officio#1163 - so the next "Request changes" would start
             # no round and nobody would be told. `mergeable` is UNKNOWN until Github works it out.
-            for attempt in 1 2 3; do
+            for _ in 1 2 3; do
               mergeable=$(gh pr view "$PR" --json mergeable --jq '.mergeable' 2> /dev/null || echo '')
               [[ "$mergeable" == 'UNKNOWN' ]] || break
               sleep 5
