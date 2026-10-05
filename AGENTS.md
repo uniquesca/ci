@@ -28,8 +28,8 @@ the pull request goes up. The author shares their own blind spots.
 The workflows and actions reference each other at the active version branch, so a caller on it
 stays inside its code. `bin/pin-ci-version.sh v12` moves the repository: it rewrites every
 reference and `VERSION_BRANCH` in `update-current-version.yml`, and lists the versions in prose for
-you to judge by hand. Create the `v12` branch off `main` in the same change. `self-tests.yml` fails
-on a reference left behind, so a new action added at `@main` does not get past a pull request.
+you to judge by hand. Create the `v12` branch off `main` in the same change. `self-qa-checks.yml`
+fails on a reference left behind, so a new action added at `@main` does not get past a pull request.
 A reference that belongs off the branch carries `# pin-ci-version: skip` and a comment saying why.
 
 ## Changing the default model
@@ -109,8 +109,8 @@ table that has quietly fallen behind the YAML is worse than no table.
 reasoning rather than restating the YAML. Match that when editing them, and update the comment
 when the code under it changes.
 
-Run `actionlint` before pushing a workflow change. `.github/workflows/self-qa-checks.yml` runs it on every pull request,
-and `.github/actionlint.yaml` lists what it lets through, each with the reason.
+Run `actionlint` before pushing a workflow change. `self-qa-checks.yml` runs it on every pull
+request, and `.github/actionlint.yaml` lists what it lets through, each with the reason.
 
 Every workflow sets `defaults: run: shell: bash`. Naming the shell is what turns `pipefail` on -
 a `run:` step that leaves it unnamed gets errexit without it, so a failure anywhere upstream of a
