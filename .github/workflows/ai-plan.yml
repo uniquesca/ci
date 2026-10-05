@@ -1183,6 +1183,8 @@ jobs:
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMAND: ${{ inputs.command }}
+          # A retry without it would plan against the default branch
+          BASE: ${{ steps.task.outputs.base }}
         run: |
           {
             printf '@%s the planning agent did not finish, so there is no plan for this issue.\n\n' "$COMMENTER"
@@ -1190,7 +1192,7 @@ jobs:
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
             printf 'The run log has the detail: %s\n\n' "$RUN_URL"
-            printf 'Comment `%s` here to try again.\n' "$COMMAND"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND${BASE:+ base=$BASE}"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi
