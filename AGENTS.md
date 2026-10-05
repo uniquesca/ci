@@ -8,6 +8,11 @@ release makes. **Your commit message is the changelog entry.** Prefix it `BREAKI
 `Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
 holds for every Uniques repository, not only this one.
 
+## Keep `ROADMAP.md` up to date
+
+`ROADMAP.md` is the list of what is planned and what is done. Mark an item done in the pull request
+that finishes it, and add what you find that still needs doing. Write it in plain, simple English.
+
 ## Checking a change before the pull request
 
 Read what you wrote as if somebody else wrote it, and go through this on every change:
