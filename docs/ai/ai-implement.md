@@ -123,7 +123,7 @@ run.
 **Comment `/ai-do` on the pull request.** For when you would rather say what you want in prose, or
 re-run with nothing new to say.
 
-An **approved** or plain **commented** review deliberately does nothing. Requesting changes is a
+An **approved** or plain **commented** review from a person deliberately does nothing. Requesting changes is a
 decision; a passing remark is not.
 
 Each round ends with the agent pushing to the same branch, **replying to every thread it was
@@ -258,7 +258,9 @@ order, so each one starting a round asks Github whether the other is still worki
 reporting on the commit, or the reviewer's label still on the pull request with no review of the
 commit posted yet. The label goes on before the review is dispatched and counts for
 `review_label_minutes`. The first to finish exits having posted nothing, and the second runs the
-round with both sets of feedback. There is no handshake between them, so a duplicated or lost trigger cannot wedge it, and
+round with both sets of feedback. The reviewing agent's review starts it whatever its state, so red
+checks are still acted on when it approves - and that round, like one the checks start, only runs
+for something asking for a change. There is no handshake between them, so a duplicated or lost trigger cannot wedge it, and
 nothing waits for a reviewer that was never dispatched. These rounds count as unattended against
 [the round cap](#the-round-cap), which is what stops the round → push → CI → round cycle running
 away. **`workflow_run` only fires when the workflow file containing it is on the default branch**,

@@ -191,6 +191,12 @@ jobs:
     # one round. A `commented` review still reaches the agent - the next round to run for any
     # reason stages it out of the feedback like anything else.
     #
+    # The reviewing agent's own review is the exception, whatever its state. QA that finished
+    # first stood down to wait for it, so it is the last thing left to start a round for the
+    # checks. That round acts only on what is asking for a change, the same as one QA starts -
+    # an approval over green checks stands down in seconds. The marker is a literal here
+    # because a job-level `if` cannot read the job's `env`.
+    #
     # Both of those broad triggers are narrowed to branches this workflow could have pushed,
     # because both fire on pull requests that have nothing to do with it - every review in the
     # repository, and every QA run on every branch. This is a job-level `if`, so a run that does
@@ -208,7 +214,8 @@ jobs:
            && startsWith(github.event.comment.body, inputs.command))
           || (github.event_name == 'pull_request_review'
               && github.event.action == 'submitted'
-              && github.event.review.state == 'changes_requested'
+              && (github.event.review.state == 'changes_requested'
+                  || startsWith(github.event.review.body, '<!-- ai-review -->'))
               && github.event.pull_request.head.repo.full_name == github.repository
               && startsWith(github.event.pull_request.head.ref, inputs.branch_prefix))
           || (github.event_name == 'workflow_run'
@@ -449,6 +456,7 @@ jobs:
           # Untrusted text, read here and never interpolated into a script. Only its first line
           # is ever looked at, and only to compare against a marker.
           REVIEW_BODY: ${{ github.event.review.body }}
+          REVIEW_STATE: ${{ github.event.review.state }}
           RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
           RUN_ACTOR_TYPE: ${{ github.event.workflow_run.actor.type }}
@@ -560,11 +568,20 @@ jobs:
           [[ "$actor_type" == 'Bot' ]] && attended='false'
 
           # A review the reviewing agent wrote is a machine's, whichever account submitted it.
-          # Anyone can paste this marker into a review of their own, and all that does is make
-          # their own round count against the cap - it can only ever stop the loop sooner,
-          # never let it run longer.
+          # Anyone can paste this marker into a review of their own. All that does is make their
+          # own round count against the cap, or let an approval start a round that acts only on
+          # what is already asking for a change - it can never let the loop run longer.
           if [[ "$trigger" == 'review' && "$REVIEW_BODY" == "$REVIEW_MARKER"* ]]; then
             attended='false'
+          fi
+
+          # Whether whatever started this round asked for a change. Checks only report, and a
+          # review that approved or commented asks for nothing - such a round goes ahead only for
+          # something else that is asking.
+          asked='true'
+          if [[ "$trigger" == 'checks' ]] \
+             || [[ "$trigger" == 'review' && "${REVIEW_STATE,,}" != 'changes_requested' ]]; then
+            asked='false'
           fi
 
           # A round that a finished QA workflow started is never attended, whoever pushed the
@@ -594,6 +611,7 @@ jobs:
             printf 'actor=%s\n' "$actor"
             printf 'actor_type=%s\n' "$actor_type"
             printf 'attended=%s\n' "$attended"
+            printf 'asked=%s\n' "$asked"
             printf 'target=%s\n' "$target"
             printf 'answer_to=%s\n' "$answer_to"
             printf 'base_given=%s\n' "$base_given"
@@ -1256,9 +1274,10 @@ jobs:
 
           echo "#$PR is on $HEAD_SHA, and everything since $LAST_ROUND_SHA is an automatic style fix"
 
-      # A round nobody asked for, on a commit where nothing is asking for a change. Stands down
-      # silently: this fires on every green pull request, and a comment each time would be noise.
-      # A review that only commented is not a change being asked for - it waits for the command.
+      # A round nothing asked for - checks, or the reviewing agent approving or commenting - on a
+      # commit where nothing is asking for a change. Stands down silently: this fires on every
+      # green pull request, and a comment each time would be noise. A review that only commented
+      # is not a change being asked for - it waits for the command.
       #
       # A revised plan does not hold this open, though it does hold the asked-for gate below:
       # nobody has asked for the rework, and the specification is still moving.
@@ -1266,7 +1285,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger == 'checks'
+          && steps.event.outputs.asked == 'false'
           && steps.stage_pr.outputs.has_actionable != 'true' }}
         run: |
           echo "PROCEED=false" >> "$GITHUB_ENV"
@@ -1288,7 +1307,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger != 'checks'
+          && steps.event.outputs.asked == 'true'
           && steps.stage_pr.outputs.has_feedback != 'true'
           && steps.revision.outputs.revised != 'true' }}
         env:
