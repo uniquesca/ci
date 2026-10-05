@@ -109,7 +109,7 @@ table that has quietly fallen behind the YAML is worse than no table.
 reasoning rather than restating the YAML. Match that when editing them, and update the comment
 when the code under it changes.
 
-Run `actionlint` before pushing a workflow change. `self-tests.yml` runs it on every pull request,
+Run `actionlint` before pushing a workflow change. `.github/workflows/self-qa-checks.yml` runs it on every pull request,
 and `.github/actionlint.yaml` lists what it lets through, each with the reason.
 
 Every workflow sets `defaults: run: shell: bash`. Naming the shell is what turns `pipefail` on -
