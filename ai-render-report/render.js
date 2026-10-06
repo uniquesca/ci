@@ -9,7 +9,7 @@ const env = process.env;
 const out = path.join(env.RUNNER_TEMP, 'ai-render-report');
 fs.mkdirSync(out, { recursive: true });
 
-const outputs = { rendered: 'false', body_file: '', status_file: '', headline: '' };
+const outputs = { rendered: 'false', body_file: '', details_file: '', status_file: '', headline: '' };
 
 function warn(message) {
     console.log(`::warning title=Report problem::${message}`);
@@ -41,8 +41,13 @@ const { report, problems } = raw ? read(raw) : { report: null, problems: [] };
 problems.forEach(warn);
 
 if (report) {
+    const rendered = renderReport(report, { underStatus: env.INPUT_UNDER_STATUS === 'true' });
     const body = path.join(out, 'body.md');
-    fs.writeFileSync(body, renderReport(report, { underStatus: env.INPUT_UNDER_STATUS === 'true' }) + '\n');
+    fs.writeFileSync(body, rendered.body + '\n');
+    if (rendered.details) {
+        outputs.details_file = path.join(out, 'details.md');
+        fs.writeFileSync(outputs.details_file, rendered.details + '\n');
+    }
 
     const status = path.join(out, 'status.md');
     fs.writeFileSync(status, renderStatus(report, env.INPUT_LABEL) + '\n');

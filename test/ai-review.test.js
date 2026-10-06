@@ -26,7 +26,22 @@ test('a blocking finding requests changes, and the verdict comes from nothing el
         side: 'RIGHT',
         body: '**Blocking:** No backoff (S3)\n\nUse the existing helper.',
     }]);
-    assert.match(result.body, /\*\*Blocking\*\*\n\n- No backoff \(S3\) - `src\/a\.js:10`/);
+    assert.equal(result.body, '**The retry never backs off.**\n\n1 inline comment(s): 1 blocking.');
+});
+
+test('the body counts the inline findings, and gives in full only those that could not be placed', () => {
+    const result = renderReview({
+        headline: 'h',
+        findings: [
+            { severity: 'nit', title: 'Inline nit', path: 'src/a.js', line: 11 },
+            { severity: 'should', title: 'Inline should', path: 'src/a.js', line: 10 },
+            { severity: 'should', title: 'Whole change', body: 'Why.' },
+        ],
+    }, { positions });
+
+    assert.equal(result.comments.length, 2);
+    assert.match(result.body, /^\*\*h\*\*\n\n2 inline comment\(s\): 1 should fix, 1 nit\.\n\n\*\*Should fix\*\*\n\n- Whole change\n\n {2}Why\.$/);
+    assert.doesNotMatch(result.body, /Inline/);
 });
 
 test('findings are grouped in severity order, whatever order they were written in', () => {

@@ -32,8 +32,11 @@ outputs:
     description: 'Whether the report was usable - "true" or "false"'
     value: ${{ steps.render.outputs.rendered }}
   body_file:
-    description: 'The rendered report, or a copy of `fallback_file` when it was not usable. Empty when there was neither'
+    description: 'What a reviewer reads first, or a copy of `fallback_file` when the report was not usable. Empty when there was neither'
     value: ${{ steps.render.outputs.body_file }}
+  details_file:
+    description: 'What changed and the checks the agent ran, folded, to go after `body_file` and anything the caller puts there. Empty when there is none'
+    value: ${{ steps.render.outputs.details_file }}
   status_file:
     description: 'The status block, markers included. Empty when the report was not usable'
     value: ${{ steps.render.outputs.status_file }}

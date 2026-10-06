@@ -5,6 +5,7 @@ import { normaliseReport, renderReport, renderStatus, readStatus, replaceStatus,
 const full = {
     headline: 'S1-S4 done, S5 left for a decision.',
     done: [{ what: 'Moved the retry loop into the client', refs: ['S3'] }],
+    notes: [{ note: 'The fixer and the hand edits are in one commit', refs: ['S4'] }],
     not_done: [{ what: 'Migration', why: 'Needs the schema change in U2 settled first.', refs: ['S5'] }],
     verification: [
         { command: 'composer test', result: 'pass', note: '212 tests' },
@@ -13,24 +14,28 @@ const full = {
     decisions: [{ ask: 'Keep the old endpoint for one release?', refs: ['U2'] }],
 };
 
-test('every section renders in a fixed order', () => {
+test('what a reviewer reads first comes in a fixed order, and what changed and the checks are folded', () => {
     const { report, problems } = normaliseReport(full);
-    const body = renderReport(report);
+    const { body, details } = renderReport(report);
 
     assert.deepEqual(problems, []);
-    const order = ['**S1-S4', '**Done**', '**Not done**', '**Verified**', '**Needs a decision**'].map((s) => body.indexOf(s));
+    const order = ['**S1-S4', '**For the reviewer**', '**Not done**', '**Needs a decision**'].map((s) => body.indexOf(s));
     assert.ok(order.every((pos) => pos >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
-    assert.match(body, /- Moved the retry loop into the client \(S3\)/);
+    assert.match(body, /- The fixer and the hand edits are in one commit \(S4\)/);
     assert.match(body, /- Migration \(S5\) - Needs the schema change/);
-    assert.match(body, /\| `vendor\/bin\/psalm` \| ❌ fail \| pre-existing \\\| 3 errors \|/);
+    assert.doesNotMatch(body, /retry loop|psalm/);
+
+    assert.match(details, /^<details>\n<summary>What changed \(1\)<\/summary>\n\n- Moved the retry loop into the client \(S3\)\n\n<\/details>/);
+    assert.match(details, /<summary>Checks: 1 ✅ pass, 1 ❌ fail<\/summary>/);
+    assert.match(details, /\| `vendor\/bin\/psalm` \| ❌ fail \| pre-existing \\\| 3 errors \|/);
 });
 
 test('empty sections are left out', () => {
     const { report } = normaliseReport({ headline: 'Nothing to change.', done: [] });
 
-    assert.equal(renderReport(report), '**Nothing to change.**');
-    assert.equal(renderReport(report, { underStatus: true }), '');
+    assert.deepEqual(renderReport(report), { body: '**Nothing to change.**', details: '' });
+    assert.deepEqual(renderReport(report, { underStatus: true }), { body: '', details: '' });
 });
 
 test('an unknown result is shown as not run and reported', () => {
@@ -82,11 +87,11 @@ test('a body without a report reads back as null', () => {
 
 test('under the status block, the headline and the decisions are left to it', () => {
     const { report } = normaliseReport(full);
-    const body = renderReport(report, { underStatus: true });
+    const { body } = renderReport(report, { underStatus: true });
 
     assert.ok(!body.includes('S1-S4 done'));
     assert.ok(!body.includes('Needs a decision'));
-    assert.match(body, /\*\*Done\*\*/);
+    assert.match(body, /\*\*For the reviewer\*\*/);
 });
 
 test('a value that is not text where text belongs reads as missing, and never throws', () => {
@@ -122,7 +127,7 @@ test('a report too long for Github leaves out the check results first, and says 
     assert.deepEqual(report.decisions.map((d) => d.ask), ['Keep the old API?']);
     assert.ok(report.left_out > 40);
     assert.match(problems.at(-1), /item\(s\) were left out/);
-    assert.match(renderReport(report), /more item\(s\) did not fit/);
+    assert.match(renderReport(report).details, /more item\(s\) did not fit/);
 });
 
 test('references are short ids, so a giant one is left out', () => {
@@ -139,7 +144,7 @@ test('items over the 40 a list shows are counted as left out, so the report says
 
     assert.equal(report.done.length, 40);
     assert.equal(report.left_out, 1);
-    assert.match(renderReport(report), /1 more item\(s\) did not fit/);
+    assert.match(renderReport(report).details, /1 more item\(s\) did not fit/);
 });
 
 test('the agent cannot open a hidden comment or end the status block early', () => {
@@ -162,11 +167,13 @@ test('the largest report leaves room in the description for 20,000 characters of
     const { report } = normaliseReport({
         headline: wide(300),
         done: many(() => ({ what: wide(300), refs: ['S1'] })),
+        notes: many(() => ({ note: wide(400), refs: ['S1'] })),
         not_done: many(() => ({ what: wide(300), why: wide(400) })),
         verification: many(() => ({ command: wide(150), result: 'pass', note: wide(200) })),
         decisions: many(() => ({ ask: wide(400), refs: ['S1'] })),
     });
-    const description = renderStatus(report, 'After the first run') + '\n\n' + renderReport(report);
+    const { body, details } = renderReport(report);
+    const description = [renderStatus(report, 'After the first run'), body, details].join('\n\n');
 
     assert.ok(description.length + 20000 + 2000 <= 65536, `${description.length} characters`);
 });

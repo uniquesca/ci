@@ -95,8 +95,9 @@ export function normaliseReview(raw) {
     return { headline, findings, qaFocus, problems };
 }
 
-// `positions` holds `path:line` for every line an inline comment may sit on. A finding that
-// cannot be placed is not lost: its body goes into the review body instead.
+// `positions` holds `path:line` for every line an inline comment may sit on. A finding placed
+// inline is only counted in the body, so it is said once and tracked as a thread. One that cannot
+// be placed is not lost: its text goes into the body instead.
 export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX } = {}) {
     const { headline, findings, qaFocus, problems } = normaliseReview(raw);
 
@@ -118,13 +119,14 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
         }
     }
 
+    const inline = SEVERITIES
+        .map((severity) => [findings.filter((f) => f.inline && f.severity === severity).length, severity])
+        .filter(([count]) => count)
+        .map(([count, severity]) => `${count} ${LABELS[severity].toLowerCase()}`);
+
     // Each finding in full, and as its title alone for when the whole review would not fit
-    const entries = findings.map((f) => {
+    const entries = findings.filter((f) => !f.inline).map((f) => {
         const head = `- ${f.title}${refsSuffix(f.refs)}`;
-        if (f.inline) {
-            const line = `${head} - \`${f.path}:${f.line}\``;
-            return { finding: f, full: line, short: line, use: 'full' };
-        }
         const location = f.path ? ` - \`${f.path}${f.line ? ':' + f.line : ''}\`` : '';
         const body = f.body ? '\n\n' + clip(f.body, maxLength).replace(/^/gm, '  ') : '';
         return { finding: f, full: head + location + body, short: head + location, use: 'full' };
@@ -132,6 +134,10 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
 
     const build = () => {
         const parts = [`**${headline || 'The reviewing agent gave no headline.'}**`];
+
+        if (inline.length) {
+            parts.push(`${comments.length} inline comment(s): ${inline.join(', ')}.`);
+        }
 
         for (const severity of SEVERITIES) {
             const lines = entries
