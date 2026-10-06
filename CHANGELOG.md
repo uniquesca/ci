@@ -1439,3 +1439,7 @@
 ## v11.21.4
 
 * Update: AI plans show every risk, a line of scope under each step, and a plainer summary (5a383ec by George Shestayev)
+
+## v11.21.5
+
+* Fix: AI pull requests close their issue when merged (5a88985 by George Shestayev)

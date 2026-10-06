@@ -81,7 +81,8 @@ it can find, and a pull request appears. The issue gets a comment with the link,
 comment is the hand-off** - from then on the issue is only for the plan, and running `/ai-do`
 there again replies pointing at the pull request. The exception is a
 [revised plan](#when-the-plan-is-revised-under-the-work), which is what `/ai-do` on the issue is
-still for: it runs the round on the pull request.
+still for: it runs the round on the pull request. The pull request says `Closes #N`, so merging it
+closes the issue.
 
 The pull request cites the plan's [ids](ai-plan.md#how-the-plan-is-numbered), and you can use them
 talking back to it - "S5 is missing", "C1 still fails" lands exactly where you mean it. The plan's
@@ -112,7 +113,8 @@ default branch. `base=` is only read as the **first thing after the command**, s
 comment stays instructions for the agent - `/ai-do also update the changelog` retargets nothing.
 
 **The base is settled on the first run for an issue.** `base=` on a later round is ignored;
-retarget the pull request yourself and later rounds follow it.
+retarget the pull request yourself and later rounds follow it. **A pull request into anything but
+the default branch leaves the issue open when it merges** - Github only acts on `Closes #N` there.
 
 ## Reviewing it, and asking for changes
 
