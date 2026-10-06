@@ -26,7 +26,18 @@ if (fs.existsSync(env.INPUT_REPORT_FILE)) {
     warn(`The agent wrote no ${env.INPUT_REPORT_FILE}`);
 }
 
-const { report, problems } = raw ? normaliseReport(raw) : { report: null, problems: [] };
+// Anything that still goes wrong reading the report falls back to the agent's final message, the
+// same as a report it cannot use
+function read(input) {
+    try {
+        return normaliseReport(input);
+    } catch (error) {
+        warn(`The report could not be read: ${error.message}`);
+        return { report: null, problems: [] };
+    }
+}
+
+const { report, problems } = raw ? read(raw) : { report: null, problems: [] };
 problems.forEach(warn);
 
 if (report) {

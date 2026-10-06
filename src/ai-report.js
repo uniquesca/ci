@@ -8,8 +8,11 @@ export const STATUS_END = '<!-- /ai-status -->';
 const RESULTS = { pass: '✅ pass', fail: '❌ fail', not_run: '⏭️ not run' };
 const MAX_ITEMS = 40;
 
-function clip(text, max) {
-    const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+// Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
+// a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
+function clip(value, max) {
+    const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+    const flat = text.replace(/\s+/g, ' ').trim();
     return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat;
 }
 
@@ -66,9 +69,12 @@ export function normaliseReport(raw) {
         if (!command) {
             return null;
         }
-        const result = RESULTS[item.result] ? item.result : 'not_run';
+        // An own key, so "toString" and the like are not mistaken for a result
+        const result = typeof item.result === 'string' && Object.hasOwn(RESULTS, item.result)
+            ? item.result
+            : 'not_run';
         if (result !== item.result) {
-            problems.push(`\`${command}\` has result "${item.result}", shown as not run`);
+            problems.push(`\`${command}\` has result "${clip(item.result, 30)}", shown as not run`);
         }
         return { command, result, note: clip(item.note, 200) };
     });

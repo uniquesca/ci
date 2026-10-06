@@ -88,3 +88,21 @@ test('under the status block, the headline and the decisions are left to it', ()
     assert.ok(!body.includes('Needs a decision'));
     assert.match(body, /\*\*Done\*\*/);
 });
+
+test('a value that is not text where text belongs reads as missing, and never throws', () => {
+    const notText = { toString: null };
+    const { report, problems } = normaliseReport({
+        headline: notText,
+        done: [{ what: notText }, { what: 'Kept', refs: ['S1'] }],
+        verification: [{ command: 'npm test', result: notText }, { command: 'lint', result: 'toString' }],
+    });
+
+    assert.equal(report.headline, '');
+    assert.deepEqual(report.done, [{ what: 'Kept', refs: ['S1'] }]);
+    assert.deepEqual(report.verification.map((v) => v.result), ['not_run', 'not_run']);
+    assert.deepEqual(problems, [
+        'no headline',
+        '`npm test` has result "", shown as not run',
+        '`lint` has result "toString", shown as not run',
+    ]);
+});
