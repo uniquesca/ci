@@ -75,18 +75,18 @@ what the last plan recorded, which is how you correct a plan written against the
 
 ## How the plan is numbered
 
-You see a short summary of what is to be done, the questions that need your decision, the step
-titles and the QA criteria. The whole plan - every step's detail, the reasons behind each risk, the
-checks - is folded underneath as JSON, which is what the agents work from.
+You see a short summary of what is to be done and where, the risks with any question for you, the
+steps with one line each on what they touch, and the QA criteria. The whole plan - every step's
+detail, the checks - is folded underneath as JSON, which is what the agents work from.
 
 Every item carries an id, and feedback can use it - "S4 and S5 are the wrong way round" lands
 precisely without quoting a paragraph back:
 
 | Prefix | Section | What it is |
 |---|---|---|
-| `R1`, `R2` | Needs your decision | Something that could go wrong. Only its question is shown, and only when there is one |
-| `U1`, `U2` | Needs your decision | Something the agent could not determine, or is assuming |
-| `S1`, `S2` | Steps | The work, in the order it should be done. The title is shown, the detail is folded |
+| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong, in one sentence. **Needs your decision:** follows when only you can settle it |
+| `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
+| `S1`, `S2` | Steps | The work, in the order it should be done. The title and a line on what it touches are shown, the detail is folded |
 | `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. No section at all when the change is not meant to change anything for users |
 | `C1`, `C2` | The folded plan | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 

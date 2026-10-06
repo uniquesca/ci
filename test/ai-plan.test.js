@@ -6,14 +6,14 @@ const plan = {
     summary: 'Business hours get their own settings page.',
     risks: [{ id: 'U1', text: 'Whether hours differ per office.', ask: 'Confirm one set per company.' }],
     steps: [
-        { id: 'S1', title: 'Add the model', detail: 'In `src/Hours.php`.' },
+        { id: 'S1', title: 'Add the model', scope: 'A new business hours table and its entity', detail: 'In `src/Hours.php`.' },
         { id: 'S2', title: 'Add the page', detail: 'Uses S1.', depends_on: ['S1'] },
     ],
     qa: [{ id: 'QA1', covers: ['S2'], where: 'Company Settings -> Business Hours', do: 'Set Monday to 9-5 and save.', expect: 'Reloading shows 9-5.' }],
     checks: [{ id: 'C1', text: 'Run `composer test`; HoursTest passes.' }],
 };
 
-test('a person sees the summary, the questions, the step titles and QA, and the rest is folded JSON', () => {
+test('a person sees the summary, the risks, the steps with their scope and QA, and the rest is folded JSON', () => {
     const { plan: normal, problems } = normalisePlan(plan);
     const text = renderPlan(normal);
     const shown = text.slice(0, text.indexOf(JSON_MARKER));
@@ -21,8 +21,8 @@ test('a person sees the summary, the questions, the step titles and QA, and the 
     assert.deepEqual(problems, []);
     assert.equal(shown, [
         'Business hours get their own settings page.',
-        '## Needs your decision\n\n- **U1** Confirm one set per company.',
-        '## Steps\n\n- [ ] **S1** Add the model\n- [ ] **S2** Add the page',
+        '## Risks, unknowns and assumptions\n\n- **U1** Whether hours differ per office. **Needs your decision:** Confirm one set per company.',
+        '## Steps\n\n- [ ] **S1** Add the model\n  A new business hours table and its entity\n- [ ] **S2** Add the page',
         '## QA acceptance criteria\n\n- **QA1** (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. **Expect:** Reloading shows 9-5.',
         '',
     ].join('\n\n'));
@@ -206,4 +206,10 @@ test('the size limit counts text that is not English at what it costs', () => {
     });
 
     assert.ok(Buffer.byteLength(renderPlan(result.plan)) <= 60000);
+});
+
+test('a risk with nothing to decide is still shown', () => {
+    const { plan: normal } = normalisePlan({ ...plan, risks: [{ id: 'R1', text: 'A CLI path would skip the listener.' }] });
+
+    assert.match(renderPlan(normal), /## Risks, unknowns and assumptions\n\n- \*\*R1\*\* A CLI path would skip the listener\.\n/);
 });

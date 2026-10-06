@@ -1435,3 +1435,7 @@
 ## v11.21.3
 
 * Fix: QA criteria starting with "None" are kept, and comments say what the code does (eb5d083 by George Shestayev)
+
+## v11.21.4
+
+* Update: AI plans show every risk, a line of scope under each step, and a plainer summary (5a383ec by George Shestayev)

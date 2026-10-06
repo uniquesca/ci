@@ -837,16 +837,16 @@ jobs:
 
             Write the plan to `.ai-plan/new-plan.json`. The workflow lays it out and posts
             it, so your final message is only for the run log. A person reads the summary,
-            the revision note, each `ask`, the step titles and the QA criteria. Everything
-            else is folded away for the agents that implement and review the work, so write
-            it for them:
+            the revision note, the risks, the step titles with their scope and the QA
+            criteria. Everything else is folded away for the agents that implement and
+            review the work, so write it for them:
 
             ```json
             {
               "summary": "What is going to be done, in one paragraph.",
               "revision": "",
               "risks": [{"id": "U1", "text": "...", "ask": "..."}],
-              "steps": [{"id": "S1", "title": "...", "detail": "...", "depends_on": []}],
+              "steps": [{"id": "S1", "title": "...", "scope": "...", "detail": "...", "depends_on": []}],
               "qa": [{"id": "QA1", "covers": ["S2"], "where": "...", "do": "...", "expect": "..."}],
               "qa_none": "",
               "checks": [{"id": "C1", "text": "..."}],
@@ -854,30 +854,34 @@ jobs:
             }
             ```
 
-            - `summary` - two or three sentences of simple English that somebody who has
-              never seen the code can follow. No class names, no file paths, no jargon -
-              those belong in the steps. A call you made that the developer would want to
-              know about - splitting the work, reading an unclear issue one way - goes here
-              with its reason, so they can object to it.
+            - `summary` - two or three short sentences of plain, friendly English that somebody
+              who has never seen the code can follow: what is being done, why, and which part of
+              the product or the code it touches, named broadly - "the company settings", "the
+              client module". No file paths, class names or jargon such as "two-way service
+              dependencies" - those belong in the steps. A call you made that the developer
+              would want to know about - splitting the work, reading an unclear issue one way -
+              goes here in a few words, so they can object to it.
             - `revision` - on a revised plan, one sentence on what changed, in ids: "S4
               dropped, S7 and S8 added, R2 no longer applies". Empty on a first plan.
-            - `risks` - a real chance of breaking something, or a question only the developer
-              can answer. `R1` for a risk, `U1` for an unknown or an assumption you are
-              proceeding on. `text` says why, in a sentence or two. Leave out anything
-              routine, already handled by a step, or outside what the issue asks for.
-              Usually empty. Set `ask` only when you cannot settle it from the repository
-              and the issue, and a wrong guess would waste the work. Otherwise
-              make the call, say it in the summary, and leave `ask` empty. Never ask the
-              developer to confirm something you have already decided, or what the obvious
-              reading of the issue is. A question is all of a risk a person sees, so it has
-              to stand on its own: one sentence somebody who has not read the code can
-              answer.
-            - `steps` - in the order they should be worked in. `title` is a short imperative,
-              and all of a step a person sees. `detail` says what to do and why, naming the
-              real files, classes and methods. It is what the implementing agent works from,
-              so leave out nothing it needs - and nothing it can read for itself: point at a
-              document or a convention rather than retelling it. `depends_on` lists earlier
-              steps it needs.
+            - `risks` - what could really break, what you could not find out, and what you are
+              assuming - even when there is nothing to ask. `R1` for a risk, `U1` for an unknown
+              or an assumption you are proceeding on. `text` says it in one or two plain
+              sentences a person can read without the code; it is always shown. Leave out
+              anything routine, already handled by a step, or outside what the issue asks for.
+              Set `ask` only when you cannot settle it from the repository and the issue, and a
+              wrong guess would waste the work. Otherwise make the call, say it in the summary,
+              and leave `ask` empty. Never ask the developer to confirm something you have
+              already decided, or what the obvious reading of the issue is. An `ask` is one
+              sentence somebody who has not read the code can answer, shown after `text`.
+            - `steps` - in the order they should be worked in. `title` is a short imperative
+              that names what it acts on - "Add `officio-common/src/Model` to psalm", not "Bring
+              the model directory into scope". `scope` is one line under it saying exactly what
+              the step touches, in plain words - which lookups, which listeners, which folder -
+              so a person knows what will change without reading `detail`. Together they are all
+              of a step a person sees. `detail` says what to do and why, naming the real files,
+              classes and methods. It is what the implementing agent works from, so leave out
+              nothing it needs - and nothing it can read for itself: point at a document or a
+              convention rather than retelling it. `depends_on` lists earlier steps it needs.
             - `qa` - for a tester who will not read the code and cannot run anything in the
               repository. `where` is the path through the interface they click ("Company
               Settings -> Business Hours"), and every place and kind of user it reaches when
