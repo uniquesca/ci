@@ -47,7 +47,7 @@ jobs:
       anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
       anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
     secrets:
-      AI_REVIEW_APP_ID: ${{ secrets.AI_REVIEW_APP_ID }}
+      AI_REVIEW_APP_ID: ${{ vars.AI_REVIEW_APP_ID }}
       AI_REVIEW_PRIVATE_KEY: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
 ```
 

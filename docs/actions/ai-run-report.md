@@ -66,8 +66,9 @@ holds the error rather than an answer, so it is treated as no result.
 ### `reason`, and why it is surfaced
 
 An exhausted credit balance and a genuine bug both show up as a red step. `reason` carries the
-closing record's `result` or `terminal_reason`, collapsed to one line, so a failure comment can say
-which. Call this action with `if: always()` - a run that died partway is exactly when you want it.
+closing record's `result`, `terminal_reason` or `subtype` (such as `error_max_turns`), collapsed
+to one line, so a failure comment can say which. Call this action with `if: always()` - a run
+that died partway is exactly when you want it.
 
 ### The cost line
 

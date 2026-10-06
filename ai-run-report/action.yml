@@ -124,10 +124,10 @@ runs:
 
           # Why the run stopped. Surfacing this turns "the run went red" into something
           # actionable - an exhausted credit balance and a genuine bug look identical
-          # otherwise.
-          reason=$(
+          # otherwise. A finished run has none: its `result` is the agent's own final message.
+          [[ "$completed" == 'true' ]] || reason=$(
             jq -rs 'flatten | (map(select(.type == "result")) | last) as $r
-                    | [ ($r.result // ""), ($r.terminal_reason // "") ]
+                    | [ ($r.result // ""), ($r.terminal_reason // ""), ($r.subtype // "") ]
                     | map(select(. != "")) | first // ""
                     | .[0:200]
                     | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ")' "$EXECUTION_FILE" 2>/dev/null || true
