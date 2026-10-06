@@ -102,8 +102,9 @@ it: what feels load-bearing while the implementation is fresh reads as padding t
 the page for the first time. The same applies to explaining the change in conversation.
 
 One page per reusable workflow under `docs/workflows/` and per action under `docs/actions/`, each
-title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper` for
-anything that is not straightforward.
+title, description, `## Inputs` and `## Outputs` tables, then `## Dig deeper` for anything that is
+not straightforward. A workflow page also has a `## Secrets` table; an action takes no secrets, only
+inputs, so its page has none.
 Both are listed in `docs/workflows-and-actions.md` - **add a new workflow or action to that page**,
 or it exists without anybody being able to find it. `docs/qa-checks.md` and `docs/ai/*.md` cover
 several workflows at once and are the exception; leave them that way.
