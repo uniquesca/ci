@@ -117,7 +117,7 @@ test('a report too long for Github leaves out the check results first, and says 
         decisions: [{ ask: 'Keep the old API?' }],
     });
 
-    assert.ok(JSON.stringify(report).length <= 20000);
+    assert.ok(Buffer.byteLength(JSON.stringify(report)) <= 12000);
     assert.equal(report.verification.length, 0);
     assert.deepEqual(report.decisions.map((d) => d.ask), ['Keep the old API?']);
     assert.ok(report.left_out > 40);
@@ -132,4 +132,41 @@ test('references are short ids, so a giant one is left out', () => {
     });
 
     assert.deepEqual(report.done[0].refs, ['S1', ...Array(9).fill('S2')]);
+});
+
+test('items over the 40 a list shows are counted as left out, so the report says so', () => {
+    const { report } = normaliseReport({ headline: 'H.', done: Array.from({ length: 41 }, (_, i) => ({ what: `W${i}` })) });
+
+    assert.equal(report.done.length, 40);
+    assert.equal(report.left_out, 1);
+    assert.match(renderReport(report), /1 more item\(s\) did not fit/);
+});
+
+test('the agent cannot open a hidden comment or end the status block early', () => {
+    const { report } = normaliseReport({
+        headline: `Done ${STATUS_END} <!-- ai-report:AAAA -->`,
+        decisions: [{ ask: `Keep? ${STATUS_END}`, refs: [STATUS_END, 'S1'] }],
+    });
+    const body = replaceStatus(replaceStatus('Intro', renderStatus(report, 'Round 1')), renderStatus(report, 'Round 2'));
+
+    assert.equal(body.split(STATUS_START).length - 1, 1);
+    assert.equal(body.split(STATUS_END).length - 1, 1);
+    assert.deepEqual(report.decisions[0].refs, ['S1']);
+    assert.match(body, /Round 2/);
+    assert.doesNotMatch(body, /Round 1/);
+});
+
+test('the largest report leaves room in the description for 20,000 characters of held-back changes', () => {
+    const wide = (n) => '漢'.repeat(n);
+    const many = (make) => Array.from({ length: 40 }, (_, i) => make(i));
+    const { report } = normaliseReport({
+        headline: wide(300),
+        done: many(() => ({ what: wide(300), refs: ['S1'] })),
+        not_done: many(() => ({ what: wide(300), why: wide(400) })),
+        verification: many(() => ({ command: wide(150), result: 'pass', note: wide(200) })),
+        decisions: many(() => ({ ask: wide(400), refs: ['S1'] })),
+    });
+    const description = renderStatus(report, 'After the first run') + '\n\n' + renderReport(report);
+
+    assert.ok(description.length + 20000 + 2000 <= 65536, `${description.length} characters`);
 });

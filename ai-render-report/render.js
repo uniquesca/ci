@@ -58,9 +58,19 @@ if (report) {
 
 if (report && env.INPUT_PULL_REQUEST) {
     const api = `${env.GITHUB_API_URL}/repos/${env.GITHUB_REPOSITORY}/pulls/${env.INPUT_PULL_REQUEST}`;
-    const headers = { Authorization: `Bearer ${env.INPUT_TOKEN}`, Accept: 'application/vnd.github+json' };
+    const headers = {
+        Authorization: `Bearer ${env.INPUT_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+    };
     try {
-        const pull = await (await fetch(api, { headers })).json();
+        // A failed read must stop here. Its error is JSON too, with no `body`, and writing back
+        // what was built from it would replace the whole description with the status block.
+        const read = await fetch(api, { headers });
+        if (!read.ok) {
+            throw new Error(`HTTP ${read.status} reading it`);
+        }
+        const pull = await read.json();
         const body = replaceStatus(pull.body, renderStatus(report, env.INPUT_LABEL));
         const response = await fetch(api, { method: 'PATCH', headers, body: JSON.stringify({ body }) });
         if (!response.ok) {

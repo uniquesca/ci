@@ -7,10 +7,12 @@ export const STATUS_END = '<!-- /ai-status -->';
 
 const RESULTS = { pass: '✅ pass', fail: '❌ fail', not_run: '⏭️ not run' };
 const MAX_ITEMS = 40;
-// Github refuses a body over 65,536 characters, and the pull request description carries the
-// report twice - as text, and as the hidden data in the status block, which base64 makes a third
-// bigger - next to whatever the workflow adds. Measured on the report's own JSON.
-const REPORT_MAX = 20000;
+// Github refuses a body over 65,536 characters. The pull request description carries the report
+// twice - as text, and as the hidden data in the status block, which base64 makes a third bigger
+// than its UTF-8 bytes - next to up to 20,000 characters of held-back workflow changes and the
+// workflow's own lines. Measured in bytes of the report's JSON, so text that is not English is
+// counted at what it costs.
+const REPORT_MAX = 12000;
 // What goes first when the report is too long: the check results, and the questions for a person
 // last of all
 const LEAVE_OUT_ORDER = ['verification', 'done', 'not_done', 'decisions'];
@@ -19,7 +21,9 @@ const LEAVE_OUT_ORDER = ['verification', 'done', 'not_done', 'decisions'];
 // a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
 function clip(value, max) {
     const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-    const flat = text.replace(/\s+/g, ' ').trim();
+    // `<!--` in the agent's text could open a hidden comment, or close the status block early
+    // and leave the next round's replacement half done
+    const flat = text.replace(/\s+/g, ' ').replace(/<!--/g, '&lt;!--').trim();
     return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat;
 }
 
@@ -27,7 +31,7 @@ function clip(value, max) {
 // is not a reference any more.
 function refs(item) {
     return (Array.isArray(item?.refs) ? item.refs : [])
-        .filter((ref) => typeof ref === 'string' && ref && ref.length <= 20)
+        .filter((ref) => typeof ref === 'string' && ref && ref.length <= 20 && !ref.includes('<'))
         .slice(0, 10);
 }
 
@@ -39,7 +43,7 @@ function cell(text) {
     return text.replace(/\|/g, '\\|');
 }
 
-function list(raw, problems, name, pick) {
+function list(leftOut, raw, problems, name, pick) {
     if (raw !== undefined && !Array.isArray(raw)) {
         problems.push(`\`${name}\` is not a list`);
         return [];
@@ -47,6 +51,7 @@ function list(raw, problems, name, pick) {
     const items = (raw ?? []).map(pick).filter(Boolean);
     if (items.length > MAX_ITEMS) {
         problems.push(`\`${name}\` has ${items.length} items, only the first ${MAX_ITEMS} are shown`);
+        leftOut.count += items.length - MAX_ITEMS;
     }
     return items.slice(0, MAX_ITEMS);
 }
@@ -65,17 +70,18 @@ export function normaliseReport(raw) {
         problems.push('no headline');
     }
 
-    const done = list(report.done, problems, 'done', (item) => {
+    const leftOut = { count: 0 };
+    const done = list(leftOut, report.done, problems, 'done', (item) => {
         const what = clip(item?.what, 300);
         return what && { what, refs: refs(item) };
     });
 
-    const notDone = list(report.not_done, problems, 'not_done', (item) => {
+    const notDone = list(leftOut, report.not_done, problems, 'not_done', (item) => {
         const what = clip(item?.what, 300);
         return what && { what, why: clip(item.why, 400), refs: refs(item) };
     });
 
-    const verification = list(report.verification, problems, 'verification', (item) => {
+    const verification = list(leftOut, report.verification, problems, 'verification', (item) => {
         const command = clip(item?.command, 150);
         if (!command) {
             return null;
@@ -90,13 +96,13 @@ export function normaliseReport(raw) {
         return { command, result, note: clip(item.note, 200) };
     });
 
-    const decisions = list(report.decisions, problems, 'decisions', (item) => {
+    const decisions = list(leftOut, report.decisions, problems, 'decisions', (item) => {
         const ask = clip(item?.ask, 400);
         return ask && { ask, refs: refs(item) };
     });
 
-    const result = { headline, done, not_done: notDone, verification, decisions, left_out: 0 };
-    while (JSON.stringify(result).length > REPORT_MAX) {
+    const result = { headline, done, not_done: notDone, verification, decisions, left_out: leftOut.count };
+    while (Buffer.byteLength(JSON.stringify(result)) > REPORT_MAX) {
         const name = LEAVE_OUT_ORDER.find((list) => result[list].length);
         if (!name) {
             break;
@@ -104,8 +110,8 @@ export function normaliseReport(raw) {
         result[name].pop();
         result.left_out++;
     }
-    if (result.left_out) {
-        problems.push(`the report was over ${REPORT_MAX} characters, so ${result.left_out} item(s) were left out`);
+    if (result.left_out > leftOut.count) {
+        problems.push(`the report was over ${REPORT_MAX} bytes, so ${result.left_out - leftOut.count} item(s) were left out`);
     }
 
     return { report: result, problems };
