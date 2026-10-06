@@ -21,11 +21,8 @@ outputs:
     description: 'Whether the JSON plan was usable - "true" or "false"'
     value: ${{ steps.render.outputs.rendered }}
   plan_file:
-    description: 'The rendered plan, or a copy of `fallback_file`. Empty when there was neither'
+    description: 'The rendered plan, with the whole plan folded under it as JSON for the agents and the next revision - or a copy of `fallback_file`. Empty when there was neither'
     value: ${{ steps.render.outputs.plan_file }}
-  data:
-    description: 'The plan as a hidden HTML comment, for the caller to add to the posted comment so the next revision and `ai-stage-issue` can read it back. Empty for a fallback'
-    value: ${{ steps.render.outputs.data }}
   has_qa:
     description: 'Whether the plan has QA acceptance criteria - "true" or "false"'
     value: ${{ steps.render.outputs.has_qa }}

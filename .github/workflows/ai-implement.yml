@@ -1124,10 +1124,10 @@ jobs:
             printf 'instruction<<AI_IMPLEMENT_REVISION\n'
             printf '%s\n' \
               '**The plan was revised after the last round, so the branch you are in was not built to the plan you are reading.**' \
-              'Reconcile the whole branch against `.ai-plan/plan.md`, not only the feedback items.' \
+              'Reconcile the whole branch against `.ai-plan/plan.json`, not only the feedback items.' \
               'Work the plan now asks for that the branch does not have is yours to add, and work it no longer asks for is yours to take back out - a dropped step whose code stayed behind is exactly what a revision is meant to correct.' \
               'Read the plan end to end before you start, and report what you changed for the revision and what you deliberately left alone.' \
-              "A revised plan opens by saying what moved in those ids - which steps were dropped, which are new - so that sentence is the shortest route to what this round owes. Ids are stable across a revision, so an item that kept its number is the same item, and a retired one is listed struck through rather than renumbered." \
+              "A revised plan opens by saying what moved in those ids - which steps were dropped, which are new - so that sentence is the shortest route to what this round owes. Ids are stable across a revision, so an item that kept its number is the same item, and a dropped one is listed as retired rather than renumbered." \
               'Where the revision and the feedback disagree, the feedback still wins on anything about code somebody has read.'
             printf 'AI_IMPLEMENT_REVISION\n'
           } >> "$GITHUB_OUTPUT"
@@ -2486,8 +2486,10 @@ jobs:
 
             Everything you need has been fetched for you. Read these first:
 
-            - `.ai-plan/plan.md` - the approved plan. This is the specification. Implement
-              it. Its items are numbered `S1` for a step, `R1` for a risk, `U1` for an
+            - `.ai-plan/plan.json` - the approved plan. This is the specification. Implement
+              it. `.ai-plan/plan.md` beside it is the part a person sees, and wins where a
+              person edited it; a plan from before plans were JSON has only `plan.md`. Its
+              items are numbered `S1` for a step, `R1` for a risk, `U1` for an
               unknown or an assumption, `C1` for a check that proves the work is done and
               `QA1` for an acceptance criterion a tester will verify by hand. Use those ids
               when you refer to it, as described below. An older plan may not have them, in
@@ -2499,9 +2501,9 @@ jobs:
               posted is feedback on it, and it takes precedence over the plan where the two
               disagree.
 
-            If `.ai-plan/plan.md` is missing or unreadable, stop straight away and say
-            exactly that as your final message. Do not go looking for another route to the
-            issue - there isn't one, and hunting for it burns the whole run.
+            If neither `.ai-plan/plan.json` nor `.ai-plan/plan.md` is there, stop straight away
+            and say exactly that as your final message. Do not go looking for another route to
+            the issue - there isn't one, and hunting for it burns the whole run.
 
             Before you write anything, read the code the plan touches and learn the
             conventions actually in use - how modules are structured, how errors are
@@ -2658,9 +2660,11 @@ jobs:
               and the reviews delivered before this round. **It is a record, not a task list.**
               Nothing in it is work, and finding something in it is never a reason to act.
             - `.ai-review/pull-request.json` - the pull request itself.
-            - `.ai-plan/plan.md` - the approved plan this branch implements, if the issue
+            - `.ai-plan/plan.json` - the approved plan this branch implements, if the issue
               still has one. It is the specification, and it may have been revised since the
-              last round - the workflow says so below when it has been. Where it and the
+              last round - the workflow says so below when it has been. `.ai-plan/plan.md`
+              beside it is the part a person sees, and wins where a person edited it; a plan
+              from before plans were JSON has only `plan.md`. Where it and the
               feedback disagree, the feedback wins: it is newer, and somebody wrote it after
               seeing the code. Its items are numbered `S1` for a step, `R1` for a risk, `U1`
               for an unknown or an assumption, `C1` for a check that proves the work is done

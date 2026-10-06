@@ -75,26 +75,26 @@ what the last plan recorded, which is how you correct a plan written against the
 
 ## How the plan is numbered
 
-The plan opens with one plain-English paragraph on what is to be done, then the sections below, in
-this order.
+You see a short summary of what is to be done, the questions that need your decision, the step
+titles and the QA criteria. The whole plan - every step's detail, the reasons behind each risk, the
+checks - is folded underneath as JSON, which is what the agents work from.
 
 Every item carries an id, and feedback can use it - "S4 and S5 are the wrong way round" lands
 precisely without quoting a paragraph back:
 
 | Prefix | Section | What it is |
 |---|---|---|
-| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong. The section is only there when the developer has something to act on |
-| `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
-| `S1`, `S2` | Steps | The work, in the order it should be done |
+| `R1`, `R2` | Needs your decision | Something that could go wrong. Only its question is shown, and only when there is one |
+| `U1`, `U2` | Needs your decision | Something the agent could not determine, or is assuming |
+| `S1`, `S2` | Steps | The work, in the order it should be done. The title is shown, the detail is folded |
 | `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. `None - ` and a reason when the change is not meant to change anything for users |
-| `C1`, `C2` | Checks, folded away | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
+| `C1`, `C2` | The folded plan | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 
 **Ids are stable across revisions.** An item that survives keeps its number even if it was
-reworded, new work takes the next number the plan has never used, and a dropped one is struck
-through on the single `Retired:` line at the end of the steps rather than renumbered away - so gaps
-are normal, and steps are listed in the order to work in rather than in numeric order. The workflow
-keeps that line: an id the previous plan had and the revision neither keeps nor retires is retired
-for it.
+reworded, new work takes the next number the plan has never used, and a dropped one is listed as
+retired in the folded plan rather than renumbered away - so gaps are normal, and steps are listed in
+the order to work in rather than in numeric order. An id the previous plan had and the revision
+neither keeps nor retires is retired for it.
 
 ## Adjusting the plan
 
@@ -167,8 +167,8 @@ an unknown in the plan.
 
 The step is read-only in two independent ways: the job holds `contents: read`, and the editing and
 shell tools are switched off. The one file it may write is the plan itself, `.ai-plan/new-plan.json`,
-which the workflow renders into the comment and carries in it as hidden data for the next revision. If you extend this workflow, keep `contents: read` - it
-does more work than the tool list.
+which the workflow lays out and folds into the comment for the agents and the next revision. If you
+extend this workflow, keep `contents: read` - it does more work than the tool list.
 
 ### When a run goes wrong
 
