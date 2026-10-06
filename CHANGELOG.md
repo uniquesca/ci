@@ -1394,3 +1394,29 @@
 ## v11.20.13
 
 * Fix: restored clover.xml coverage report generation to ensure coverage badge can be created (df2feb1 by George Shestayev)
+
+## v11.21.0
+
+* Depr: AI Implement's `review_check_patterns` does nothing and will be removed in v12 (6878b16 by George Shestayev)
+* Fix: AI Plan writes QA criteria only for changes users are meant to see (f96bdf8 by George Shestayev)
+* Fix: AI Implement's automatic rounds wait for the AI review before they run (6878b16 by George Shestayev)
+* Fix: AI agents get the list of shared workflows again (6878b16 by George Shestayev)
+* Fix: AI Review no longer says the loop stopped on rounds people started (6878b16 by George Shestayev)
+* Fix: AI failure comments say why the run stopped and how to retry (6878b16 by George Shestayev)
+* Fix: the AI caller examples use the organisation's variable and secret names (6878b16 by George Shestayev)
+* Fix: Prepare Release sets the composer.json version in the repository root (6878b16 by George Shestayev)
+* New: `ai-render-plan` checks a plan written as JSON and lays it out (f96bdf8 by George Shestayev)
+* New: `ai-render-report` lays out the implementing agent's report and keeps its status on the pull request (f0c54e4 by George Shestayev)
+* New: `ai-style-guide` holds the writing rules the AI agents follow (8ce7f94 by George Shestayev)
+* New: the AI workflows react 👀 to a command they pick up, then 🚀 or 😕 when they finish (0102510 by George Shestayev)
+* New: a misplaced AI command gets a one-line hint on how to run it (0102510 by George Shestayev)
+* New: AI comments link to their run and to what the agent was given (0102510 by George Shestayev)
+* New: a round comment warns when the branch conflicts with its base (0102510 by George Shestayev)
+* Update: AI pull request descriptions put reviewer notes and QA first and fold the rest, and AI reviews keep findings inline (15ae7d5 by George Shestayev)
+* Update: AI Plan writes the plan as JSON, with ids that stay the same across revisions (f96bdf8 by George Shestayev)
+* Update: AI Implement writes a structured report for the pull request description and round comments (f0c54e4 by George Shestayev)
+* Update: AI Review rates each finding blocking, should fix or nit, and only blocking requests changes (8ce7f94 by George Shestayev)
+* Update: a round started by a failing check names the workflow that started it (0102510 by George Shestayev)
+* Update: the AI caller examples name their runs with `run-name:` (0102510 by George Shestayev)
+* Update: AI Implement acts on failing checks even when the AI review approves (6878b16 by George Shestayev)
+* Update: improved default coverage report path (db3b959 by George Shestayev)
