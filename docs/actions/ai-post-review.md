@@ -65,9 +65,10 @@ saying so - the inline comments survive a comment review perfectly well.
 The agent writes `headline`, one sentence, and `findings`, each with a `severity` of `blocking`,
 `should` or `nit`, a `title`, a `body`, and optionally `path`, `line` and `refs` (plan ids). One
 blocking finding requests changes; anything else comments. Approving is not an option - merging is a
-person's decision. `src/ai-review.js` lays the body out: the headline, then the findings grouped by
-severity, then `qa_focus` as one line. Anything malformed is normalised or dropped with a warning,
-never allowed to fail the review.
+person's decision. `src/ai-review.js` lays the body out: the headline, a count of the inline
+comments by severity, the findings that could not go inline grouped by severity, then `qa_focus` as
+one line. Anything malformed is normalised or dropped with a warning, never allowed to fail the
+review.
 
 ### Inline comments, and why some are not
 

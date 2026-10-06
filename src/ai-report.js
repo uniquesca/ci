@@ -15,15 +15,17 @@ const MAX_ITEMS = 40;
 const REPORT_MAX = 12000;
 // What goes first when the report is too long: the check results, and the questions for a person
 // last of all
-const LEAVE_OUT_ORDER = ['verification', 'done', 'not_done', 'decisions'];
+const LEAVE_OUT_ORDER = ['verification', 'done', 'notes', 'not_done', 'decisions'];
 
 // Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
 // a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
 function clip(value, max) {
     const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
     // `<!--` in the agent's text could open a hidden comment, or close the status block early
-    // and leave the next round's replacement half done
-    const flat = text.replace(/\s+/g, ' ').replace(/<!--/g, '&lt;!--').trim();
+    // and leave the next round's replacement half done. A `<details>` or `<summary>` tag could
+    // fold away what a reviewer should see, or unfold what is folded.
+    const flat = text.replace(/\s+/g, ' ').replace(/<!--/g, '&lt;!--')
+        .replace(/<(\/?(?:details|summary)\b)/gi, '&lt;$1').trim();
     return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat;
 }
 
@@ -76,6 +78,11 @@ export function normaliseReport(raw) {
         return what && { what, refs: refs(item) };
     });
 
+    const notes = list(leftOut, report.notes, problems, 'notes', (item) => {
+        const note = clip(item?.note, 400);
+        return note && { note, refs: refs(item) };
+    });
+
     const notDone = list(leftOut, report.not_done, problems, 'not_done', (item) => {
         const what = clip(item?.what, 300);
         return what && { what, why: clip(item.why, 400), refs: refs(item) };
@@ -101,7 +108,7 @@ export function normaliseReport(raw) {
         return ask && { ask, refs: refs(item) };
     });
 
-    const result = { headline, done, not_done: notDone, verification, decisions, left_out: leftOut.count };
+    const result = { headline, done, notes, not_done: notDone, verification, decisions, left_out: leftOut.count };
     while (Buffer.byteLength(JSON.stringify(result)) > REPORT_MAX) {
         const name = LEAVE_OUT_ORDER.find((list) => result[list].length);
         if (!name) {
@@ -117,7 +124,13 @@ export function normaliseReport(raw) {
     return { report: result, problems };
 }
 
-// Under the status block, the headline and the open decisions are already said above it.
+function folded(summary, content) {
+    return `<details>\n<summary>${summary}</summary>\n\n${content}\n\n</details>`;
+}
+
+// In two parts: `body` is what a reviewer reads first, and `details` is folded away, since the diff
+// and the checks say it too. The caller puts the QA criteria between them. Under the status block,
+// the headline and the open decisions are already said above it.
 export function renderReport(report, { underStatus = false } = {}) {
     const parts = [];
 
@@ -125,8 +138,8 @@ export function renderReport(report, { underStatus = false } = {}) {
         parts.push(`**${report.headline}**`);
     }
 
-    if (report.done.length) {
-        parts.push('**Done**\n\n' + report.done.map((d) => `- ${d.what}${refsText(d.refs)}`).join('\n'));
+    if (report.notes.length) {
+        parts.push('**For the reviewer**\n\n' + report.notes.map((n) => `- ${n.note}${refsText(n.refs)}`).join('\n'));
     }
 
     if (report.not_done.length) {
@@ -135,21 +148,32 @@ export function renderReport(report, { underStatus = false } = {}) {
             .join('\n'));
     }
 
-    if (report.verification.length) {
-        parts.push('**Verified**\n\n| Check | Result | |\n|---|---|---|\n' + report.verification
-            .map((v) => `| \`${cell(v.command)}\` | ${RESULTS[v.result]} | ${cell(v.note)} |`)
-            .join('\n'));
-    }
-
     if (!underStatus && report.decisions.length) {
         parts.push('**Needs a decision**\n\n' + report.decisions.map((d) => `- ${d.ask}${refsText(d.refs)}`).join('\n'));
     }
 
-    if (report.left_out) {
-        parts.push(`${report.left_out} more item(s) did not fit. All of them are in \`report.json\`, in the run's \`ai-context-implement\` download.`);
+    const details = [];
+
+    if (report.done.length) {
+        details.push(folded(`What changed (${report.done.length})`,
+            report.done.map((d) => `- ${d.what}${refsText(d.refs)}`).join('\n')));
     }
 
-    return parts.join('\n\n');
+    if (report.verification.length) {
+        const counts = Object.keys(RESULTS)
+            .map((result) => [report.verification.filter((v) => v.result === result).length, RESULTS[result]])
+            .filter(([count]) => count)
+            .map(([count, label]) => `${count} ${label}`);
+        details.push(folded(`Checks: ${counts.join(', ')}`, '| Check | Result | |\n|---|---|---|\n' + report.verification
+            .map((v) => `| \`${cell(v.command)}\` | ${RESULTS[v.result]} | ${cell(v.note)} |`)
+            .join('\n')));
+    }
+
+    if (report.left_out) {
+        details.push(`${report.left_out} more item(s) did not fit. All of them are in \`report.json\`, in the run's \`ai-context-implement\` download.`);
+    }
+
+    return { body: parts.join('\n\n'), details: details.join('\n\n') };
 }
 
 // The block at the top of the pull request. It carries the report itself as hidden data, so the

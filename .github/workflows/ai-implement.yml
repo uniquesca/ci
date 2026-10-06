@@ -2576,6 +2576,7 @@ jobs:
             {
               "headline": "One sentence: where the work stands.",
               "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
+              "notes": [{"note": "The fixer's edits and the hand edits are in one commit", "refs": ["S4"]}],
               "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
               "verification": [{"command": "composer test", "result": "pass", "note": "212 tests"}],
               "decisions": [{"ask": "Keep the old endpoint for one release?", "refs": ["U2"]}]
@@ -2583,8 +2584,10 @@ jobs:
             ```
 
             - `headline` - where the work stands, in one sentence.
-            - `done` - what changed, one line per change a reviewer would recognise. Not
-              every file, and not the plan retold.
+            - `done` - what changed, one short line per change a reviewer would recognise, ten
+              at most. Not every file, and not the plan retold - the reviewer reads the diff.
+            - `notes` - what a reviewer needs to know before reading the diff and cannot see in
+              it, such as where to look closely. Not what changed.
             - `not_done` - anything in the plan you did not do, did differently or left
               unfinished, and why.
             - `verification` - every check you ran, with `result` `pass`, `fail` or
@@ -2761,6 +2764,7 @@ jobs:
             {
               "headline": "One sentence: where the work stands.",
               "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
+              "notes": [{"note": "The fixer's edits and the hand edits are in one commit", "refs": ["S4"]}],
               "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
               "verification": [{"command": "composer test", "result": "pass", "note": "212 tests"}],
               "decisions": [{"ask": "Keep the old endpoint for one release?", "refs": ["U2"]}]
@@ -2768,7 +2772,10 @@ jobs:
             ```
 
             - `headline` - where the pull request stands after this round, in one sentence.
-            - `done` - what you changed this round, one line each. Not earlier rounds.
+            - `done` - what you changed this round, one short line each, ten at most. Not
+              earlier rounds.
+            - `notes` - what a reviewer needs to know before reading this round's diff and cannot
+              see in it. Not what changed.
             - `not_done` - feedback you declined or could not finish, and why. An item whose
               thread you answered in `replies.json` is covered there; do not repeat it here.
             - `verification` - every check you ran this round, with `result` `pass`, `fail` or
@@ -3274,6 +3281,7 @@ jobs:
           # The agent's rendered report, carrying the held-back workflow patch where the step
           # that held it back appended one
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
+          DETAILS_FILE: ${{ steps.render.outputs.details_file }}
           STATUS_FILE: ${{ steps.render.outputs.status_file }}
           COMMAND: ${{ inputs.command }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
@@ -3329,9 +3337,10 @@ jobs:
                 printf '\n'
               fi
               # Empty here, filled in by the step below. Printing the pair is how this decides
-              # where the QA criteria go - under what the agent did, above the review
-              # instructions, which is where somebody about to test the change will look.
+              # where the QA criteria go - under the notes for the reviewer and above the folded
+              # details, where somebody about to test the change will look.
               printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
+              [[ -n "$DETAILS_FILE" && -f "$DETAILS_FILE" ]] && printf '%s\n\n' "$(cat "$DETAILS_FILE")"
               printf -- '---\n\n'
               printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n\n'
               # This workflow's own command, said on the pull request rather than only in the
@@ -3516,6 +3525,7 @@ jobs:
           # The agent's rendered report, carrying the held-back workflow patch where the step
           # that held it back appended one
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
+          DETAILS_FILE: ${{ steps.render.outputs.details_file }}
           USAGE: ${{ steps.report.outputs.summary }}
           CHECKS_WORKFLOW: ${{ github.event.workflow_run.name }}
           COMMAND: ${{ inputs.command }}
@@ -3569,6 +3579,7 @@ jobs:
             else
               printf 'The agent finished without a summary of this round. The run log has what it did.\n'
             fi
+            [[ -n "$DETAILS_FILE" && -f "$DETAILS_FILE" ]] && printf '\n%s\n' "$(cat "$DETAILS_FILE")"
 
             printf '\n\n'
             printf -- '---\n\n'
