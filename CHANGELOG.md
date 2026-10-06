@@ -1431,3 +1431,7 @@
 * Update: AI pull request descriptions open with links and a summary, and end with What's next (3f4f994 by George Shestayev)
 * Update: AI Review lists findings by severity with a colour-coded count, linked to its inline comments (3f4f994 by George Shestayev)
 * Update: AI plans ask only what they cannot settle, use one heading style and leave out empty QA (f1567b8 by George Shestayev)
+
+## v11.21.3
+
+* Fix: QA criteria starting with "None" are kept, and comments say what the code does (eb5d083 by George Shestayev)
