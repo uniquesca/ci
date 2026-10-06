@@ -1,7 +1,7 @@
 # AI post review
 
-Submits the review a reviewing agent wrote as a real Github review, with its inline comments
-validated against the lines the diff actually has.
+Renders the findings a reviewing agent wrote into a Github review and submits it - the verdict
+derived from their severity, each placed inline where the diff has its line.
 
 Used by [`ai-review`](../ai/ai-review.md).
 
@@ -23,13 +23,13 @@ Used by [`ai-review`](../ai/ai-review.md).
 | `repository` | yes | | Repository the pull request belongs to, in `owner/name` form |
 | `token` | yes | | Github token the review is submitted with. **Neither `GITHUB_TOKEN` nor the app that opened the pull request** - see below |
 | `head_sha` | yes | | Commit the review is submitted against |
-| `review_file` | no | `.ai-review/review.json` | File the agent wrote: an object with `verdict`, `summary` and `comments` |
+| `review_file` | no | `.ai-review/review.json` | File the agent wrote: an object with `headline`, `findings` and `qa_focus` - see below |
 | `diff_file` | no | `.ai-review/diff.patch` | The unified diff the agent reviewed. Every inline comment is checked against it |
 | `marker` | no | `<!-- ai-review -->` | Hidden first line of the review body |
-| `footer` | no | | Markdown added under a rule at the end of the review body. Inline comments that could not be placed are counted at the end of it |
+| `footer` | no | | Markdown added under a rule at the end of the review body |
 | `cost` | no | | Hidden last line of the review body, the `cost_line` output of [`ai-run-report`](ai-run-report.md) - what the run cost, where a cost report can read it back |
-| `max_comments` | no | `30` | How many inline comments one review may carry |
-| `max_length` | no | `4000` | Longest inline comment body, in characters. Anything over is truncated rather than dropped |
+| `max_comments` | no | `30` | How many findings one review may place inline |
+| `max_length` | no | `1500` | Longest finding body, in characters. Anything over is truncated rather than dropped |
 
 ## Outputs
 
@@ -37,9 +37,10 @@ Used by [`ai-review`](../ai/ai-review.md).
 |---|---|
 | `submitted` | Whether a review was submitted - `true` or `false` |
 | `event` | What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Empty when nothing was |
-| `verdict` | The verdict the agent asked for - `changes_requested` or `comment` |
+| `verdict` | `changes_requested` when a finding is blocking, `comment` otherwise |
 | `comments_posted` | How many inline comments the submitted review carries |
-| `comments_dropped` | How many inline comments were rejected before submitting |
+| `comments_dropped` | How many findings named a line but went into the body instead - off the diff, or over the cap |
+| `body_file` | The rendered review body, for a caller to post when the review could not be submitted |
 
 ## Dig deeper
 
@@ -59,29 +60,34 @@ they fail differently:
 When it happens anyway the verdict is downgraded to a comment rather than lost, with a warning
 saying so - the inline comments survive a comment review perfectly well.
 
-### Approving is not an option
+### The review file, and the verdict
 
-Only `changes_requested` and `comment` are meaningful verdicts; merging is a person's decision. An
-unknown verdict is submitted as a comment, with a warning.
+The agent writes `headline`, one sentence, and `findings`, each with a `severity` of `blocking`,
+`should` or `nit`, a `title`, a `body`, and optionally `path`, `line` and `refs` (plan ids). One
+blocking finding requests changes; anything else comments. Approving is not an option - merging is a
+person's decision. `src/ai-review.js` lays the body out: the headline, a count of the inline
+comments by severity, the findings that could not go inline grouped by severity, then `qa_focus` as
+one line. Anything malformed is normalised or dropped with a warning, never allowed to fail the
+review.
 
-### Inline comments, and why some go missing
+### Inline comments, and why some are not
 
-**Github rejects the entire review - summary, every comment, the lot - if one inline comment names a
-line the diff does not contain.** So the acceptable positions are worked out here from `diff_file`
-and the bad comments are dropped, rather than finding out on submit and losing the review.
+**Github rejects the entire review - body, every comment, the lot - if one inline comment names a
+line the diff does not contain.** So the acceptable positions are worked out here from `diff_file`,
+and a finding whose line is not one of them - or that is over `max_comments` - goes into the review
+body with its text instead of inline.
 
 A comment may sit on any line of a hunk on the `RIGHT` side - added lines and context lines,
-numbered in the new file. Comments are also dropped for an empty body, a non-numeric line, or being
-over `max_comments`. Every dropped one is named in the log.
-
-With no `diff_file` at all, the summary is submitted on its own.
+numbered in the new file. With no `diff_file` at all, every finding goes into the body.
 
 ### It does not fail the run
 
 A review that could not be submitted is a warning and an output the caller acts on, since the caller
-still has the agent's summary to post as a plain comment. The fallbacks, in order: as asked;
+still has `body_file` to post as a plain comment. The fallbacks, in order: as asked;
 downgraded to a comment if Github said "your own pull request"; without the inline comments; as a
-comment without them.
+comment without them. Without the inline comments, the body carries every finding's text, and so
+does `body_file`. A body too long for Github loses the text of its least severe findings first, and
+then the findings themselves, with a line saying how many were left out.
 
 `head_sha` is pinned explicitly so that a push which landed since the diff was taken makes the review
 outdated rather than silently misplaced.

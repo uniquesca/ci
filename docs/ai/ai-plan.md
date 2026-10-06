@@ -13,6 +13,8 @@ share is in [AI assisted development](../ai.md#integrating-a-repository).
 
 ```yaml
 name: AI Plan
+# Every comment starts a run, so without this the Actions list cannot tell them apart
+run-name: 'AI Plan #${{ github.event.issue.number }}'
 
 on:
   issue_comment:
@@ -43,14 +45,15 @@ jobs:
     secrets:
       # The agent plans against this project's dependencies. Pass whichever of the two
       # ecosystems this repository has private packages in
-      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.GHA_PRIVATE_ACCESS_TOKEN }}
 ```
 
 ## Triggering the planner
 
 Comment `/ai-plan` on an issue, with the command at the very beginning. **The issue body is what
-gets planned** - prose typed after the command is ignored, so put the task in the issue. Only
+gets planned.** Text after the command is read like any other comment - feedback on the previous
+plan, or a steer for the first one - so put the task itself in the issue. Only
 collaborators with admin or write access can run it, and the plan comes back as a single comment a
 few minutes later.
 
@@ -83,18 +86,20 @@ precisely without quoting a paragraph back:
 | `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong. The section is only there when the developer has something to act on |
 | `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
 | `S1`, `S2` | Steps | The work, in the order it should be done |
-| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. `None - ` and a reason when nothing can be tested from outside |
+| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. `None - ` and a reason when the change is not meant to change anything for users |
 | `C1`, `C2` | Checks, folded away | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 
 **Ids are stable across revisions.** An item that survives keeps its number even if it was
 reworded, new work takes the next number the plan has never used, and a dropped one is struck
-through on the single `Retired:` line at the end of the steps rather than renumbered away - so gaps are normal, and
-steps are listed in the order to work in rather than in numeric order.
+through on the single `Retired:` line at the end of the steps rather than renumbered away - so gaps
+are normal, and steps are listed in the order to work in rather than in numeric order. The workflow
+keeps that line: an id the previous plan had and the revision neither keeps nor retires is retired
+for it.
 
 ## Adjusting the plan
 
-Three ways, depending on how wrong it is. **A small correction** - edit the comment; there is no
-second copy, so editing the markdown is editing the plan. **Feedback and revision** - say what you
+Three ways, depending on how wrong it is. **A small correction** - edit the comment. The
+implementing agent reads the comment as it stands, and the next revision starts from it. **Feedback and revision** - say what you
 want in the thread and run `/ai-plan` again; the agent takes the most recent plan as its starting
 point and applies what was asked for after it was posted, so parts nobody objected to survive.
 **The task itself was wrong** - edit the issue body and run `/ai-plan` again.
@@ -160,8 +165,9 @@ ranges each one declares - which is what lets a plan for an upgrade name a versi
 step to go and find one. Public packages are not in there, and a question about one of those stays
 an unknown in the plan.
 
-The step is read-only in two independent ways: the job holds `contents: read`, and the editing,
-writing and shell tools are switched off. If you extend this workflow, keep `contents: read` - it
+The step is read-only in two independent ways: the job holds `contents: read`, and the editing and
+shell tools are switched off. The one file it may write is the plan itself, `.ai-plan/new-plan.json`,
+which the workflow renders into the comment and carries in it as hidden data for the next revision. If you extend this workflow, keep `contents: read` - it
 does more work than the tool list.
 
 ### When a run goes wrong

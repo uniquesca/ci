@@ -54,6 +54,7 @@ runs:
         DIR: ${{ inputs.directory }}
       run: |
         mkdir -p "$DIR"
+        tmp_comments="$RUNNER_TEMP/ai-stage-issue-comments.json"
 
         gh api "repos/$GH_REPO/issues/$ISSUE" \
           --jq '{number, title, body}' > "$DIR/issue.json"
@@ -63,9 +64,16 @@ runs:
         #
         # `is_bot` is what tells a comment the workflow posted apart from one someone
         # pasted by hand - agents are told to trust only the former
+        #
+        # A plan carries itself as hidden JSON - see `src/ai-plan.js`. It is staged once, as
+        # `plan.json` below, and taken out of every body here: it is thousands of characters an
+        # agent would otherwise read on every turn.
         gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
-          | jq 'flatten | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, url: .html_url, body})' \
-          > "$DIR/comments.json"
+          | jq 'flatten | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, url: .html_url,
+                              body, plan_data: ((.body // "") | capture("<!-- ai-plan-data:(?<d>[A-Za-z0-9+/=]+) -->").d // null)})' \
+          > "$tmp_comments"
+        jq 'map(del(.plan_data) | .body |= gsub("\\n?<!-- ai-plan-data:[A-Za-z0-9+/=]+ -->"; ""))' \
+          "$tmp_comments" > "$DIR/comments.json"
 
         # Github does not allow newlines in an issue title, but strip them anyway rather
         # than risk a malformed step output
@@ -81,9 +89,14 @@ runs:
         # what the `-s` check below is reading.
         plan_comment="$RUNNER_TEMP/ai-stage-issue-plan.json"
         jq 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->")))) | last // {}' \
-          "$DIR/comments.json" > "$plan_comment"
+          "$tmp_comments" > "$plan_comment"
 
-        jq -r '.body // empty' "$plan_comment" > "$DIR/plan.md"
+        jq -r '.body // empty | gsub("\\n?<!-- ai-plan-data:[A-Za-z0-9+/=]+ -->"; "")' "$plan_comment" > "$DIR/plan.md"
+
+        # The plan as JSON, where it was posted with it. A plan from before carries none.
+        rm -f "$DIR/plan.json"
+        jq -r '.plan_data // empty' "$plan_comment" | base64 -d 2> /dev/null | jq '.' > "$DIR/plan.json" 2> /dev/null || true
+        [[ -s "$DIR/plan.json" ]] || rm -f "$DIR/plan.json"
 
         if [[ -s "$DIR/plan.md" ]]; then
           has_plan='true'

@@ -19,6 +19,8 @@ and to `/ai-review`. The setup all three share is in
 
 ```yaml
 name: AI Review
+# A dispatched review is otherwise titled `ai-review`, whichever pull request it is for
+run-name: 'AI Review #${{ github.event.client_payload.pull_request || github.event.issue.number }}'
 
 on:
   # What an implementing round sends when it has pushed
@@ -47,7 +49,7 @@ jobs:
       anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
       anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
     secrets:
-      AI_REVIEW_APP_ID: ${{ secrets.AI_REVIEW_APP_ID }}
+      AI_REVIEW_APP_ID: ${{ vars.AI_REVIEW_APP_ID }}
       AI_REVIEW_PRIVATE_KEY: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
 ```
 
@@ -143,7 +145,7 @@ resolved, and every review delivered on the branch before this round, its own in
 thread stands whatever the agent makes of the code. Only the code under it moving reopens one, and
 the inline comment then has to say what moved. An approval is a baseline: the reviewer still runs,
 but it is handed the diff since the approved commit. A finding inside code already accepted has to
-be a real defect, and the summary has to say it is raised against an approval.
+be a real defect, and the finding has to say it is raised against an approval.
 
 Where there is no plan, the pull request's own title and description are the specification, and a
 closing keyword in that description is followed to the issue behind it - so one saying `Closes
@@ -156,11 +158,10 @@ wrote from it.
 
 ### Inline comments, and why some go missing
 
-Github rejects an **entire** review - summary, verdict and every comment - if one comment names a
-line the diff does not contain, so the workflow drops comments that cannot anchor to an added or
-context line inside a hunk, and names them in the run log. If Github still refuses, the review
-degrades rather than disappears: without inline comments, then as a plain comment review, then as
-an ordinary comment. The summary is never lost.
+Github rejects an **entire** review if one comment names a line the diff does not contain, so a
+finding that cannot anchor to an added or context line inside a hunk goes into the review body
+instead. If Github still refuses, the review degrades rather than disappears: without inline
+comments, then as a plain comment review, then as an ordinary comment.
 
 ### Making the loop terminate
 

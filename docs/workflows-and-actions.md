@@ -141,6 +141,11 @@ out.
 | [`ai-post-review-replies`](actions/ai-post-review-replies.md) | Posts an agent's answer to each review thread it was given |
 | [`ai-qa-criteria`](actions/ai-qa-criteria.md) | Copies the plan's QA acceptance criteria into the pull request body, and keeps them in step with the plan |
 | [`ai-run-report`](actions/ai-run-report.md) | Reads an agent execution log - the final message, the cost, and why the run stopped |
+| [`ai-react`](actions/ai-react.md) | Reacts on the comment or review that started an AI run, to show it was picked up and how it ended |
+| [`ai-command-hint`](actions/ai-command-hint.md) | Answers an AI command that will not run, because it is not at the start of the comment or is on the wrong page |
+| [`ai-style-guide`](actions/ai-style-guide.md) | The writing rules every AI agent's prompt carries |
+| [`ai-render-report`](actions/ai-render-report.md) | Renders an implementing agent's report into the pull request, and keeps the status at its top current |
+| [`ai-render-plan`](actions/ai-render-plan.md) | Checks a plan's ids against the plan before it, and renders it for the issue |
 
 ## Pinning a version
 
@@ -152,7 +157,7 @@ the tip, for a repository whose CI you are actively working on.
 
 ## Not on this page
 
-`.github/workflows` also holds this repository's own CI - `self-tests.yml`,
+`.github/workflows` also holds this repository's own CI - `self-qa-checks.yml`,
 `self-prepare-release.yml`, `self-github-release.yml`, `self-ai-cost-report.yml`,
 `build-docker-images.yml` and `update-current-version.yml`. None of them declares
 `on: workflow_call`, so **none of them can be called from another repository.** They are here to

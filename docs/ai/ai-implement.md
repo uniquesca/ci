@@ -13,6 +13,9 @@ all three share is in [AI assisted development](../ai.md#integrating-a-repositor
 
 ```yaml
 name: AI Implement
+# Every comment, review and finished check starts a run, so without this the Actions list cannot
+# tell them apart
+run-name: "AI Implement ${{ github.event.workflow_run.head_branch || format('#{0}', github.event.issue.number || github.event.pull_request.number) }}"
 
 on:
   issue_comment:
@@ -57,15 +60,15 @@ jobs:
       dispatch_review: true
     secrets:
       # This one pushes and opens pull requests, so it needs an app of its own
-      AI_IMPLEMENT_APP_ID: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+      AI_IMPLEMENT_APP_ID: ${{ vars.AI_IMPLEMENT_APP_ID }}
       AI_IMPLEMENT_PRIVATE_KEY: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
       # Rendered into this project's config templates to spin the Docker sandbox up. The
       # agent has a shell there, so give it a test environment's and never production's
       ENV_VARIABLES: ${{ secrets.ENV_VARIABLES }}
       # The agent works from this project's dependencies. Pass whichever of the two
       # ecosystems this repository has private packages in
-      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
-      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.GHA_PRIVATE_ACCESS_TOKEN }}
 ```
 
 ## Starting the work
@@ -123,11 +126,12 @@ run.
 **Comment `/ai-do` on the pull request.** For when you would rather say what you want in prose, or
 re-run with nothing new to say.
 
-An **approved** or plain **commented** review deliberately does nothing. Requesting changes is a
+An **approved** or plain **commented** review from a person deliberately does nothing. Requesting changes is a
 decision; a passing remark is not.
 
 Each round ends with the agent pushing to the same branch, **replying to every thread it was
-given**, and posting one summary comment. It replies even to the comments it decided against -
+given**, posting one round comment, and rewriting the status at the top of the pull request - where
+it stands, and what is waiting on a decision. It replies even to the comments it decided against -
 "I did not do this, because X" is where you find out you disagree.
 
 ### What to do with a reply
@@ -219,7 +223,9 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `dispatch_review` | boolean | `false` | Ask [`ai-review`](ai-review.md) to look at the work as soon as it is pushed, with a `repository_dispatch` event. Turn it on only once a workflow is subscribed to that event |
 | `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
-| `review_check_patterns` | string | `ai.review` | Case-insensitive regular expression matching the reviewing agent's own check runs, used by the [wait](#what-starts-a-round-and-what-it-reads). Deliberately separate from `ignore_check_patterns` - the gate has to see what the feedback must not |
+| `review_label` | string | `ai:reviewing` | The reviewing agent's `progress_label`, put on the pull request when a review is dispatched and looked for by the [wait](#what-starts-a-round-and-what-it-reads). Empty never waits for the reviewer |
+| `review_label_minutes` | number | `60` | How long the reviewer's label counts as a review still coming. Older, a round takes it off and goes ahead. Keep it above the reviewing workflow's `timeout_minutes` plus queue time |
+| `review_check_patterns` | string | `''` | Deprecated, does nothing, and warns when set. Will be removed in v12 |
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [what it is given to check with](#what-the-agent-is-given-to-check-with). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
 | `docker_profile` | string | `''` | Docker Compose profile to bring up, for a repository whose test services are behind one |
@@ -253,9 +259,13 @@ there are none and to leave it that way, and verifies by reading and names what 
 ### What starts a round, and what it reads
 
 After a round pushes, your QA workflows and the reviewing agent run in parallel and finish in either
-order, so each one starting a round asks Github whether the other is still reporting on that commit:
-the first to finish exits having posted nothing, and the second runs the round with both sets of
-feedback. There is no handshake between them, so a duplicated or lost trigger cannot wedge it, and
+order, so each one starting a round asks Github whether the other is still working - checks still
+reporting on the commit, or the reviewer's label still on the pull request with no review of the
+commit posted yet. The label goes on before the review is dispatched and counts for
+`review_label_minutes`. The first to finish exits having posted nothing, and the second runs the
+round with both sets of feedback. The reviewing agent's review starts it whatever its state, so red
+checks are still acted on when it approves - and that round, like one the checks start, only runs
+for something asking for a change. There is no handshake between them, so a duplicated or lost trigger cannot wedge it, and
 nothing waits for a reviewer that was never dispatched. These rounds count as unattended against
 [the round cap](#the-round-cap), which is what stops the round → push → CI → round cycle running
 away. **`workflow_run` only fires when the workflow file containing it is on the default branch**,
@@ -283,6 +293,9 @@ record shows was settled, the round replies saying where it was settled and leav
 What the checks printed reaches the round only where a check went red: a report is kept for a
 failing check, deleted for a passing one and capped at 200 KB, so `.ai-reports/` holds failures and
 nothing else, and an all-green run uploads no artifact at all.
+
+The round is also handed what the previous run reported, read back out of the status block, so it
+starts from where the last run said things stand.
 
 Every round uploads all of it as an `ai-context-implement` artifact, together with the replies the
 agent wrote and the check reports it read.

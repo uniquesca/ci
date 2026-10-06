@@ -8,13 +8,30 @@ release makes. **Your commit message is the changelog entry.** Prefix it `BREAKI
 `Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
 holds for every Uniques repository, not only this one.
 
+## Keep `ROADMAP.md` up to date
+
+`ROADMAP.md` is the list of what is planned and what is done. Mark an item done in the pull request
+that finishes it, and add what you find that still needs doing. Write it in plain, simple English.
+
+## Checking a change before the pull request
+
+Read what you wrote as if somebody else wrote it, and go through this on every change:
+
+- **Waits and handoffs.** Anything that waits on another run, or hands work to one: what happens if
+  the other side is slow, still queued, or never starts? Follow it across both files.
+- **Commands the user is told to type.** "Comment `/ai-do` to try again" must give back the same
+  request, arguments included.
+- **Names that changed.** For any input, output, label or behaviour you changed, grep `docs/` and
+  the other workflows for its name.
+- **Comments are claims.** A comment saying something is safe is what you are checking, not proof.
+
 ## Moving to the next major version
 
 The workflows and actions reference each other at the active version branch, so a caller on it
 stays inside its code. `bin/pin-ci-version.sh v12` moves the repository: it rewrites every
 reference and `VERSION_BRANCH` in `update-current-version.yml`, and lists the versions in prose for
-you to judge by hand. Create the `v12` branch off `main` in the same change. `self-tests.yml` fails
-on a reference left behind, so a new action added at `@main` does not get past a pull request.
+you to judge by hand. Create the `v12` branch off `main` in the same change. `self-qa-checks.yml`
+fails on a reference left behind, so a new action added at `@main` does not get past a pull request.
 A reference that belongs off the branch carries `# pin-ci-version: skip` and a comment saying why.
 
 ## Changing the default model
@@ -42,7 +59,9 @@ comment does not earn its place, leave it out.
 # Documentation
 
 Everything under `docs/` is laid out the same way: task-oriented sections first, then a single
-`## Dig deeper` heading, then the detail.
+`## Dig deeper` heading. Anything that is not straightforward goes under it, so it does not
+overwhelm somebody who only wants to get going. A page where everything is straightforward has no
+`## Dig deeper`.
 
 **Keep the sections above `## Dig deeper` terse.** They exist to get somebody running, and every
 sentence added to them costs the reader something. Caveats, rationale, failure modes, "why it is
@@ -80,7 +99,9 @@ it: what feels load-bearing while the implementation is fresh reads as padding t
 the page for the first time. The same applies to explaining the change in conversation.
 
 One page per reusable workflow under `docs/workflows/` and per action under `docs/actions/`, each
-title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper`.
+title, description, `## Inputs` and `## Outputs` tables, then `## Dig deeper` for anything that is
+not straightforward. A workflow page also has a `## Secrets` table; an action takes no secrets, only
+inputs, so its page has none.
 Both are listed in `docs/workflows-and-actions.md` - **add a new workflow or action to that page**,
 or it exists without anybody being able to find it. `docs/qa-checks.md` and `docs/ai/*.md` cover
 several workflows at once and are the exception; leave them that way.
@@ -93,6 +114,9 @@ table that has quietly fallen behind the YAML is worse than no table.
 `.github/workflows/ai-*.yml` explain themselves in comments, and those comments carry the
 reasoning rather than restating the YAML. Match that when editing them, and update the comment
 when the code under it changes.
+
+Run `actionlint` before pushing a workflow change. `self-qa-checks.yml` runs it on every pull
+request, and `.github/actionlint.yaml` lists what it lets through, each with the reason.
 
 Every workflow sets `defaults: run: shell: bash`. Naming the shell is what turns `pipefail` on -
 a `run:` step that leaves it unnamed gets errexit without it, so a failure anywhere upstream of a

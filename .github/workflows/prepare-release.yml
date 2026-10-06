@@ -92,10 +92,10 @@ on:
         required: false
         default: false
         type: boolean
-      coverage_report_dir:
-        description: 'Path to the directory for the coverage report - ignored if `generate_coverage_report` is not set to `true`'
+      coverage_report_file:
+        description: 'Path to the coverage report file - ignored if `generate_coverage_report` is not set to `true`'
         required: false
-        default: 'docs/coverage-report'
+        default: 'docs/coverage.md'
         type: string
 
 defaults:
@@ -153,15 +153,15 @@ jobs:
         run: |
           if [ -f "composer.json" ]; then
             echo "composer.json file exists — will inject version."
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check if we have PHPUnit
         run: |
           if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
-            echo "phpunit=1" >> $GITHUB_ENV
+            echo "phpunit=1" >> "$GITHUB_ENV"
           else
             echo "No PHPUnit configuration file found, skipping tests."
           fi
@@ -243,7 +243,6 @@ jobs:
 
       - name: Set Composer version in composer.json
         if: ${{ steps.check-composer.outputs.exists == 'true' }}
-        working-directory: ${{ inputs.working_directory }}
         run: |
           composer_version="${{ inputs.version }}"
           echo "Setting version in composer.json to $composer_version"
@@ -285,15 +284,14 @@ jobs:
       - name: Generate coverage report
         if: env.phpunit == 1 && inputs.generate_coverage_report
         env:
-          COVERAGE_REPORT_DIR: ${{ inputs.coverage_report_dir }}
+          COVERAGE_REPORT_FILE: ${{ inputs.coverage_report_file }}
         run: |
-          # Emptied first so a deleted file does not keep its report from the last release
-          rm -rf "$COVERAGE_REPORT_DIR"
-          mkdir -p "$COVERAGE_REPORT_DIR"
+          # Where the HTML report used to be written by default
+          git rm -rq --ignore-unmatch docs/coverage-report
+          mkdir -p "$(dirname "$COVERAGE_REPORT_FILE")"
 
-          # Markdown, because Github renders `README.md` when the directory is opened and shows
-          # HTML only as source
-          php -- clover.xml "$PWD/" > "$COVERAGE_REPORT_DIR/README.md" <<'PHP'
+          # Markdown, because Github renders it and shows HTML only as source
+          php -- clover.xml "$PWD/" > "$COVERAGE_REPORT_FILE" <<'PHP'
           <?php
           [, $clover, $root] = $argv;
           $xml = simplexml_load_file($clover) ?: exit(1);
@@ -383,7 +381,7 @@ jobs:
           fi
           
           if ${{ env.phpunit == 1 && inputs.generate_coverage_report == true }}; then
-            git add -A ${{ inputs.coverage_report_dir }}
+            git add ${{ inputs.coverage_report_file }}
           fi
           
           git clean -fd

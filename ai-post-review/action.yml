@@ -16,7 +16,7 @@ inputs:
     description: 'Commit the review is submitted against. Pinned explicitly so a push that landed since the diff was taken makes the review outdated rather than silently misplaced'
     required: true
   review_file:
-    description: 'File the agent wrote: an object with `verdict`, `summary` and `comments`'
+    description: 'File the agent wrote: an object with `headline`, `findings` and `qa_focus`. See `src/ai-review.js`'
     required: false
     default: '.ai-review/review.json'
   diff_file:
@@ -40,9 +40,9 @@ inputs:
     required: false
     default: 30
   max_length:
-    description: 'Longest inline comment body, in characters. Anything over is truncated rather than dropped'
+    description: 'Longest finding body, in characters. Anything over is truncated rather than dropped'
     required: false
-    default: 4000
+    default: 1500
 
 outputs:
   submitted:
@@ -52,14 +52,17 @@ outputs:
     description: 'What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Not always what was asked for: a rejected `REQUEST_CHANGES` is downgraded rather than lost'
     value: ${{ steps.review.outputs.event }}
   verdict:
-    description: 'The verdict the agent asked for - `changes_requested` or `comment`'
+    description: 'The verdict the findings call for - `changes_requested` when one is blocking, `comment` otherwise'
     value: ${{ steps.review.outputs.verdict }}
   comments_posted:
     description: 'How many inline comments the submitted review carries'
     value: ${{ steps.review.outputs.comments_posted }}
   comments_dropped:
-    description: 'How many inline comments were rejected before submitting - a line the diff does not have, an empty body, or over the cap'
+    description: 'How many findings named a line but were not placed inline - the line is not in the diff, or the cap was reached. They are in the review body instead'
     value: ${{ steps.review.outputs.comments_dropped }}
+  body_file:
+    description: 'The rendered review body, for a caller to post as a comment when the review could not be submitted. Empty when nothing was rendered'
+    value: ${{ steps.review.outputs.body_file }}
 
 runs:
   using: composite
@@ -88,6 +91,7 @@ runs:
         verdict=''
         comments_posted=0
         comments_dropped=0
+        body_file=''
 
         finish() {
           {
@@ -96,13 +100,14 @@ runs:
             printf 'verdict=%s\n' "$verdict"
             printf 'comments_posted=%s\n' "$comments_posted"
             printf 'comments_dropped=%s\n' "$comments_dropped"
+            printf 'body_file=%s\n' "$body_file"
           } >> "$GITHUB_OUTPUT"
           exit 0
         }
 
         # Nothing here fails the run. A review that could not be submitted is worth a warning
         # and an output the caller can act on, but going red adds nothing - and the caller
-        # still has the agent's summary to post as a plain comment.
+        # still has the rendered body to post as a plain comment.
         if [[ ! -f "$REVIEW_FILE" ]]; then
           echo "::warning title=No review produced::The agent wrote no $REVIEW_FILE"
           finish
@@ -117,32 +122,11 @@ runs:
           finish
         fi
 
-        verdict=$(jq -r '.verdict // ""' "$REVIEW_FILE")
-
-        # Only two verdicts are meaningful. Approving is deliberately not one of them:
-        # merging is a person's decision, and an agent approving its own pipeline's work is
-        # not a signal anybody should be acting on.
-        case "$verdict" in
-          changes_requested) event='REQUEST_CHANGES' ;;
-          comment)           event='COMMENT' ;;
-          *)
-            echo "::warning title=Unknown verdict::The agent asked for '$verdict', which is not changes_requested or comment - submitting as a comment"
-            verdict='comment'
-            event='COMMENT'
-            ;;
-        esac
-
-        jq -r '.summary // ""' "$REVIEW_FILE" > "$tmp/summary.md"
-        if [[ ! -s "$tmp/summary.md" ]]; then
-          printf 'The reviewing agent returned no summary. Its inline comments, if any, are below.\n' > "$tmp/summary.md"
-        fi
-
         # --- Which lines a comment may anchor to ----------------------------------------
         #
-        # Github rejects the entire review - summary, every comment, the lot - if one inline
+        # Github rejects the entire review - body, every comment, the lot - if one inline
         # comment names a line the diff does not contain. So the positions are worked out
-        # here and the bad comments are dropped, rather than finding out on submit and losing
-        # the whole review.
+        # here, and a finding off the diff goes into the body rather than inline.
         #
         # A comment may sit on any line of a hunk on the RIGHT side, which means added lines
         # and context lines, numbered in the new file.
@@ -189,32 +173,25 @@ runs:
                   | from_entries' "$tmp/positions.txt" > "$tmp/positions.json"
 
         # The agent read a diff and review threads that any collaborator can write, so what it
-        # hands back is untreated input rather than trusted structure.
-        jq --slurpfile pos "$tmp/positions.json" \
-           --argjson max_comments "$MAX_COMMENTS" \
-           --argjson max_length "$MAX_LENGTH" '
-          [ .comments[]? ]
-          | map(select((.path | type) == "string" and (.line | type) == "number"))
-          | map(select((.body | type) == "string"))
-          | map(select((.body | gsub("\\s"; "") | length) > 0))
-          | map(select($pos[0][(.path + ":" + (.line | tostring))] // false))
-          | map({path, line, side: "RIGHT", body: (.body | .[0:$max_length])})
-          | .[0:$max_comments]
-        ' "$REVIEW_FILE" > "$tmp/comments.json"
-
-        wanted=$(jq '[.comments[]?] | length' "$REVIEW_FILE")
-        comments_posted=$(jq 'length' "$tmp/comments.json")
-        comments_dropped=$(( wanted - comments_posted ))
-
-        if [[ "$comments_dropped" -gt 0 ]]; then
-          echo "::warning title=Inline comments dropped::$comments_dropped of $wanted inline comments were not placed - the line is not in the diff, the body was empty, or the cap was reached"
-          # Named, because "the reviewer said something about a line and it vanished" is worth
-          # being able to see in the log
-          jq --slurpfile pos "$tmp/positions.json" -r '
-            [ .comments[]? ]
-            | map(select(($pos[0][((.path // "?") + ":" + ((.line // 0) | tostring))] // false) | not))
-            | .[] | "  dropped: \(.path // "?"):\(.line // "?")"' "$REVIEW_FILE" || true
+        # hands back is untreated input rather than trusted structure. The renderer validates it,
+        # derives the verdict from the findings, and lays the review out.
+        if ! outcome=$(node "$GITHUB_ACTION_PATH/render.js" "$REVIEW_FILE" "$tmp/positions.json" "$tmp"); then
+          echo "::warning title=Review unusable::$REVIEW_FILE could not be laid out"
+          finish
         fi
+
+        # What a caller posts when the review could not be submitted, so it carries every
+        # finding's text - the inline comments that held some of it never went out
+        body_file="$tmp/body-full.md"
+        verdict=$(jq -r '.verdict' <<< "$outcome")
+        comments_posted=$(jq -r '.comments' <<< "$outcome")
+        comments_dropped=$(jq -r '.unplaced' <<< "$outcome")
+        jq -r '.problems[] | "::warning title=Review file problem::\(.)"' <<< "$outcome"
+
+        case "$verdict" in
+          changes_requested) event='REQUEST_CHANGES' ;;
+          *)                 event='COMMENT' ;;
+        esac
 
         submit() {
           local payload="$1"
@@ -228,19 +205,15 @@ runs:
 
         build() {
           # $1 = event, $2 = whether to include the inline comments
-          #
-          # Rebuilt per attempt, because a retry that gives up its inline comments has a
-          # different number of them to account for than the attempt before it.
-          {
-            if [[ -n "$FOOTER" ]]; then
-              printf '%s\n' "$FOOTER"
-            fi
-            if [[ "$comments_dropped" -gt 0 ]]; then
-              printf '\n%s inline comment(s) could not be placed on a line the diff contains, and the run log names them.\n' "$comments_dropped"
-            fi
-          } > "$tmp/footer.md"
+          if [[ -n "$FOOTER" ]]; then
+            printf '%s\n' "$FOOTER"
+          fi > "$tmp/footer.md"
 
-          jq -n --rawfile summary "$tmp/summary.md" \
+          # Without the inline comments, the body has to carry their text itself
+          local summary="$tmp/body-full.md"
+          [[ "$2" == 'true' ]] && summary="$tmp/body.md"
+
+          jq -n --rawfile summary "$summary" \
                 --rawfile footer "$tmp/footer.md" \
                 --slurpfile comments "$tmp/comments.json" \
                 --arg marker "$MARKER" \

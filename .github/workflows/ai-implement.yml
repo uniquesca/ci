@@ -121,10 +121,20 @@ on:
         required: false
         default: true
         type: boolean
-      review_check_patterns:
-        description: 'Case-insensitive regular expression matching the reviewing agent own check runs. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Deliberately separate from `ignore_check_patterns`, which hides those same check runs from the feedback - the gate has to see what the feedback must not'
+      review_label:
+        description: 'Label the reviewing agent keeps on the pull request while it works - its `progress_label`. Put on here when a review is dispatched, so it covers a review still queued. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Empty means it never waits for the reviewer'
         required: false
-        default: 'ai.review'
+        default: 'ai:reviewing'
+        type: string
+      review_label_minutes:
+        description: 'How long the reviewer''s label counts as a review still coming. A label older than this was left by a review that never ran - nothing subscribed to the dispatch, say - so a round takes it off, warns, and goes ahead. Keep it above the reviewing workflow''s `timeout_minutes` plus the time a review can sit queued'
+        required: false
+        default: 60
+        type: number
+      review_check_patterns:
+        description: 'Deprecated, and does nothing - the wait recognises the reviewer by `review_label`. Accepted so a caller still passing it keeps working, with a warning. Will be removed in v12'
+        required: false
+        default: ''
         type: string
       provision_checks:
         description: 'Set the runner up before the agent starts - bring this repository''s application up in Docker with its config templates rendered, install its dependencies - and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: what is there decides what is done. The master switch for all of it: turn it off and nothing is prepared, and the agent works out what it can run for itself'
@@ -186,6 +196,12 @@ jobs:
     # one round. A `commented` review still reaches the agent - the next round to run for any
     # reason stages it out of the feedback like anything else.
     #
+    # The reviewing agent's own review is the exception, whatever its state. QA that finished
+    # first stood down to wait for it, so it is the last thing left to start a round for the
+    # checks. That round acts only on what is asking for a change, the same as one QA starts -
+    # an approval over green checks stands down in seconds. The marker is a literal here
+    # because a job-level `if` cannot read the job's `env`.
+    #
     # Both of those broad triggers are narrowed to branches this workflow could have pushed,
     # because both fire on pull requests that have nothing to do with it - every review in the
     # repository, and every QA run on every branch. This is a job-level `if`, so a run that does
@@ -203,7 +219,8 @@ jobs:
            && startsWith(github.event.comment.body, inputs.command))
           || (github.event_name == 'pull_request_review'
               && github.event.action == 'submitted'
-              && github.event.review.state == 'changes_requested'
+              && (github.event.review.state == 'changes_requested'
+                  || startsWith(github.event.review.body, '<!-- ai-review -->'))
               && github.event.pull_request.head.repo.full_name == github.repository
               && startsWith(github.event.pull_request.head.ref, inputs.branch_prefix))
           || (github.event_name == 'workflow_run'
@@ -228,17 +245,17 @@ jobs:
     # tokens are spent either way. A queued duplicate is cheap, because the first round's push
     # moves the head SHA and the gate below then stands the duplicate down in seconds.
     #
-    # Keyed on whatever the event can say about the work, which is not the same thing in each
-    # of them, and no expression here can look anything up. A `workflow_run` carries only the
-    # branch. A comment on an *issue* carries only the issue number - and a round can start from
-    # one, so it is keyed on the branch that issue builds rather than on the number, which is
-    # what puts it in the same group as the QA-triggered rounds already running on that branch.
+    # Keyed on the branch wherever the event names it, and no expression here can look anything
+    # up. A `workflow_run` and a review both carry the branch, which is what keeps the round QA
+    # starts and the round the reviewer starts from running side by side when the two finish
+    # together. A comment on an *issue* carries only the issue number - and a round can start
+    # from one, so it is keyed on the branch that issue builds rather than on the number.
     #
-    # A comment on a pull request, and a review, carry only the number: neither payload says
-    # which branch it is about, so those two share a group with each other and cannot be made to
-    # share one with the other two without a separate job to resolve the branch first. What that
-    # leaves is two people acting on the same work in the same minute - and the loser of that
-    # race has its push refused as non-fast-forward rather than pushing over anything.
+    # A comment on a pull request carries only the number: its payload does not say which branch
+    # it is about, so it cannot share a group with the others without a separate job to resolve
+    # the branch first. What that leaves is a person typing the command in the same minute a
+    # round starts - and the loser of that race has its push refused as non-fast-forward rather
+    # than pushing over anything.
     concurrency:
       group: >-
         ai-implement-${{ github.repository }}-${{
@@ -246,7 +263,7 @@ jobs:
             && github.event.issue.number
             && format('{0}issue-{1}', inputs.branch_prefix, github.event.issue.number)
           || github.event.issue.number
-          || github.event.pull_request.number
+          || github.event.pull_request.head.ref
           || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     permissions:
@@ -421,6 +438,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           directory: ${{ runner.temp }}/existing-plan-check
 
+      - name: Warn about deprecated inputs
+        if: ${{ inputs.review_check_patterns != '' }}
+        run: echo "::warning title=Deprecated input::review_check_patterns does nothing and will be removed in v12 - take it out of the caller. The wait recognises the reviewer by review_label"
+
       # Two event shapes carry the same work, and nothing below should have to care which one
       # it got. Everything after this reads these outputs rather than `github.event`, which is
       # also where the next trigger - a reviewing agent, a red suite - will slot in.
@@ -444,6 +465,7 @@ jobs:
           # Untrusted text, read here and never interpolated into a script. Only its first line
           # is ever looked at, and only to compare against a marker.
           REVIEW_BODY: ${{ github.event.review.body }}
+          REVIEW_STATE: ${{ github.event.review.state }}
           RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
           RUN_ACTOR_TYPE: ${{ github.event.workflow_run.actor.type }}
@@ -555,11 +577,20 @@ jobs:
           [[ "$actor_type" == 'Bot' ]] && attended='false'
 
           # A review the reviewing agent wrote is a machine's, whichever account submitted it.
-          # Anyone can paste this marker into a review of their own, and all that does is make
-          # their own round count against the cap - it can only ever stop the loop sooner,
-          # never let it run longer.
+          # Anyone can paste this marker into a review of their own. All that does is make their
+          # own round count against the cap, or let an approval start a round that acts only on
+          # what is already asking for a change - it can never let the loop run longer.
           if [[ "$trigger" == 'review' && "$REVIEW_BODY" == "$REVIEW_MARKER"* ]]; then
             attended='false'
+          fi
+
+          # Whether whatever started this round asked for a change. Checks only report, and a
+          # review that approved or commented asks for nothing - such a round goes ahead only for
+          # something else that is asking.
+          asked='true'
+          if [[ "$trigger" == 'checks' ]] \
+             || [[ "$trigger" == 'review' && "${REVIEW_STATE,,}" != 'changes_requested' ]]; then
+            asked='false'
           fi
 
           # A round that a finished QA workflow started is never attended, whoever pushed the
@@ -589,6 +620,7 @@ jobs:
             printf 'actor=%s\n' "$actor"
             printf 'actor_type=%s\n' "$actor_type"
             printf 'attended=%s\n' "$attended"
+            printf 'asked=%s\n' "$asked"
             printf 'target=%s\n' "$target"
             printf 'answer_to=%s\n' "$answer_to"
             printf 'base_given=%s\n' "$base_given"
@@ -756,6 +788,15 @@ jobs:
 
           echo "::error title=Permission denied::@$ACTOR ($PERMISSION) is not allowed to run $COMMAND"
           exit 1
+
+      - name: Acknowledge the command
+        id: ack
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.attended == 'true' }}
+        uses: uniquesca/ci/ai-react@v11
+        with:
+          subject: ${{ github.event.comment.node_id || github.event.review.node_id }}
+          add: EYES
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # The other half of the step above. A review and a finished QA workflow are broad triggers
       # that fire on pull requests this workflow never touched, and saying so on each one would
@@ -1010,10 +1051,15 @@ jobs:
       # what a failure costs is depth in one description rather than the round.
       - name: Stage the CI framework catalogue
         if: ${{ success() && env.PROCEED == 'true' }}
-        env:
-          WORKFLOW_REF: ${{ github.job_workflow_ref }}
-          WORKFLOW_SHA: ${{ github.job_workflow_sha }}
         run: |
+          # `github.job_workflow_ref` and `job_workflow_sha` are empty inside a reusable workflow's
+          # steps. The job's OIDC token carries both as claims.
+          claims=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" \
+            | jq -r '.value | split(".")[1] | gsub("-"; "+") | gsub("_"; "/")
+                     | . + ("=" * ((4 - length % 4) % 4)) | @base64d') || claims='{}'
+          WORKFLOW_REF=$(jq -r '.job_workflow_ref // empty' <<< "$claims")
+          WORKFLOW_SHA=$(jq -r '.job_workflow_sha // empty' <<< "$claims")
+
           repository=$(cut -d/ -f1,2 <<< "$WORKFLOW_REF")
 
           if [[ -z "$WORKFLOW_SHA" || "$repository" != */* ]]; then
@@ -1080,7 +1126,7 @@ jobs:
               '**The plan was revised after the last round, so the branch you are in was not built to the plan you are reading.**' \
               'Reconcile the whole branch against `.ai-plan/plan.md`, not only the feedback items.' \
               'Work the plan now asks for that the branch does not have is yours to add, and work it no longer asks for is yours to take back out - a dropped step whose code stayed behind is exactly what a revision is meant to correct.' \
-              'Read the plan end to end before you start, and say in your final message what you changed for the revision and what you deliberately left alone, citing the ids after each point.' \
+              'Read the plan end to end before you start, and report what you changed for the revision and what you deliberately left alone.' \
               "A revised plan opens by saying what moved in those ids - which steps were dropped, which are new - so that sentence is the shortest route to what this round owes. Ids are stable across a revision, so an item that kept its number is the same item, and a retired one is listed struck through rather than renumbered." \
               'Where the revision and the feedback disagree, the feedback still wins on anything about code somebody has read.'
             printf 'AI_IMPLEMENT_REVISION\n'
@@ -1092,7 +1138,7 @@ jobs:
       # round with both sources already in the feedback.
       #
       # There is no handshake between the two. Both questions are answered by Github's own state
-      # on this commit, so neither has to know the other exists, and a lost or duplicated
+      # on this pull request, so neither has to know the other exists, and a lost or duplicated
       # trigger cannot deadlock it.
       #
       # Only unattended rounds wait. Somebody who typed the command wants a round now, not
@@ -1104,24 +1150,57 @@ jobs:
           && steps.event.outputs.attended == 'false' }}
         env:
           HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          PR: ${{ steps.event.outputs.pull_request }}
           CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
-          REVIEW_PATTERNS: ${{ inputs.review_check_patterns }}
+          REVIEW_LABEL: ${{ inputs.review_label }}
+          LABEL_MINUTES: ${{ inputs.review_label_minutes }}
         run: |
-          # The reviewer's own check run is hidden from the staged feedback by
-          # `ignore_check_patterns`, so it has to be counted separately here. Asking whether it
-          # is still working - rather than whether a review has arrived - is what stops this
-          # waiting forever for a reviewer that was never turned on, or that died: neither has
-          # a check run in progress.
-          review_pending=$(gh api --paginate --slurp \
-            "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" 2> /dev/null \
-            | jq --arg re "$REVIEW_PATTERNS" '
-                [ (map(.check_runs) | flatten)[]
-                  | select(.status != "completed")
-                  | select(.name | test($re; "i")) ] | length' 2> /dev/null || echo '')
+          # The reviewer's label is on the pull request from the dispatch until the review ends.
+          # A dispatched review runs on the default branch, so it has no check run on this
+          # commit to look for. Asking whether it is still working - rather than whether a review
+          # has arrived - is what stops this waiting forever for a reviewer that was never turned
+          # on: nothing is dispatched for it, so nothing adds the label.
+          review_pending=0
+          if [[ -n "$REVIEW_LABEL" ]]; then
+            review_pending=$(gh api "repos/$GH_REPO/issues/$PR/labels" 2> /dev/null \
+              | jq --arg name "$REVIEW_LABEL" 'map(select(.name == $name)) | length' 2> /dev/null || echo '')
+          fi
 
           # An unreadable answer must not hold the round back for ever - carry on and let the
           # feedback be whatever has landed so far
           [[ -z "$review_pending" ]] && review_pending=0
+
+          # The label comes off only after the review is submitted, so a round that review
+          # started - or checks that finish in the seconds between - still finds it on. A review
+          # of this commit already posted is the reviewer finished, whatever the label says. Of
+          # this commit and no other: a review of an earlier push says nothing about one still
+          # queued for this one.
+          if [[ "$review_pending" -gt 0 ]] \
+             && reviews=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/reviews?per_page=100" 2> /dev/null); then
+            reviewed=$(jq -s --arg sha "$HEAD_SHA" --arg marker "$REVIEW_MARKER" \
+              'add // [] | map(select(.commit_id == $sha and ((.body // "") | startswith($marker)))) | length' \
+              <<< "$reviews" 2> /dev/null || echo 0)
+            [[ "${reviewed:-0}" -gt 0 ]] && review_pending=0
+          fi
+
+          # A dispatch Github accepted but no workflow picked up leaves the label on with nothing
+          # coming to take it off, and every round after would stand down for it. Past its time
+          # it is taken as that. An age that cannot be read keeps the label in force - a late
+          # review is the likelier story than a lost one - and so does a partial read, which
+          # could hold an older dispatch's event and not this one's.
+          if [[ "$review_pending" -gt 0 ]] \
+             && events=$(gh api --paginate "repos/$GH_REPO/issues/$PR/events?per_page=100" 2> /dev/null); then
+            labelled_at=$(jq -rs --arg name "$REVIEW_LABEL" \
+              'add // [] | map(select(.event == "labeled" and .label.name == $name)) | last | .created_at // empty' \
+              <<< "$events" 2> /dev/null || echo '')
+            if [[ -n "$labelled_at" ]] \
+               && (( $(date +%s) - $(date -d "$labelled_at" +%s) > ${LABEL_MINUTES%.*} * 60 )); then
+              echo "::warning title=Stale review label::'$REVIEW_LABEL' has been on #$PR since $labelled_at with no review finishing - taken off, and the round goes ahead without one"
+              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
+              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null 2>&1 || true
+              review_pending=0
+            fi
+          fi
 
           qa_pending="${CHECKS_PENDING:-0}"
           echo "On $HEAD_SHA: $qa_pending QA check(s) pending, $review_pending reviewer run(s) pending"
@@ -1213,9 +1292,10 @@ jobs:
 
           echo "#$PR is on $HEAD_SHA, and everything since $LAST_ROUND_SHA is an automatic style fix"
 
-      # A round nobody asked for, on a commit where nothing is asking for a change. Stands down
-      # silently: this fires on every green pull request, and a comment each time would be noise.
-      # A review that only commented is not a change being asked for - it waits for the command.
+      # A round nothing asked for - checks, or the reviewing agent approving or commenting - on a
+      # commit where nothing is asking for a change. Stands down silently: this fires on every
+      # green pull request, and a comment each time would be noise. A review that only commented
+      # is not a change being asked for - it waits for the command.
       #
       # A revised plan does not hold this open, though it does hold the asked-for gate below:
       # nobody has asked for the rework, and the specification is still moving.
@@ -1223,7 +1303,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger == 'checks'
+          && steps.event.outputs.asked == 'false'
           && steps.stage_pr.outputs.has_actionable != 'true' }}
         run: |
           echo "PROCEED=false" >> "$GITHUB_ENV"
@@ -1245,7 +1325,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger != 'checks'
+          && steps.event.outputs.asked == 'true'
           && steps.stage_pr.outputs.has_feedback != 'true'
           && steps.revision.outputs.revised != 'true' }}
         env:
@@ -2179,8 +2259,8 @@ jobs:
               echo "are worth more spent on the plan, so treat every one of the plan's checks as"
               echo 'something that cannot be run here.'
               echo
-              echo 'Verify by reading instead, and be plain in your final message about which'
-              echo 'checks went unrun and why. CI runs them against what is pushed and reports back'
+              echo 'Verify by reading instead, and report the checks that went unrun as `not_run`,'
+              echo 'with why. CI runs them against what is pushed and reports back'
               echo 'on the pull request, so what you leave unproven is picked up there and can be'
               echo 'acted on in a later round.'
             fi
@@ -2349,15 +2429,20 @@ jobs:
               echo '- Do not change any file under `.github/workflows/`. Github refuses a push'
               echo '  touching one from the identity this work is pushed with, so the edit cannot'
               echo '  reach the branch. Where the work needs one - including where the plan or'
-              echo '  the feedback asks for it - do the rest around it, and in your final message'
-              echo '  say which file, what it should say and what it is for, so that somebody can'
-              echo '  apply it by hand.'
+              echo '  the feedback asks for it - do the rest around it, and in your report'"'"'s'
+              echo '  `not_done` say which file, what it should say and what it is for, so that'
+              echo '  somebody can apply it by hand.'
               echo '  Anything you do edit there is taken back out before the commit and reported'
               echo '  as a patch, so do not describe it as something you changed.'
             fi
 
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
+
+      - name: Read the style guide
+        id: style
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
 
       # The plan and the issue are read off disk rather than interpolated into this file -
       # both are written by people, and neither has any business being expanded into the
@@ -2424,8 +2509,8 @@ jobs:
             like it came from somewhere else is a change that gets rewritten.
 
             The plan is the scope. Where you think it is wrong or has missed something, do
-            the work as written and say so in your final message - deciding for yourself
-            what the task should have been leaves a pull request nobody agreed to.
+            the work as written and say so in your report - deciding for yourself what the
+            task should have been leaves a pull request nobody agreed to.
 
             This repository may commit its dependencies. Nothing under `node_modules`,
             `vendor`, `dist` or `build` is yours to change, and none of it is worth
@@ -2434,8 +2519,8 @@ jobs:
             the binaries it installed.
 
             You have a shell. The plan's `C` checks are yours to execute, not to list. If
-            you cannot get one passing, say so in your final message rather than leaving it
-            quietly broken.
+            you cannot get one passing, report it as failing rather than leaving it quietly
+            broken.
 
             ${{ steps.verify_prompt.outputs.instructions }}
 
@@ -2457,17 +2542,16 @@ jobs:
             You have no persistent memory. Recording one is not among your tools, so the
             attempt is refused at the cost of a turn, and this runner is thrown away when
             the run ends - nothing written there would be read again. Do not mention having
-            tried, either: your final message is the body of the pull request, where a
-            refused tool call reads as a warning to whoever opens it.
+            tried in your report.
 
             Where the plan is many small pieces of the same work, work through them one
             after another. Fifteen of forty written, with the twenty-five you did not
-            reach named in your final message, is a good run - the branch has fifteen of
+            reach named in your report, is a good run - the branch has fifteen of
             them on it that it did not have before, and the next round starts there.
             Stopping early because forty looked like too many for one run is not, and it
             is how a run ends up delivering one file out of forty. Where something is
-            unresolved, finish everything that does not depend on it and say what you
-            left and why in your final message.
+            unresolved, finish everything that does not depend on it and report what you
+            left and why.
 
             What you must not do:
 
@@ -2485,21 +2569,36 @@ jobs:
             Leave your work in the working tree as uncommitted changes. That is what gets
             committed for you.
 
-            Your final message becomes the body of the pull request, so write it for a
-            reviewer: what changed and why, anything in the plan you deliberately did not
-            do and why, what you ran to verify it and what the result was, and anything
-            that needs a human decision. Markdown, no preamble, no sign-off, well under
-            10000 characters. It is the body itself rather than a document inside it, so do
-            not wrap it in a code fence. Do not add a title, a link to the issue, or a footer
-            - the workflow adds those.
+            When you are done, write `.ai-review/report.json`. The workflow lays it out as the
+            pull request description, so your final message is only for the run log:
 
-            Cite the plan's ids in it, in brackets after what you are already saying -
-            "moved the retry loop into the client (S3)", "the changelog suite passes (C2)".
-            Never an id on its own: the plan lives on the issue, and somebody reading this
-            pull request has your words and nothing else. `C2` alone tells them nothing,
-            while the sentence with `C2` after it tells them everything and lets them go
-            and find it. Do not add a table of ids either - the ids belong in the prose,
-            not instead of it.
+            ```json
+            {
+              "headline": "One sentence: where the work stands.",
+              "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
+              "notes": [{"note": "The fixer's edits and the hand edits are in one commit", "refs": ["S4"]}],
+              "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
+              "verification": [{"command": "composer test", "result": "pass", "note": "212 tests"}],
+              "decisions": [{"ask": "Keep the old endpoint for one release?", "refs": ["U2"]}]
+            }
+            ```
+
+            - `headline` - where the work stands, in one sentence.
+            - `done` - what changed, one short line per change a reviewer would recognise, ten
+              at most. Not every file, and not the plan retold - the reviewer reads the diff.
+            - `notes` - what a reviewer needs to know before reading the diff and cannot see in
+              it, such as where to look closely. Not what changed.
+            - `not_done` - anything in the plan you did not do, did differently or left
+              unfinished, and why.
+            - `verification` - every check you ran, with `result` `pass`, `fail` or
+              `not_run`.
+            - `decisions` - only what a person has to decide.
+            - `refs` - the plan ids an item is about. They are printed after it, so the text
+              does not repeat them.
+
+            Leave a list empty rather than filling it.
+
+            ${{ steps.style.outputs.text }}
 
             Once this is open as a pull request, the review happens there and you will be
             asked for changes on the lines themselves. Make that easy: small commits of
@@ -2571,6 +2670,9 @@ jobs:
               comment still means the same item; an older plan may have no ids at all, in
               which case its steps go by their titles.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
+            - `.ai-review/last-report.json` - what the previous run reported, in the shape you
+              write below. Start from it rather than working out again where things stand. It
+              is missing when the previous run left no report.
             - `.ai-reports/` - what the checks on this commit printed, one directory per CI
               job and only for the checks that failed. A failing `check` in the feedback almost
               certainly has its output in here, and reading it beats inferring what the check
@@ -2607,7 +2709,7 @@ jobs:
             place of it - "the guard now covers the empty case (S5)". Use only
             `reply_target` values that appear in the feedback - invented ones are discarded.
             Items whose `reply_target` is null have no thread to answer; cover those in your
-            final message instead.
+            report instead.
 
             You have a shell. Use it: read the code around a comment before you change it,
             run this project's tests and linters, and fix what you break. A failing check in
@@ -2631,12 +2733,11 @@ jobs:
             You have no persistent memory. Recording one is not among your tools, so the
             attempt is refused at the cost of a turn, and this runner is thrown away when
             the run ends - nothing written there would be read again. Do not mention having
-            tried, either: your final message is posted as a comment on the pull request,
-            where a refused tool call reads as a warning to the reviewer.
+            tried in your report or your replies.
 
             Where the feedback asks for many small pieces of the same work, work through them
             one after another. Fifteen of forty done, with the twenty-five you did not reach
-            named in your final message, is a good round - the next round starts from your
+            named in your report, is a good round - the next round starts from your
             fifteen and the reviewer can see the count moving. A round that changes no file
             at all is the worst outcome available to you: it pushes nothing, so nothing
             re-triggers, and the pull request simply stops where it is. Where something is
@@ -2647,7 +2748,7 @@ jobs:
             - Do not commit, push, or comment anywhere. The workflow does all of that after
               you finish, including posting your replies.
             - Do not modify anything under `.ai-plan/`, and do not modify anything under
-              `.ai-review/` other than by creating `replies.json`.
+              `.ai-review/` other than by creating `replies.json` and `report.json`.
             - Do not touch `CHANGELOG.md`. Every repository here generates it from the git log
               when it releases, so an entry written by hand is overwritten or left conflicting.
               This holds even where the feedback asks for one - reply saying so.
@@ -2655,19 +2756,38 @@ jobs:
 
             Leave your work in the working tree as uncommitted changes.
 
-            Your final message is posted as a comment on the pull request, so write it for the
-            reviewer: what you changed this round, what you declined and why, what you ran and
-            what it said, and anything still needing a decision. Markdown, no preamble, no
-            sign-off, well under 10000 characters. It is the comment body itself rather than a
-            document inside it, so do not wrap it in a code fence. Do not add a title or a
-            footer - the workflow adds those.
+            When you are done, write `.ai-review/report.json`. The workflow lays it out as the
+            round comment and keeps the summary at the top of the pull request from it, so your
+            final message is only for the run log:
 
-            Cite the plan's ids in it, in brackets after what you are already saying - "the
-            retry now backs off (S3)", "the changelog suite passes (C2)". Never an id on its
-            own: the plan lives on the issue, and somebody reading this pull request has your
-            words and nothing else. `C2` alone tells them nothing, while the sentence with `C2`
-            after it tells them everything and lets them go and find it. That goes for a
-            revision too - name what changed, and put the ids after it.
+            ```json
+            {
+              "headline": "One sentence: where the work stands.",
+              "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
+              "notes": [{"note": "The fixer's edits and the hand edits are in one commit", "refs": ["S4"]}],
+              "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
+              "verification": [{"command": "composer test", "result": "pass", "note": "212 tests"}],
+              "decisions": [{"ask": "Keep the old endpoint for one release?", "refs": ["U2"]}]
+            }
+            ```
+
+            - `headline` - where the pull request stands after this round, in one sentence.
+            - `done` - what you changed this round, one short line each, ten at most. Not
+              earlier rounds.
+            - `notes` - what a reviewer needs to know before reading this round's diff and cannot
+              see in it. Not what changed.
+            - `not_done` - feedback you declined or could not finish, and why. An item whose
+              thread you answered in `replies.json` is covered there; do not repeat it here.
+            - `verification` - every check you ran this round, with `result` `pass`, `fail` or
+              `not_run`.
+            - `decisions` - every decision still open, including ones carried over from
+              `.ai-review/last-report.json` that nobody has settled.
+            - `refs` - the plan ids an item is about. They are printed after it, so the text
+              does not repeat them.
+
+            Leave a list empty rather than filling it.
+
+            ${{ steps.style.outputs.text }}
           # The prompt above names what this list leaves out - a tool the agent reaches for
           # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
@@ -2709,6 +2829,7 @@ jobs:
       # opening. Retention is left at the default, which is long enough to read a month of rounds
       # side by side and work out what the agent had to rediscover on each one.
       - name: Upload the context the agent was given
+        id: context
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -2762,6 +2883,17 @@ jobs:
 
           echo "::warning title=The implementing agent overran its turn limit::It finished on its own after ${TURNS:-more} turns, past the $MAX_TURNS it was given, and claude-code-action fails the step for that. The work is complete, so it was pushed anyway - raise max_turns if this keeps happening."
 
+      # Before the workflow changes are held back, which append their patch to what this renders
+      - name: Render the agent's report
+        id: render
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-render-report@v11
+        with:
+          fallback_file: ${{ steps.report.outputs.result_file }}
+          label: ${{ steps.event.outputs.mode == 'initial' && 'After the first run' || format('After round {0}', steps.stage_pr.outputs.round) }}
+          # The first run's body goes under the status block that opens the pull request
+          under_status: ${{ steps.event.outputs.mode == 'initial' }}
+
       # The edit the agent was told not to make, taken back out of the working tree before it
       # is committed - Github refuses a push carrying it, and a refusal here loses everything
       # else the run did as well. What the agent wanted is not lost with it: the patch is
@@ -2783,8 +2915,8 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && !inputs.allow_workflow_changes }}
         env:
-          # The agent's final message, which this appends to. Empty on a run that produced none
-          REPORT_FILE: ${{ steps.report.outputs.result_file }}
+          # The agent's rendered report, which this appends to. Empty on a run that produced none
+          REPORT_FILE: ${{ steps.render.outputs.body_file }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           git add --intent-to-add -- .github/workflows/ 2> /dev/null || true
@@ -3146,9 +3278,11 @@ jobs:
           BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
-          # The agent's own final message, carrying the held-back workflow patch where the
-          # step that held it back appended one
-          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
+          # The agent's rendered report, carrying the held-back workflow patch where the step
+          # that held it back appended one
+          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
+          DETAILS_FILE: ${{ steps.render.outputs.details_file }}
+          STATUS_FILE: ${{ steps.render.outputs.status_file }}
           COMMAND: ${{ inputs.command }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
           # What the pull request being revived used to target. Only differs from BASE when its
@@ -3195,6 +3329,7 @@ jobs:
             # auto-closing the issue on the first merge cuts that short - as does merging a
             # partial implementation.
             {
+              [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
               printf 'Implements #%s.\n\n' "$ISSUE"
               [[ -n "$PLAN_URL" ]] && printf 'Built from the [approved plan](%s).\n\n' "$PLAN_URL"
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
@@ -3202,9 +3337,10 @@ jobs:
                 printf '\n'
               fi
               # Empty here, filled in by the step below. Printing the pair is how this decides
-              # where the QA criteria go - under what the agent did, above the review
-              # instructions, which is where somebody about to test the change will look.
+              # where the QA criteria go - under the notes for the reviewer and above the folded
+              # details, where somebody about to test the change will look.
               printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
+              [[ -n "$DETAILS_FILE" && -f "$DETAILS_FILE" ]] && printf '%s\n\n' "$(cat "$DETAILS_FILE")"
               printf -- '---\n\n'
               printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n\n'
               # This workflow's own command, said on the pull request rather than only in the
@@ -3284,6 +3420,8 @@ jobs:
           PR_URL: ${{ steps.pr.outputs.url }}
           ACTOR: ${{ steps.event.outputs.actor }}
           USAGE: ${{ steps.report.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the run cost, as one hidden line for a report to read back. The prose in the
           # footer is for whoever opens the issue; this is the only copy a machine can add up.
           COST: ${{ steps.report.outputs.cost_line }}
@@ -3297,6 +3435,8 @@ jobs:
             printf -- '---\n\n'
             printf 'Requested by @%s.' "$ACTOR"
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+            printf ' [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"
@@ -3382,10 +3522,15 @@ jobs:
           CHECK_COUNT: ${{ steps.stage_pr.outputs.check_count }}
           PUSHED: ${{ steps.push.outputs.pushed }}
           POSTED: ${{ steps.replies.outputs.posted }}
-          # The agent's own final message, carrying the held-back workflow patch where the
-          # step that held it back appended one
-          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.report.outputs.result_file }}
+          # The agent's rendered report, carrying the held-back workflow patch where the step
+          # that held it back appended one
+          SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
+          DETAILS_FILE: ${{ steps.render.outputs.details_file }}
           USAGE: ${{ steps.report.outputs.summary }}
+          CHECKS_WORKFLOW: ${{ github.event.workflow_run.name }}
+          COMMAND: ${{ inputs.command }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the round cost, as one hidden line for a report to read back
           COST: ${{ steps.report.outputs.cost_line }}
           REVISED: ${{ steps.revision.outputs.revised }}
@@ -3417,11 +3562,24 @@ jobs:
               printf '.\n\n'
             fi
 
+            # Github starts no `pull_request_review` run while the pull request conflicts with its
+            # base - undocumented, seen on officio#1163 - so the next "Request changes" would start
+            # no round and nobody would be told. `mergeable` is UNKNOWN until Github works it out.
+            for _ in 1 2 3; do
+              mergeable=$(gh pr view "$PR" --json mergeable --jq '.mergeable' 2> /dev/null || echo '')
+              [[ "$mergeable" == 'UNKNOWN' ]] || break
+              sleep 5
+            done
+            if [[ "$mergeable" == 'CONFLICTING' ]]; then
+              printf '> **This branch conflicts with its base.** Reviews start no round until that is resolved - `%s` still does.\n\n' "$COMMAND"
+            fi
+
             if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
               cat "$SUMMARY_FILE"
             else
               printf 'The agent finished without a summary of this round. The run log has what it did.\n'
             fi
+            [[ -n "$DETAILS_FILE" && -f "$DETAILS_FILE" ]] && printf '\n%s\n' "$(cat "$DETAILS_FILE")"
 
             printf '\n\n'
             printf -- '---\n\n'
@@ -3433,12 +3591,16 @@ jobs:
             [[ "$REVISED" == 'true' ]] && printf ' Worked to a revised plan.'
             if [[ "$TRIGGER" == 'review' ]]; then
               printf ' Started by @%s requesting changes.' "$ACTOR"
+            elif [[ "$TRIGGER" == 'checks' ]]; then
+              printf ' Started by `%s` finishing.' "$CHECKS_WORKFLOW"
             else
               printf ' Requested by @%s.' "$ACTOR"
             fi
             [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' Answered %s review thread(s).' "$POSTED"
             [[ "$PUSHED" != 'true' ]] && printf ' **No file changed this round.**'
             [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+            printf ' [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, and never second: the round metadata above is read by line number, so a
             # line added anywhere but the end would take `ai-stage-pull-request` with it
@@ -3449,6 +3611,16 @@ jobs:
 
           cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$PR" --body-file "$RUNNER_TEMP/round-comment.md"
+
+      # After the round comment, so the block at the top of the pull request never describes a
+      # round that did not finish. The reviewer and the next round read the report back out of it.
+      - name: Update the status at the top of the pull request
+        if: ${{ success() && env.PROCEED == 'true' && steps.close.outcome == 'success' && steps.render.outputs.rendered == 'true' }}
+        uses: uniquesca/ci/ai-render-report@v11
+        with:
+          label: ${{ format('After round {0}', steps.stage_pr.outputs.round) }}
+          pull_request: ${{ steps.event.outputs.pull_request }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Put the work back in a person's review queue. Submitting a review clears their pending
       # request, so without this a round they asked for finishes with nobody assigned to look at
@@ -3506,6 +3678,12 @@ jobs:
       #
       # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
       # produces the same review, and the loop would turn without moving.
+      #
+      # The reviewer's label goes on here, before the dispatch. The QA checks on this push can
+      # finish while the review is still queued, and the wait in the next round only sees a
+      # reviewer that has its label on - so the reviewer labelling itself would leave a gap in
+      # which that round runs without the review, and the review then starts a second one. The
+      # reviewing workflow takes the label off however a dispatched run ends.
       - name: Ask for a review
         id: dispatch
         if: >-
@@ -3515,10 +3693,22 @@ jobs:
         env:
           PR: ${{ steps.event.outputs.pull_request || steps.pr.outputs.number }}
           DISPATCH_TYPE: ${{ inputs.review_dispatch_type }}
+          REVIEW_LABEL: ${{ inputs.review_label }}
         run: |
           if [[ -z "$PR" ]]; then
             echo "::warning title=No pull request to review::Nothing was dispatched"
             exit 0
+          fi
+
+          labelled='false'
+          if [[ -n "$REVIEW_LABEL" ]]; then
+            gh label create "$REVIEW_LABEL" --color 'fbca04' --description 'An AI workflow is working on this' \
+              2> /dev/null || true
+            if gh api "repos/$GH_REPO/issues/$PR/labels" --method POST -f "labels[]=$REVIEW_LABEL" > /dev/null; then
+              labelled='true'
+            else
+              echo "::warning title=Could not label #$PR::'$REVIEW_LABEL' was not added, so the next round may not wait for this review"
+            fi
           fi
 
           jq -n --arg type "$DISPATCH_TYPE" --argjson pr "$PR" \
@@ -3531,6 +3721,13 @@ jobs:
             echo "Asked for a '$DISPATCH_TYPE' review of #$PR"
           else
             echo "::warning title=Could not ask for a review::The $DISPATCH_TYPE dispatch for #$PR failed - review it yourself, or comment on it to start another round"
+
+            # Nothing is coming to take it off, and left on it holds every unattended round back
+            if [[ "$labelled" == 'true' ]]; then
+              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
+              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \
+                || echo "::warning title=Could not unlabel #$PR::'$REVIEW_LABEL' is still on it with no review coming - take it off by hand"
+            fi
           fi
 
       # A failed run is otherwise invisible from the issue or the pull request - whoever asked
@@ -3557,7 +3754,15 @@ jobs:
         env:
           TARGET: ${{ steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
+          ACTOR_TYPE: ${{ steps.event.outputs.actor_type }}
           MODE: ${{ steps.event.outputs.mode }}
+          COMMAND: ${{ inputs.command }}
+          # An initial run has no work branch yet, so a retry without the base the person asked
+          # for falls back to the plan's base or the default branch
+          RETRY_BASE: >-
+            ${{ steps.event.outputs.mode == 'initial'
+            && steps.event.outputs.base_given == 'true'
+            && steps.event.outputs.requested_base || '' }}
           # Why the agent stopped, where it recorded one. It turns "the run went red" into
           # something actionable - an exhausted credit balance and a genuine bug look
           # identical otherwise.
@@ -3572,19 +3777,32 @@ jobs:
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # A round a check started was started by a bot, and mentioning it notifies nobody. Each
+          # round asks the person who started it for a review, so that is who is waiting.
+          mention="@$ACTOR "
+          if [[ "$ACTOR_TYPE" != 'User' ]]; then
+            mention=$(gh api "repos/$GH_REPO/pulls/$TARGET/requested_reviewers" \
+              --jq '[.users[] | select(.type == "User") | "@" + .login] | join(" ")' 2> /dev/null || echo '')
+            [[ -n "$mention" ]] && mention="$mention "
+          fi
+
+          if [[ "$MODE" == 'initial' ]]; then
+            opening='the implementation did not finish, so there is no pull request for this issue.'
+          else
+            opening='this round did not finish, so the feedback on this pull request has not been acted on.'
+          fi
+          [[ -n "$mention" ]] || opening=${opening^}
+
           {
-            if [[ "$MODE" == 'initial' ]]; then
-              printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$ACTOR"
-            else
-              printf '@%s this round did not finish, so the feedback on this pull request has not been acted on.\n\n' "$ACTOR"
-            fi
+            printf '%s%s\n\n' "$mention" "$opening"
             if [[ -n "$PUSH_REASON" ]]; then
               printf 'The work was written but could not be pushed: %s\n\n' "$PUSH_REASON"
             fi
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
-            printf 'The run log has the detail: %s\n' "$RUN_URL"
+            printf 'The run log has the detail: %s\n\n' "$RUN_URL"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi
@@ -3608,6 +3826,15 @@ jobs:
           gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md" \
             || echo "::warning title=Could not report the failure::Nothing was posted on #$TARGET - the run summary has the detail"
 
+      - name: Say how it ended
+        if: ${{ always() && steps.ack.outcome == 'success' }}
+        uses: uniquesca/ci/ai-react@v11
+        with:
+          subject: ${{ github.event.comment.node_id || github.event.review.node_id }}
+          remove: EYES
+          add: ${{ job.status != 'success' && 'CONFUSED' || env.PROCEED == 'true' && 'ROCKET' || '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       # Last in the job, after whatever the reporters above have to say. `always()` because a
       # label describing a run in progress is wrong the moment the run stops, however it stopped -
       # and the output rather than the outcome, because a skipped step's outputs read as empty.
@@ -3623,3 +3850,23 @@ jobs:
 
           gh api "repos/$GH_REPO/issues/$TARGET/labels/$name" --method DELETE > /dev/null \
             || echo "::warning title=Could not unlabel #$TARGET::'$LABEL' is still on it with nothing running - take it off by hand"
+
+  # A command that will not run - not at the start of the comment, or on the wrong kind of page - would
+  # otherwise get silence, which looks exactly like a run that is still working. No `permissions:`, so
+  # this job asks for nothing beyond what the caller already grants.
+  hint:
+    name: Point at the right way to run the command
+    if: >-
+      ${{ github.event_name == 'issue_comment'
+      && github.event.action == 'created'
+      && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+      && contains(github.event.comment.body, inputs.command)
+      && !startsWith(github.event.comment.body, inputs.command) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: uniquesca/ci/ai-command-hint@v11
+        with:
+          command: ${{ inputs.command }}
+          works_on: both
+          token: ${{ secrets.GITHUB_TOKEN }}

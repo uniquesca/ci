@@ -186,7 +186,7 @@ jobs:
         run: |
           if [ ! -f "_ci_environment.json" ]; then
             echo "⚠️ _ci_environment.json not found — no configs to upload"
-            echo "paths=" >> $GITHUB_OUTPUT
+            echo "paths=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -197,7 +197,7 @@ jobs:
           # token_fallbacks has no configs to iterate, and that is a repository to deploy rather
           # than an error
           PATHS=$(jq -r '[.configs[]?.path] + ["_ci_environment.json"] | join(",")' _ci_environment.json)
-          echo "paths=$PATHS" >> $GITHUB_OUTPUT
+          echo "paths=$PATHS" >> "$GITHUB_OUTPUT"
 
       - name: Checking if the repo was just initialized
         id: previously_initialized
