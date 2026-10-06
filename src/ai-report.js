@@ -22,8 +22,10 @@ const LEAVE_OUT_ORDER = ['verification', 'done', 'notes', 'not_done', 'decisions
 function clip(value, max) {
     const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
     // `<!--` in the agent's text could open a hidden comment, or close the status block early
-    // and leave the next round's replacement half done
-    const flat = text.replace(/\s+/g, ' ').replace(/<!--/g, '&lt;!--').trim();
+    // and leave the next round's replacement half done. A `<details>` or `<summary>` tag could
+    // fold away what a reviewer should see, or unfold what is folded.
+    const flat = text.replace(/\s+/g, ' ').replace(/<!--/g, '&lt;!--')
+        .replace(/<(\/?(?:details|summary)\b)/gi, '&lt;$1').trim();
     return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat;
 }
 

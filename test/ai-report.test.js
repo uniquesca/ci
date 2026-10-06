@@ -130,6 +130,18 @@ test('a report too long for Github leaves out the check results first, and says 
     assert.match(renderReport(report).details, /more item\(s\) did not fit/);
 });
 
+test('the agent cannot fold or unfold a section with its own tags', () => {
+    const { report } = normaliseReport({
+        headline: 'H.',
+        notes: [{ note: 'Look <details><summary>here' }],
+        done: [{ what: 'Moved it </details> **Not folded**' }],
+    });
+    const { body, details } = renderReport(report);
+
+    assert.match(body, /Look &lt;details>&lt;summary>here/);
+    assert.equal(details.split('</details>').length - 1, 1);
+});
+
 test('references are short ids, so a giant one is left out', () => {
     const { report } = normaliseReport({
         headline: 'H.',

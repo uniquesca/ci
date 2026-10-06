@@ -26,7 +26,7 @@ test('a blocking finding requests changes, and the verdict comes from nothing el
         side: 'RIGHT',
         body: '**Blocking:** No backoff (S3)\n\nUse the existing helper.',
     }]);
-    assert.equal(result.body, '**The retry never backs off.**\n\n1 inline comment(s): 1 blocking.');
+    assert.equal(result.body, '**The retry never backs off.**\n\n1 inline comment: 1 blocking.');
 });
 
 test('the body counts the inline findings, and gives in full only those that could not be placed', () => {
@@ -40,7 +40,7 @@ test('the body counts the inline findings, and gives in full only those that cou
     }, { positions });
 
     assert.equal(result.comments.length, 2);
-    assert.match(result.body, /^\*\*h\*\*\n\n2 inline comment\(s\): 1 should fix, 1 nit\.\n\n\*\*Should fix\*\*\n\n- Whole change\n\n {2}Why\.$/);
+    assert.match(result.body, /^\*\*h\*\*\n\n2 inline comments: 1 should fix, 1 nit\.\n\n\*\*Should fix\*\*\n\n- Whole change\n\n {2}Why\.$/);
     assert.doesNotMatch(result.body, /Inline/);
 });
 

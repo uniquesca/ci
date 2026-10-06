@@ -2772,7 +2772,8 @@ jobs:
             ```
 
             - `headline` - where the pull request stands after this round, in one sentence.
-            - `done` - what you changed this round, one short line each. Not earlier rounds.
+            - `done` - what you changed this round, one short line each, ten at most. Not
+              earlier rounds.
             - `notes` - what a reviewer needs to know before reading this round's diff and cannot
               see in it. Not what changed.
             - `not_done` - feedback you declined or could not finish, and why. An item whose

@@ -136,7 +136,7 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
         const parts = [`**${headline || 'The reviewing agent gave no headline.'}**`];
 
         if (inline.length) {
-            parts.push(`${comments.length} inline comment(s): ${inline.join(', ')}.`);
+            parts.push(`${comments.length} inline comment${comments.length === 1 ? '' : 's'}: ${inline.join(', ')}.`);
         }
 
         for (const severity of SEVERITIES) {
