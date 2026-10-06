@@ -8,6 +8,9 @@ const LABELS = { blocking: 'Blocking', should: 'Should fix', nit: 'Nit' };
 
 const HEADLINE_MAX = 300;
 const TITLE_MAX = 150;
+// Github refuses a review or comment body over 65,536 characters. What is left goes to the marker,
+// the footer and the cost line added around this body.
+const BODY_MAX = 60000;
 
 // Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
 // a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
@@ -81,7 +84,7 @@ export function normaliseReview(raw) {
 
 // `positions` holds `path:line` for every line an inline comment may sit on. A finding that
 // cannot be placed is not lost: its body goes into the review body instead.
-export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500 } = {}) {
+export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX } = {}) {
     const { headline, findings, qaFocus, problems } = normaliseReview(raw);
 
     const verdict = findings.some((f) => f.severity === 'blocking') ? 'changes_requested' : 'comment';
@@ -102,32 +105,62 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
         }
     }
 
-    const parts = [`**${headline || 'The reviewing agent gave no headline.'}**`];
+    // Each finding in full, and as its title alone for when the whole review would not fit
+    const entries = findings.map((f) => {
+        const head = `- ${f.title}${refsSuffix(f.refs)}`;
+        if (f.inline) {
+            const line = `${head} - \`${f.path}:${f.line}\``;
+            return { finding: f, full: line, short: line, use: 'full' };
+        }
+        const location = f.path ? ` - \`${f.path}${f.line ? ':' + f.line : ''}\`` : '';
+        const body = f.body ? '\n\n' + clip(f.body, maxLength).replace(/^/gm, '  ') : '';
+        return { finding: f, full: head + location + body, short: head + location, use: 'full' };
+    });
 
-    for (const severity of SEVERITIES) {
-        const group = findings.filter((f) => f.severity === severity);
-        if (!group.length) {
-            continue;
+    const build = () => {
+        const parts = [`**${headline || 'The reviewing agent gave no headline.'}**`];
+
+        for (const severity of SEVERITIES) {
+            const lines = entries
+                .filter((e) => e.finding.severity === severity && e.use !== 'dropped')
+                .map((e) => e[e.use]);
+            if (lines.length) {
+                parts.push(`**${LABELS[severity]}**\n\n${lines.join('\n')}`);
+            }
         }
 
-        const lines = group.map((f) => {
-            const head = `- ${f.title}${refsSuffix(f.refs)}`;
-            if (f.inline) {
-                return `${head} - \`${f.path}:${f.line}\``;
-            }
-            const location = f.path ? ` - \`${f.path}${f.line ? ':' + f.line : ''}\`` : '';
-            const body = f.body ? '\n\n' + clip(f.body, maxLength).replace(/^/gm, '  ') : '';
-            return head + location + body;
-        });
+        const dropped = entries.filter((e) => e.use === 'dropped').length;
+        if (dropped) {
+            parts.push(`${dropped} more finding(s) did not fit. All of them are in \`review.json\`, in the run's \`ai-context-review\` download.`);
+        }
 
-        parts.push(`**${LABELS[severity]}**\n\n${lines.join('\n')}`);
+        if (qaFocus.length) {
+            parts.push(`For a tester to check first: ${qaFocus.join(', ')}.`);
+        }
+
+        return parts.join('\n\n');
+    };
+
+    // Too long: the least severe findings lose their text first, from the bottom up, and only
+    // then are left out altogether
+    let body = build();
+    while (body.length > maxBody) {
+        const shorten = entries.findLast((e) => e.use === 'full' && e.full !== e.short);
+        const drop = entries.findLast((e) => e.use !== 'dropped');
+        if (shorten) {
+            shorten.use = 'short';
+        } else if (drop) {
+            drop.use = 'dropped';
+        } else {
+            break;
+        }
+        body = build();
     }
-
-    if (qaFocus.length) {
-        parts.push(`For a tester to check first: ${qaFocus.join(', ')}.`);
+    if (entries.some((e) => e.use !== 'full')) {
+        problems.push(`the review was over ${maxBody} characters, so some findings were cut short or left out`);
     }
 
     const unplaced = findings.filter((f) => f.path && !f.inline).length;
 
-    return { verdict, body: parts.join('\n\n'), comments, unplaced, problems };
+    return { verdict, body, comments, unplaced, problems };
 }

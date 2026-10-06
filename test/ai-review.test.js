@@ -119,3 +119,19 @@ test('long text is clipped', () => {
     assert.ok(result.body.split('\n')[0].length <= 304);
     assert.ok(result.comments[0].body.length < 300);
 });
+
+test('a review too long for Github loses the text of its least severe findings first, then the findings', () => {
+    const finding = (severity, title) => ({ severity, title, body: 'x'.repeat(200), path: 'src/b.js' });
+    const raw = { headline: 'H.', findings: [finding('blocking', 'B'), finding('should', 'S'), finding('nit', 'N')] };
+
+    const shortened = renderReview(raw, { maxBody: 600 });
+    assert.ok(shortened.body.length <= 600);
+    assert.match(shortened.body, /- B - `src\/b\.js`\n\n  x{200}/);
+    assert.match(shortened.body, /- N - `src\/b\.js`$/m);
+    assert.deepEqual(shortened.problems, ['the review was over 600 characters, so some findings were cut short or left out']);
+
+    const dropped = renderReview(raw, { maxBody: 80 });
+    assert.doesNotMatch(dropped.body, /^- /m);
+    assert.match(dropped.body, /did not fit/);
+    assert.equal(dropped.verdict, 'changes_requested');
+});

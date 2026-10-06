@@ -85,7 +85,8 @@ A review that could not be submitted is a warning and an output the caller acts 
 still has `body_file` to post as a plain comment. The fallbacks, in order: as asked;
 downgraded to a comment if Github said "your own pull request"; without the inline comments; as a
 comment without them. Without the inline comments, the body carries every finding's text, and so
-does `body_file`.
+does `body_file`. A body too long for Github loses the text of its least severe findings first, and
+then the findings themselves, with a line saying how many were left out.
 
 `head_sha` is pinned explicitly so that a push which landed since the diff was taken makes the review
 outdated rather than silently misplaced.
