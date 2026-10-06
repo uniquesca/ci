@@ -106,3 +106,21 @@ test('a value that is not text where text belongs reads as missing, and never th
         '`lint` has result "toString", shown as not run',
     ]);
 });
+
+test('a report too long for Github leaves out the check results first, and says so', () => {
+    const items = (n, key, size) => Array.from({ length: n }, (_, i) => ({ [key]: `${i} ${'x'.repeat(size)}` }));
+    const { report, problems } = normaliseReport({
+        headline: 'Long.',
+        done: items(40, 'what', 290),
+        not_done: items(40, 'what', 290),
+        verification: Array.from({ length: 40 }, (_, i) => ({ command: `c${i} ${'y'.repeat(140)}`, result: 'pass', note: 'z'.repeat(190) })),
+        decisions: [{ ask: 'Keep the old API?' }],
+    });
+
+    assert.ok(JSON.stringify(report).length <= 20000);
+    assert.equal(report.verification.length, 0);
+    assert.deepEqual(report.decisions.map((d) => d.ask), ['Keep the old API?']);
+    assert.ok(report.left_out > 40);
+    assert.match(problems.at(-1), /item\(s\) were left out/);
+    assert.match(renderReport(report), /more item\(s\) did not fit/);
+});

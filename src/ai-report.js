@@ -7,6 +7,13 @@ export const STATUS_END = '<!-- /ai-status -->';
 
 const RESULTS = { pass: '✅ pass', fail: '❌ fail', not_run: '⏭️ not run' };
 const MAX_ITEMS = 40;
+// Github refuses a body over 65,536 characters, and the pull request description carries the
+// report twice - as text, and as the hidden data in the status block, which base64 makes a third
+// bigger - next to whatever the workflow adds. Measured on the report's own JSON.
+const REPORT_MAX = 20000;
+// What goes first when the report is too long: the check results, and the questions for a person
+// last of all
+const LEAVE_OUT_ORDER = ['verification', 'done', 'not_done', 'decisions'];
 
 // Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
 // a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
@@ -84,7 +91,20 @@ export function normaliseReport(raw) {
         return ask && { ask, refs: refs(item) };
     });
 
-    return { report: { headline, done, not_done: notDone, verification, decisions }, problems };
+    const result = { headline, done, not_done: notDone, verification, decisions, left_out: 0 };
+    while (JSON.stringify(result).length > REPORT_MAX) {
+        const name = LEAVE_OUT_ORDER.find((list) => result[list].length);
+        if (!name) {
+            break;
+        }
+        result[name].pop();
+        result.left_out++;
+    }
+    if (result.left_out) {
+        problems.push(`the report was over ${REPORT_MAX} characters, so ${result.left_out} item(s) were left out`);
+    }
+
+    return { report: result, problems };
 }
 
 // Under the status block, the headline and the open decisions are already said above it.
@@ -113,6 +133,10 @@ export function renderReport(report, { underStatus = false } = {}) {
 
     if (!underStatus && report.decisions.length) {
         parts.push('**Needs a decision**\n\n' + report.decisions.map((d) => `- ${d.ask}${refsText(d.refs)}`).join('\n'));
+    }
+
+    if (report.left_out) {
+        parts.push(`${report.left_out} more item(s) did not fit. All of them are in \`report.json\`, in the run's \`ai-context-implement\` download.`);
     }
 
     return parts.join('\n\n');
