@@ -36,6 +36,7 @@ const SHORTER = [
     ['qa', ['where', 'do', 'expect'], 120, 'QA steps'],
     ['risks', ['text', 'ask'], 120, 'risks'],
     ['steps', ['title'], 80, 'step titles'],
+    ['steps', ['scope'], 100, 'step scopes'],
     ['checks', ['text'], 150, 'checks'],
 ];
 
@@ -136,6 +137,7 @@ export function normalisePlan(raw, previous = null) {
         })),
         steps: section('steps', (item, id) => ({
             title: clip(line(item.title), 150, problems, id),
+            scope: clip(line(item.scope), 200, problems, id),
             detail: clip(block(item.detail), 2500, problems, id),
             depends_on: ids(item.depends_on),
         })),
@@ -223,12 +225,16 @@ export function normalisePlan(raw, previous = null) {
 export function renderPlan(plan) {
     const parts = [plan.revision ? `**Revised:** ${plan.revision}\n\n${plan.summary}` : plan.summary];
 
-    const asks = plan.risks.filter((r) => r.ask);
-    if (asks.length) {
-        parts.push('## Needs your decision\n\n' + asks.map((r) => `- **${r.id}** ${r.ask}`).join('\n'));
+    if (plan.risks.length) {
+        parts.push('## Risks, unknowns and assumptions\n\n' + plan.risks
+            .map((r) => `- **${r.id}** ${r.text}${r.ask ? ` **Needs your decision:** ${r.ask}` : ''}`)
+            .join('\n'));
     }
 
-    parts.push('## Steps\n\n' + plan.steps.map((s) => `- [ ] **${s.id}** ${s.title}`).join('\n'));
+    // The scope goes on a line of its own under the title, inside the same list item
+    parts.push('## Steps\n\n' + plan.steps
+        .map((s) => `- [ ] **${s.id}** ${s.title}${s.scope ? `\n  ${s.scope}` : ''}`)
+        .join('\n'));
 
     // A plan with nothing for a tester says why in its JSON, and shows no section at all
     if (plan.qa.length) {
