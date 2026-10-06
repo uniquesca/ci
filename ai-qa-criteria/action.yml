@@ -132,9 +132,8 @@ runs:
           { while (pending > 0) { print ""; pending-- } print; started = 1 }
         ' "$tmp/raw.md" > "$tmp/section.md"
 
-        # A plan from before plans left the section out says `None - ` and why, and that is nothing
-        # to test either
-        if head -n 1 "$tmp/section.md" | grep -q '^None\b'; then
+        # A section that only says `None - ` and why has nothing to test either
+        if head -n 1 "$tmp/section.md" | grep -q '^None - '; then
           : > "$tmp/section.md"
         fi
 

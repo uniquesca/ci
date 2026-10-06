@@ -66,7 +66,7 @@ runs:
         # pasted by hand - agents are told to trust only the former
         #
         # A plan carries itself as JSON, folded under what a person reads - see `src/ai-plan.js`.
-        # A plan from before carried it hidden and base64-encoded instead. Either is staged once,
+        # Some plans carry it hidden and base64-encoded instead. Either is staged once,
         # as `plan.json` below, and taken out of every body here: it is thousands of characters an
         # agent would otherwise read on every turn.
         gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
@@ -99,8 +99,8 @@ runs:
         # What a person reads: the plan without its JSON
         jq -r "$strip"' .body // empty | without_plan_data' "$plan_comment" > "$DIR/plan.md"
 
-        # The whole plan as JSON - folded under the plan, or hidden in one from before. A plan
-        # from before plans were JSON carries neither.
+        # The whole plan as JSON - folded under the plan, or hidden and base64-encoded. A plan
+        # posted as markdown alone carries neither.
         rm -f "$DIR/plan.json"
         if [[ -n "$(jq -r '.plan_json // empty' "$plan_comment")" ]]; then
           jq -r '.plan_json' "$plan_comment" | jq '.' > "$DIR/plan.json" 2> /dev/null || true

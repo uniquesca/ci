@@ -7,7 +7,7 @@ export const SEVERITIES = ['high', 'medium', 'low'];
 
 const LABELS = { high: '🔴 High', medium: '🟠 Medium', low: '🟡 Low' };
 
-// What a review written before the names changed called them
+// Also accepted as severities, read as the names they map to
 const OLD_NAMES = { blocking: 'high', should: 'medium', nit: 'low' };
 
 const HEADLINE_MAX = 300;

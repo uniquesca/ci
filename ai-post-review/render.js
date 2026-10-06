@@ -27,7 +27,7 @@ if (linksFile) {
     try {
         links = JSON.parse(fs.readFileSync(linksFile, 'utf8'));
     } catch {
-        // The body goes out unlinked, which is what it was before the links were known
+        // The body goes out unlinked
     }
 }
 

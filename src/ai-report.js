@@ -139,7 +139,7 @@ export function renderReport(report, { underStatus = false } = {}) {
         parts.push(`**${report.headline}**`);
     }
 
-    // A report from before the field existed has none
+    // Optional: a report without one starts at its first section
     if (report.summary) {
         parts.push(report.summary);
     }
