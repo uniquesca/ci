@@ -25,9 +25,6 @@ Read what you wrote as if somebody else wrote it, and go through this on every c
   the other workflows for its name.
 - **Comments are claims.** A comment saying something is safe is what you are checking, not proof.
 
-Then have it reviewed by an agent that did not write it (`/code-review high` in Claude Code) before
-the pull request goes up. The author shares their own blind spots.
-
 ## Moving to the next major version
 
 The workflows and actions reference each other at the active version branch, so a caller on it
