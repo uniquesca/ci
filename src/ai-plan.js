@@ -7,8 +7,14 @@ const PREFIX = { risks: /^[RU]\d+$/, steps: /^S\d+$/, qa: /^QA\d+$/, checks: /^C
 
 export const DATA_PATTERN = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
 
-function clip(text, max, problems, what) {
-    const trimmed = String(text ?? '').trim();
+// Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
+// a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
+function text(value) {
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+function clip(value, max, problems, what) {
+    const trimmed = text(value).trim();
     if (trimmed.length <= max) {
         return trimmed;
     }
@@ -24,12 +30,16 @@ function idsText(list) {
     return list.length ? ` (${list.join(', ')})` : '';
 }
 
-// Every id the plan ever used: live ones, and the retired ones it carries
+// Every id the plan ever used: live ones, and the retired ones it carries. The previous plan is
+// read back from the comment it was posted in, so it is checked rather than trusted.
 export function allIds(plan) {
-    if (!plan) {
+    if (!plan || typeof plan !== 'object') {
         return [];
     }
-    return [...plan.risks, ...plan.steps, ...plan.qa, ...plan.checks, ...plan.retired].map((item) => item.id);
+    return ['risks', 'steps', 'qa', 'checks', 'retired']
+        .flatMap((name) => (Array.isArray(plan[name]) ? plan[name] : []))
+        .map((item) => item?.id)
+        .filter((id) => typeof id === 'string' && id);
 }
 
 // The agent read text anybody able to comment wrote, so its output is untrusted input. Small
@@ -43,7 +53,7 @@ export function normalisePlan(raw, previous = null) {
 
     const seen = new Set();
     const section = (name, pick) => (Array.isArray(raw[name]) ? raw[name] : []).map((item) => {
-        const id = String(item?.id ?? '').trim();
+        const id = text(item?.id).trim();
         if (!PREFIX[name].test(id)) {
             problems.push(`"${id}" is not a valid id for ${name}, dropped`);
             return null;
@@ -64,7 +74,7 @@ export function normalisePlan(raw, previous = null) {
             ask: clip(item.ask, 500, problems, id),
         })),
         steps: section('steps', (item, id) => ({
-            title: clip(String(item.title ?? '').replace(/\s+/g, ' '), 150, problems, id),
+            title: clip(text(item.title).replace(/\s+/g, ' '), 150, problems, id),
             detail: clip(item.detail, 2500, problems, id),
             depends_on: ids(item.depends_on),
         })),
@@ -96,12 +106,10 @@ export function normalisePlan(raw, previous = null) {
     // Retired ids are kept for good, so the next revision knows which numbers are used and an
     // old comment citing one still reads. Whatever the previous plan had that this one neither
     // uses nor retires is retired here rather than forgotten.
-    const why = new Map([
-        ...(previous?.retired ?? []).map((item) => [item.id, item.why]),
-        ...(Array.isArray(raw.retired) ? raw.retired : [])
-            .filter((item) => typeof item?.id === 'string' && String(item.why ?? '').trim())
-            .map((item) => [item.id.trim(), String(item.why).trim()]),
-    ]);
+    const reasons = (list) => (Array.isArray(list) ? list : [])
+        .filter((item) => typeof item?.id === 'string' && text(item.why).trim())
+        .map((item) => [item.id.trim(), text(item.why).trim()]);
+    const why = new Map([...reasons(previous?.retired), ...reasons(raw.retired)]);
 
     const candidates = new Set([...allIds(previous), ...why.keys()]);
     for (const id of candidates) {

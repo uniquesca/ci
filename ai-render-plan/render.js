@@ -42,11 +42,22 @@ function fromMessage(file) {
     }
 }
 
+// Anything that still goes wrong reading the plan falls back to the agent's final message, the
+// same as a plan it cannot use
+function read(input, previousPlan) {
+    try {
+        return normalisePlan(input, previousPlan);
+    } catch (error) {
+        warn(`The plan could not be read: ${error.message}`);
+        return { plan: null, problems: [] };
+    }
+}
+
 const raw = readJson(env.INPUT_PLAN_FILE, () => warn(`The agent wrote no ${env.INPUT_PLAN_FILE}`))
     ?? fromMessage(env.INPUT_FALLBACK_FILE);
-const previous = normalisePlan(readJson(env.INPUT_PREVIOUS_FILE)).plan;
+const previous = read(readJson(env.INPUT_PREVIOUS_FILE)).plan;
 
-const { plan, problems } = raw ? normalisePlan(raw, previous) : { plan: null, problems: [] };
+const { plan, problems } = raw ? read(raw, previous) : { plan: null, problems: [] };
 problems.forEach(warn);
 
 const file = path.join(out, 'plan.md');

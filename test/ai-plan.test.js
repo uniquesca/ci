@@ -89,3 +89,24 @@ test('the plan data reads back from the comment', () => {
     assert.deepEqual(readPlanData(`text\n${planData(normal)}\nmore`), normal);
     assert.equal(readPlanData('no data'), null);
 });
+
+test('a value that is not text where text belongs reads as missing, and never throws', () => {
+    const notText = { toString: null };
+    const result = normalisePlan({
+        summary: notText,
+        steps: [{ id: notText, title: 'Dropped' }, { id: 'S1', title: notText, detail: 'Kept.' }],
+        checks: [{ id: 'C1', text: 'Tests pass.' }],
+        retired: [{ id: 'S2', why: notText }],
+    });
+
+    assert.deepEqual(result.plan.steps.map((s) => [s.id, s.title, s.detail]), [['S1', '', 'Kept.']]);
+    assert.ok(result.problems.includes('"" is not a valid id for steps, dropped'));
+    assert.ok(result.problems.includes('no summary'));
+});
+
+test('a previous plan read back malformed does not break the next one', () => {
+    for (const previous of [{ steps: 'nope' }, { retired: [null, { id: 5 }] }, 'text']) {
+        const result = normalisePlan({ summary: 'S.', steps: [{ id: 'S1', title: 'T' }], checks: [{ id: 'C1', text: 'C' }] }, previous);
+        assert.deepEqual(result.plan.retired, []);
+    }
+});
