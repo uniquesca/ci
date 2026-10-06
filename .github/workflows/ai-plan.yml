@@ -870,9 +870,13 @@ jobs:
               Settings -> Business Hours"), and every place and kind of user it reaches when
               there is more than one; `do` is what they do; `expect` is what they should see.
               `covers` lists the steps it tests. Anything that needs the repository to check
-              is a check, not a `qa`. When nothing in the change is observable from outside
-              - a refactor, a dependency bump, CI or tooling - leave `qa` empty and say why in
-              `qa_none`.
+              is a check, not a `qa`. Write one only for what the change is meant to change
+              for users: a screen, result, message, speed or data they see. A change meant to
+              leave behaviour as it is - code style, a refactor, a dependency bump, CI or
+              tooling - gets none: leave `qa` empty and say why in `qa_none`. "It still
+              deploys" or "it works as before" is not a criterion; catching that is what the
+              checks are for, and a real chance of breaking something users see is an `R`.
+              If the summary says nothing changes for users, `qa` is empty.
             - `checks` - the concrete checks that prove the work is done: the command to
               run, the test that passes, the linter that comes back clean.
             - `retired` - ids of the previous plan you dropped, and why in a few words.

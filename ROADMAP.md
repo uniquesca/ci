@@ -147,6 +147,8 @@ instead of the data.
 After a few real runs with step 3:
 
 - Check what the AI wrote before posting: length limits, banned phrases, ids that exist.
+- Plans for changes users do not see, such as code style, should have no QA steps. If plans still
+  get them, make the planner say first what users will see, and reject QA steps when that is empty.
 - Record how long the text was and what the check found in the cost line.
 - Cut the prompts to about half: instructions only, with the reasoning kept in the workflow
   comments.
