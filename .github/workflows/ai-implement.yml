@@ -2571,12 +2571,17 @@ jobs:
             Leave your work in the working tree as uncommitted changes. That is what gets
             committed for you.
 
+            Run every command in the foreground and wait for it, however long it takes. This
+            run ends when your turn does: nothing wakes you when a background command finishes,
+            so its result is never read and the report below never gets written.
+
             When you are done, write `.ai-review/report.json`. The workflow lays it out as the
             pull request description, so your final message is only for the run log:
 
             ```json
             {
               "headline": "One sentence: where the work stands.",
+              "summary": "Two or three sentences on what this run did.",
               "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
               "notes": [{"note": "The fixer's edits and the hand edits are in one commit", "refs": ["S4"]}],
               "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
@@ -2586,6 +2591,8 @@ jobs:
             ```
 
             - `headline` - where the work stands, in one sentence.
+            - `summary` - what you did, in two or three sentences of simple English that
+              somebody who has not read the code can follow.
             - `done` - what changed, one short line per change a reviewer would recognise, ten
               at most. Not every file, and not the plan retold - the reviewer reads the diff.
             - `notes` - what a reviewer needs to know before reading the diff and cannot see in
@@ -2760,6 +2767,10 @@ jobs:
 
             Leave your work in the working tree as uncommitted changes.
 
+            Run every command in the foreground and wait for it, however long it takes. This
+            run ends when your turn does: nothing wakes you when a background command finishes,
+            so its result is never read and the report below never gets written.
+
             When you are done, write `.ai-review/report.json`. The workflow lays it out as the
             round comment and keeps the summary at the top of the pull request from it, so your
             final message is only for the run log:
@@ -2767,6 +2778,7 @@ jobs:
             ```json
             {
               "headline": "One sentence: where the work stands.",
+              "summary": "Two or three sentences on what this run did.",
               "done": [{"what": "Moved the retry loop into the client", "refs": ["S3"]}],
               "notes": [{"note": "The fixer's edits and the hand edits are in one commit", "refs": ["S4"]}],
               "not_done": [{"what": "The migration", "why": "Needs U2 settled first", "refs": ["S5"]}],
@@ -2776,6 +2788,8 @@ jobs:
             ```
 
             - `headline` - where the pull request stands after this round, in one sentence.
+            - `summary` - what this round did, in two or three sentences of simple English
+              that somebody who has not read the code can follow.
             - `done` - what you changed this round, one short line each, ten at most. Not
               earlier rounds.
             - `notes` - what a reviewer needs to know before reading this round's diff and cannot
@@ -3281,6 +3295,7 @@ jobs:
           # actually cut from - the default branch unless the command asked for another
           BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
+          ISSUE_URL: ${{ github.server_url }}/${{ github.repository }}/issues/${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
           # The agent's rendered report, carrying the held-back workflow patch where the step
           # that held it back appended one
@@ -3329,13 +3344,14 @@ jobs:
             # Written to RUNNER_TEMP rather than the checkout - this workflow commits its
             # working tree, so nothing scratch belongs in it.
             #
-            # `Implements` rather than `Closes` on purpose. Review here is the point, and
-            # auto-closing the issue on the first merge cuts that short - as does merging a
+            # A link to the issue rather than `Closes #N` on purpose. Review here is the point,
+            # and auto-closing the issue on the first merge cuts that short - as does merging a
             # partial implementation.
             {
               [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
-              printf 'Implements #%s.\n\n' "$ISSUE"
-              [[ -n "$PLAN_URL" ]] && printf 'Built from the [approved plan](%s).\n\n' "$PLAN_URL"
+              printf '[Issue #%s](%s)' "$ISSUE" "$ISSUE_URL"
+              [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
+              printf '\n\n'
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
                 cat "$SUMMARY_FILE"
                 printf '\n'
@@ -3345,7 +3361,7 @@ jobs:
               # details, where somebody about to test the change will look.
               printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
               [[ -n "$DETAILS_FILE" && -f "$DETAILS_FILE" ]] && printf '%s\n\n' "$(cat "$DETAILS_FILE")"
-              printf -- '---\n\n'
+              printf '## What'"'"'s next\n\n'
               printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n\n'
               # This workflow's own command, said on the pull request rather than only in the
               # hand-off comment back on the issue. It is the answer to "how do I ask for a round"
@@ -3388,7 +3404,6 @@ jobs:
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
           plan_file: ${{ steps.stage_issue.outputs.plan_file }}
-          plan_url: ${{ steps.stage_issue.outputs.plan_url }}
           marker: ${{ env.QA_MARKER }}
           end_marker: ${{ env.QA_END_MARKER }}
 

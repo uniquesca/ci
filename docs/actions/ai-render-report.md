@@ -39,11 +39,12 @@ Used by [`ai-implement`](../ai/ai-implement.md).
 
 ### The report and the status block
 
-The agent writes a `headline` and five lists - `done`, `notes`, `not_done`, `verification` and
-`decisions` - whose items can carry plan ids in `refs`; `src/ai-report.js` has the shape and the
-layout, and leaves empty sections out. The status block sits between `<!-- ai-status -->` markers at
-the top of the pull request and carries the report itself base64-encoded in a hidden comment, which
-is where [`ai-stage-pull-request`](ai-stage-pull-request.md) reads it back as `last-report.json` for
-the next round and the reviewer. A report over 12,000 bytes is cut to fit Github's size limit next
-to the held-back workflow changes, leaving out check results first and the questions for a person
-last, with a line saying how many items were left out.
+The agent writes a `headline`, a two-or-three-sentence `summary` and five lists - `done`, `notes`,
+`not_done`, `verification` and `decisions` - whose items can carry plan ids in `refs`;
+`src/ai-report.js` has the shape and the layout, and leaves empty sections out. The status block
+sits between `<!-- ai-status -->` markers at the top of the pull request and carries the report
+itself base64-encoded in a hidden comment, which is where
+[`ai-stage-pull-request`](ai-stage-pull-request.md) reads it back as `last-report.json` for the next
+round and the reviewer. A report over 12,000 bytes is cut to fit Github's size limit next to the
+held-back workflow changes, leaving out check results first and the questions for a person last,
+with a line saying how many items were left out.

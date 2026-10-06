@@ -4,6 +4,7 @@ import { normaliseReport, renderReport, renderStatus, readStatus, replaceStatus,
 
 const full = {
     headline: 'S1-S4 done, S5 left for a decision.',
+    summary: 'Retries now back off in the client. The migration waits for a decision.',
     done: [{ what: 'Moved the retry loop into the client', refs: ['S3'] }],
     notes: [{ note: 'The fixer and the hand edits are in one commit', refs: ['S4'] }],
     not_done: [{ what: 'Migration', why: 'Needs the schema change in U2 settled first.', refs: ['S5'] }],
@@ -19,7 +20,7 @@ test('what a reviewer reads first comes in a fixed order, and what changed and t
     const { body, details } = renderReport(report);
 
     assert.deepEqual(problems, []);
-    const order = ['**S1-S4', '**For the reviewer**', '**Not done**', '**Needs a decision**'].map((s) => body.indexOf(s));
+    const order = ['**S1-S4', 'Retries now back off', '## For the reviewer', '## Not done', '## Needs a decision'].map((s) => body.indexOf(s));
     assert.ok(order.every((pos) => pos >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     assert.match(body, /- The fixer and the hand edits are in one commit \(S4\)/);
@@ -91,7 +92,8 @@ test('under the status block, the headline and the decisions are left to it', ()
 
     assert.ok(!body.includes('S1-S4 done'));
     assert.ok(!body.includes('Needs a decision'));
-    assert.match(body, /\*\*For the reviewer\*\*/);
+    assert.ok(body.startsWith('Retries now back off in the client.'));
+    assert.match(body, /## For the reviewer/);
 });
 
 test('a value that is not text where text belongs reads as missing, and never throws', () => {
