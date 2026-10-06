@@ -1,0 +1,42 @@
+name: AI render plan
+
+description: Check the plan a planning agent wrote as JSON against the plan before it, and render it as the markdown posted on the issue. Never fails the job
+
+inputs:
+  plan_file:
+    description: 'File the agent wrote. See `src/ai-plan.js` for its shape'
+    required: false
+    default: '.ai-plan/new-plan.json'
+  previous_file:
+    description: 'The plan before this one, as `ai-stage-issue` staged it. Its ids are carried as retired where this plan drops them'
+    required: false
+    default: '.ai-plan/plan.json'
+  fallback_file:
+    description: 'What to post instead when the plan is missing or unusable - the final message the agent ended on'
+    required: false
+    default: ''
+
+outputs:
+  rendered:
+    description: 'Whether the JSON plan was usable - "true" or "false"'
+    value: ${{ steps.render.outputs.rendered }}
+  plan_file:
+    description: 'The rendered plan, or a copy of `fallback_file`. Empty when there was neither'
+    value: ${{ steps.render.outputs.plan_file }}
+  data:
+    description: 'The plan as a hidden HTML comment, for the caller to add to the posted comment so the next revision and `ai-stage-issue` can read it back. Empty for a fallback'
+    value: ${{ steps.render.outputs.data }}
+  has_qa:
+    description: 'Whether the plan has QA acceptance criteria - "true" or "false"'
+    value: ${{ steps.render.outputs.has_qa }}
+
+runs:
+  using: composite
+  steps:
+    - id: render
+      shell: bash
+      env:
+        INPUT_PLAN_FILE: ${{ inputs.plan_file }}
+        INPUT_PREVIOUS_FILE: ${{ inputs.previous_file }}
+        INPUT_FALLBACK_FILE: ${{ inputs.fallback_file }}
+      run: node "$GITHUB_ACTION_PATH/render.js"

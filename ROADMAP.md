@@ -111,8 +111,6 @@ Still open from step 1:
 - Check whether a `.claude/settings.json` on a pull request branch can give the reviewer more tools
   while it holds the review App's key.
 
-## In review
-
 ### Step 2: Show that a command was heard (#25)
 
 - React 👀 to a command when a run picks it up, then 🚀 or 😕 when it ends.
@@ -120,7 +118,8 @@ Still open from step 1:
   with one line saying how to run it.
 - Link the run and what the AI was given at the end of every result.
 - Say which workflow started a round that a failing check started.
-- Name the runs in the Actions list in the caller examples.
+- Name the runs in the Actions list in the caller examples. Not yet done in the repositories that
+  use them.
 - Say when the branch conflicts with its base, because reviews then start nothing.
 
 ### Step 3: A fixed layout for everything the AI writes (#26, #27, #28)
@@ -137,6 +136,10 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
 - **A shared style guide** in every prompt: say the conclusion first, do not describe what you read,
   refer to ids instead of repeating things.
 
+Watch the first real runs for: whether the planner can write its one file, plans that only fit
+under GitHub's comment size limit without their data, and how often the plain answer is used
+instead of the data.
+
 ## Next
 
 ### Step 3d: Tidy up the AI's writing
@@ -144,6 +147,8 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
 After a few real runs with step 3:
 
 - Check what the AI wrote before posting: length limits, banned phrases, ids that exist.
+- Plans for changes users do not see, such as code style, should have no QA steps. If plans still
+  get them, make the planner say first what users will see, and reject QA steps when that is empty.
 - Record how long the text was and what the check found in the cost line.
 - Cut the prompts to about half: instructions only, with the reasoning kept in the workflow
   comments.

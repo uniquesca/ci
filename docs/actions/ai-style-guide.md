@@ -4,7 +4,8 @@ The writing rules every AI agent's prompt carries - lead with the conclusion, no
 hedging, no restating, no internal file names. The rules are in
 [`ai-style-guide/style.md`](../../ai-style-guide/style.md).
 
-Used by [`ai-implement`](../ai/ai-implement.md) and [`ai-review`](../ai/ai-review.md).
+Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) and
+[`ai-review`](../ai/ai-review.md).
 
 ```yaml
 - id: style
