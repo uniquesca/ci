@@ -1420,3 +1420,7 @@
 * Update: the AI caller examples name their runs with `run-name:` (0102510 by George Shestayev)
 * Update: AI Implement acts on failing checks even when the AI review approves (6878b16 by George Shestayev)
 * Update: improved default coverage report path (db3b959 by George Shestayev)
+
+## v11.21.1
+
+* Update: AI plans show only what a person needs, with the full plan folded underneath as JSON (#30) (44d8368 by George Shestayev)
