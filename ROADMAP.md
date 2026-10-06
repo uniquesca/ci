@@ -157,8 +157,9 @@ part of a plan really is, and how often the plain answer is used instead of the 
 After a few real runs with step 3:
 
 - Check what the AI wrote before posting: length limits, banned phrases, ids that exist.
-- Plans for changes users do not see, such as code style, should have no QA steps. If plans still
-  get them, make the planner say first what users will see, and reject QA steps when that is empty.
+- Plans for changes no user can reach, such as code style, should have no QA steps, and a refactor
+  of code users run should have regression ones. If plans still get this wrong, make the planner
+  name the user flows the change runs through first, and check its QA steps against that list.
 - Record how long the text was and what the check found in the cost line.
 - Cut the prompts to about half: instructions only, with the reasoning kept in the workflow
   comments.
