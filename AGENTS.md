@@ -62,7 +62,9 @@ comment does not earn its place, leave it out.
 # Documentation
 
 Everything under `docs/` is laid out the same way: task-oriented sections first, then a single
-`## Dig deeper` heading, then the detail.
+`## Dig deeper` heading. Anything that is not straightforward goes under it, so it does not
+overwhelm somebody who only wants to get going. A page where everything is straightforward has no
+`## Dig deeper`.
 
 **Keep the sections above `## Dig deeper` terse.** They exist to get somebody running, and every
 sentence added to them costs the reader something. Caveats, rationale, failure modes, "why it is
@@ -100,7 +102,8 @@ it: what feels load-bearing while the implementation is fresh reads as padding t
 the page for the first time. The same applies to explaining the change in conversation.
 
 One page per reusable workflow under `docs/workflows/` and per action under `docs/actions/`, each
-title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper`.
+title, description, `## Secrets` and `## Inputs` and `## Outputs` tables, then `## Dig deeper` for
+anything that is not straightforward.
 Both are listed in `docs/workflows-and-actions.md` - **add a new workflow or action to that page**,
 or it exists without anybody being able to find it. `docs/qa-checks.md` and `docs/ai/*.md` cover
 several workflows at once and are the exception; leave them that way.
