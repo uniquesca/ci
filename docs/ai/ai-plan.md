@@ -13,6 +13,8 @@ share is in [AI assisted development](../ai.md#integrating-a-repository).
 
 ```yaml
 name: AI Plan
+# Every comment starts a run, so without this the Actions list cannot tell them apart
+run-name: 'AI Plan #${{ github.event.issue.number }}'
 
 on:
   issue_comment:

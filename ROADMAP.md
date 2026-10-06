@@ -64,6 +64,16 @@ If QA finishes first and the review run then fails, nothing starts the next roun
 checks wait for a person. The plan above fixes this too: the failure comment counts as the review
 having finished.
 
+### Clean up even when a run runs out of time
+
+When a whole run takes too long, GitHub stops it and skips everything left to do. That includes
+the clean-up at the end: taking the `ai:…` label off, swapping 👀 for 🚀 or 😕, and posting the
+failure comment. The label and 👀 then stay on, as if the AI were still working, and nobody is told
+the run failed. Each run leaves the AI about 5 minutes less than the whole run, so this is rare.
+
+**Plan:** move the clean-up into a small separate job that runs after the main one, however the main
+one ended, in all three workflows.
+
 ## For v12
 
 These are breaking changes, so they wait for the next major version.

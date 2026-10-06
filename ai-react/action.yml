@@ -1,0 +1,42 @@
+name: AI react
+
+description: Add or remove a reaction on the comment or review that started an AI run. Never fails the job
+
+inputs:
+  subject:
+    description: 'GraphQL node id of the comment or review. Empty does nothing'
+    required: true
+  add:
+    description: 'Reaction to add, as a GraphQL `ReactionContent` - `EYES`, `ROCKET`, `CONFUSED` and so on. Empty adds nothing'
+    required: false
+    default: ''
+  remove:
+    description: 'Reaction of this token''s identity to remove. Empty removes nothing'
+    required: false
+    default: ''
+  token:
+    description: 'Github token. Needs `issues: write` or `pull-requests: write`'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        SUBJECT: ${{ inputs.subject }}
+        ADD: ${{ inputs.add }}
+        REMOVE: ${{ inputs.remove }}
+      run: |
+        [[ -n "$SUBJECT" ]] || exit 0
+
+        react() {
+          gh api graphql -f subject="$SUBJECT" -f content="$2" -f query="
+            mutation(\$subject: ID!, \$content: ReactionContent!) {
+              $1(input: {subjectId: \$subject, content: \$content}) { clientMutationId }
+            }" > /dev/null \
+            || echo "::warning title=Could not react::$1 $2 failed on $SUBJECT"
+        }
+
+        [[ -z "$REMOVE" ]] || react removeReaction "$REMOVE"
+        [[ -z "$ADD" ]] || react addReaction "$ADD"

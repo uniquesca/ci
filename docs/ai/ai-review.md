@@ -19,6 +19,8 @@ and to `/ai-review`. The setup all three share is in
 
 ```yaml
 name: AI Review
+# A dispatched review is otherwise titled `ai-review`, whichever pull request it is for
+run-name: 'AI Review #${{ github.event.client_payload.pull_request || github.event.issue.number }}'
 
 on:
   # What an implementing round sends when it has pushed
