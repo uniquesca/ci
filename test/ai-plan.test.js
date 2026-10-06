@@ -110,3 +110,21 @@ test('a previous plan read back malformed does not break the next one', () => {
         assert.deepEqual(result.plan.retired, []);
     }
 });
+
+test('a plan too long for Github keeps every item, and cuts the least needed text first', () => {
+    const many = (n, make) => Array.from({ length: n }, (_, i) => make(i + 1));
+    const result = normalisePlan({
+        summary: 'Big.',
+        risks: many(10, (i) => ({ id: `R${i}`, text: 'r'.repeat(1000) })),
+        steps: many(30, (i) => ({ id: `S${i}`, title: `Step ${i}`, detail: 'd'.repeat(2500) })),
+        qa: many(10, (i) => ({ id: `QA${i}`, do: 'q'.repeat(800), expect: 'e'.repeat(800) })),
+        checks: [{ id: 'C1', text: 'Tests pass.' }],
+    });
+
+    assert.ok(renderPlan(result.plan).length <= 50000);
+    assert.equal(result.plan.steps.length, 30);
+    assert.equal(result.plan.risks.length, 10);
+    assert.equal(result.plan.qa.length, 10);
+    assert.ok(result.plan.risks.every((r) => r.text.length <= 400));
+    assert.match(result.problems.at(-1), /^the plan was over 50000 characters, so its /);
+});

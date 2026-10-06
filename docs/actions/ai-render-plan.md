@@ -39,4 +39,5 @@ dropped, and so are references to steps that do not exist - each with a warning.
 plan had that this one neither uses nor retires is retired as "dropped", and retired ids keep their
 reason from one revision to the next. A plan without steps or checks is refused. The markdown keeps
 the shape every reader of a plan parses: `## Steps`, `**C1**`, and the `## QA acceptance criteria`
-section [`ai-qa-criteria`](ai-qa-criteria.md) copies.
+section [`ai-qa-criteria`](ai-qa-criteria.md) copies. A plan over 50,000 characters keeps every item
+but has its text cut, risks and QA steps before step details, until it fits Github's comment limit.

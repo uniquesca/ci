@@ -7,6 +7,28 @@ const PREFIX = { risks: /^[RU]\d+$/, steps: /^S\d+$/, qa: /^QA\d+$/, checks: /^C
 
 export const DATA_PATTERN = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
 
+// Github refuses a comment over 65,536 characters. What is left goes to the lines the workflow
+// adds around the plan; the hidden data goes in only where there is still room for it.
+const PLAN_MAX = 50000;
+
+// When a plan is too long, its text is cut to these lengths a step at a time, the least needed
+// first. Nothing is dropped: every step, check and QA item is something the implementing agent
+// or a tester works from.
+const SHORTER = [
+    ['risks', ['text'], 400, 'risks'],
+    ['qa', ['do', 'expect'], 400, 'QA steps'],
+    ['steps', ['detail'], 1500, 'step details'],
+    ['risks', ['text', 'ask'], 200, 'risks'],
+    ['qa', ['do', 'expect'], 200, 'QA steps'],
+    ['steps', ['detail'], 800, 'step details'],
+    ['steps', ['detail'], 400, 'step details'],
+    ['steps', ['detail'], 200, 'step details'],
+];
+
+function shorten(value, max) {
+    return value.length > max ? value.slice(0, max - 1).trimEnd() + '…' : value;
+}
+
 // Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
 // a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
 function text(value) {
@@ -128,6 +150,18 @@ export function normalisePlan(raw, previous = null) {
     }
     if (!plan.summary) {
         problems.push('no summary');
+    }
+
+    for (const [name, fields, max, what] of SHORTER) {
+        if (renderPlan(plan).length <= PLAN_MAX) {
+            break;
+        }
+        for (const item of plan[name]) {
+            for (const field of fields) {
+                item[field] = shorten(item[field], max);
+            }
+        }
+        problems.push(`the plan was over ${PLAN_MAX} characters, so its ${what} were cut to ${max} characters`);
     }
 
     return { plan, problems };
