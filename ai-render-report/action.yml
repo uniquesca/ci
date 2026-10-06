@@ -1,0 +1,56 @@
+name: AI render report
+
+description: Render the report.json an implementing agent wrote into the pull request body or round comment, and keep the status block at the top of the pull request current. Never fails the job
+
+inputs:
+  report_file:
+    description: 'File the agent wrote. See `src/ai-report.js` for its shape'
+    required: false
+    default: '.ai-review/report.json'
+  fallback_file:
+    description: 'What to post instead when the report is missing or unusable - the final message the agent ended on'
+    required: false
+    default: ''
+  label:
+    description: 'What the status block calls this run, e.g. `After round 3`'
+    required: true
+  under_status:
+    description: 'Whether the rendered body goes under the status block, which already gives the headline and the open decisions - so the body leaves them out'
+    required: false
+    default: 'false'
+  pull_request:
+    description: 'Pull request whose status block to replace. Empty leaves every pull request alone'
+    required: false
+    default: ''
+  token:
+    description: 'Github token, with `pull-requests: write` when `pull_request` is set'
+    required: false
+    default: ''
+
+outputs:
+  rendered:
+    description: 'Whether the report was usable - "true" or "false"'
+    value: ${{ steps.render.outputs.rendered }}
+  body_file:
+    description: 'The rendered report, or a copy of `fallback_file` when it was not usable. Empty when there was neither'
+    value: ${{ steps.render.outputs.body_file }}
+  status_file:
+    description: 'The status block, markers included. Empty when the report was not usable'
+    value: ${{ steps.render.outputs.status_file }}
+  headline:
+    description: 'The headline the agent gave'
+    value: ${{ steps.render.outputs.headline }}
+
+runs:
+  using: composite
+  steps:
+    - id: render
+      shell: bash
+      env:
+        INPUT_REPORT_FILE: ${{ inputs.report_file }}
+        INPUT_FALLBACK_FILE: ${{ inputs.fallback_file }}
+        INPUT_LABEL: ${{ inputs.label }}
+        INPUT_UNDER_STATUS: ${{ inputs.under_status }}
+        INPUT_PULL_REQUEST: ${{ inputs.pull_request }}
+        INPUT_TOKEN: ${{ inputs.token }}
+      run: node "$GITHUB_ACTION_PATH/render.js"
