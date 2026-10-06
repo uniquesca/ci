@@ -124,3 +124,12 @@ test('a report too long for Github leaves out the check results first, and says 
     assert.match(problems.at(-1), /item\(s\) were left out/);
     assert.match(renderReport(report), /more item\(s\) did not fit/);
 });
+
+test('references are short ids, so a giant one is left out', () => {
+    const { report } = normaliseReport({
+        headline: 'H.',
+        done: [{ what: 'W', refs: ['S1', 'S'.repeat(70000), ...Array(20).fill('S2')] }],
+    });
+
+    assert.deepEqual(report.done[0].refs, ['S1', ...Array(9).fill('S2')]);
+});

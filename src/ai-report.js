@@ -23,8 +23,12 @@ function clip(value, max) {
     return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat;
 }
 
+// References are plan ids like S3 or QA2. Anything longer is not one, and a list longer than this
+// is not a reference any more.
 function refs(item) {
-    return (Array.isArray(item?.refs) ? item.refs : []).filter((ref) => typeof ref === 'string' && ref);
+    return (Array.isArray(item?.refs) ? item.refs : [])
+        .filter((ref) => typeof ref === 'string' && ref && ref.length <= 20)
+        .slice(0, 10);
 }
 
 function refsText(list) {
