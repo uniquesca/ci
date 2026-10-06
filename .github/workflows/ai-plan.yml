@@ -856,16 +856,22 @@ jobs:
 
             - `summary` - two or three sentences of simple English that somebody who has
               never seen the code can follow. No class names, no file paths, no jargon -
-              those belong in the steps.
+              those belong in the steps. A call you made that the developer would want to
+              know about - splitting the work, reading an unclear issue one way - goes here
+              with its reason, so they can object to it.
             - `revision` - on a revised plan, one sentence on what changed, in ids: "S4
               dropped, S7 and S8 added, R2 no longer applies". Empty on a first plan.
-            - `risks` - only what the developer should act on before the work starts: a
-              decision that is theirs, a question you could not settle from the code, a real
-              chance of breaking something. `R1` for a risk, `U1` for an unknown or an
-              assumption you are proceeding on. `text` says why, in a sentence or two. `ask`
-              is the one question for the developer, in one sentence - it is all of a risk
-              a person sees. Leave out anything routine or already handled by a step.
-              Usually empty.
+            - `risks` - a real chance of breaking something, or a question only the developer
+              can answer. `R1` for a risk, `U1` for an unknown or an assumption you are
+              proceeding on. `text` says why, in a sentence or two. Leave out anything
+              routine, already handled by a step, or outside what the issue asks for.
+              Usually empty. Set `ask` only when you cannot settle it from the repository,
+              its history and the issue, and a wrong guess would waste the work. Otherwise
+              make the call, say it in the summary, and leave `ask` empty. Never ask the
+              developer to confirm something you have already decided, or what the obvious
+              reading of the issue is. A question is all of a risk a person sees, so it has
+              to stand on its own: one sentence somebody who has not read the code can
+              answer.
             - `steps` - in the order they should be worked in. `title` is a short imperative,
               and all of a step a person sees. `detail` says what to do and why, naming the
               real files, classes and methods. It is what the implementing agent works from,

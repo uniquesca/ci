@@ -21,7 +21,7 @@ test('a person sees the summary, the questions, the step titles and QA, and the 
     assert.deepEqual(problems, []);
     assert.equal(shown, [
         'Business hours get their own settings page.',
-        '**Needs your decision**\n\n- **U1** Confirm one set per company.',
+        '## Needs your decision\n\n- **U1** Confirm one set per company.',
         '## Steps\n\n- [ ] **S1** Add the model\n- [ ] **S2** Add the page',
         '## QA acceptance criteria\n\n- **QA1** (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. **Expect:** Reloading shows 9-5.',
         '',
@@ -30,10 +30,11 @@ test('a person sees the summary, the questions, the step titles and QA, and the 
     assert.deepEqual(readPlanData(text), normal);
 });
 
-test('a plan with nothing for a tester says so', () => {
+test('a plan with nothing for a tester shows no QA section, and keeps why in its JSON', () => {
     const { plan: normal } = normalisePlan({ ...plan, qa: [], qa_none: 'a refactor with no visible change.' });
 
-    assert.match(renderPlan(normal), /## QA acceptance criteria\n\nNone - a refactor/);
+    assert.doesNotMatch(renderPlan(normal), /## QA acceptance criteria/);
+    assert.equal(normal.qa_none, 'a refactor with no visible change.');
 });
 
 test('a plan without steps or checks is refused', () => {

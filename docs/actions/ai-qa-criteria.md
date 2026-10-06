@@ -52,8 +52,9 @@ The one thing dropped is the `Retired:` line, where a revised plan records the
 two versions of the plan, and a tester should see what they have to test and nothing else. The plan
 on the issue still has it.
 
-A plan with no such section - one written before the section existed - leaves the body exactly as it
-is, with `synced` coming back `false`. That is not an error.
+A plan with no such section has nothing for a tester. A block the body already carries is emptied,
+keeping its markers for criteria a later revision adds; a body without one is left as it is, with
+`synced` coming back `false`. Neither is an error.
 
 ### Where the block lands
 
