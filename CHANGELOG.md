@@ -1424,3 +1424,10 @@
 ## v11.21.1
 
 * Update: AI plans show only what a person needs, with the full plan folded underneath as JSON (#30) (44d8368 by George Shestayev)
+
+## v11.21.2
+
+* Fix: AI Plan only asks what it can settle from the repository and the issue, and synced stays false after emptying criteria (d158d11 by George Shestayev)
+* Update: AI pull request descriptions open with links and a summary, and end with What's next (3f4f994 by George Shestayev)
+* Update: AI Review lists findings by severity with a colour-coded count, linked to its inline comments (3f4f994 by George Shestayev)
+* Update: AI plans ask only what they cannot settle, use one heading style and leave out empty QA (f1567b8 by George Shestayev)
