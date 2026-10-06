@@ -547,6 +547,11 @@ jobs:
           echo "Staged what changed since $SHA was approved at $AT:" \
                "$(git diff --shortstat "$SHA..HEAD")"
 
+      - name: Read the style guide
+        id: style
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
+
       - name: Review the change
         id: agent
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -617,7 +622,7 @@ jobs:
             three lines below the hunk is worse than no comment, and this is the single biggest
             difference between a useful review and a noisy one.
 
-            ${{ steps.pull_request.outputs.ai_authored == 'true' && format('This is round {0}, and {1} of the {2} rounds the loop may run in a row without a person have been used. At the limit it stops and asks for one. If you are near that and the same problem is still not fixed, say so plainly in your summary and stop trying to get it fixed by repetition.', steps.stage_pr.outputs.round, steps.stage_pr.outputs.unattended_rounds, inputs.max_unattended_rounds) || 'A review of your own may already be on this pull request, and it is in the feedback below if so. If a problem you raised then is still not fixed, say so plainly in your summary - a person is reading this, and being told the change has not moved is more use to them than the same inline comment twice.' }}
+            ${{ steps.pull_request.outputs.ai_authored == 'true' && format('This is round {0}, and {1} of the {2} rounds the loop may run in a row without a person have been used. At the limit it stops and asks for one. If you are near that and the same problem is still not fixed, say so plainly in your headline and stop trying to get it fixed by repetition.', steps.stage_pr.outputs.round, steps.stage_pr.outputs.unattended_rounds, inputs.max_unattended_rounds) || 'A review of your own may already be on this pull request, and it is in the feedback below if so. If a problem you raised then is still not fixed, say so plainly in your headline - a person is reading this, and being told the change has not moved is more use to them than the same inline comment twice.' }}
 
             ${{ steps.pull_request.outputs.trigger == 'command' && 'Somebody asked for this review by commenting on the pull request, and their comment is in the feedback below. If it names something to look at, look at that first - it is the closest thing you have to being briefed.' || '' }}
 
@@ -637,7 +642,7 @@ jobs:
               round one.
             - A review with `state: "approved"` is a person saying the change was fine as it
               stood.
-              ${{ steps.approval_diff.outputs.staged == 'true' && 'Treat everything they read as settled and review `.ai-review/since-approval.patch` - what changed after it - as the change in front of you. You may still raise something inside the approved code, but only for a real defect they plainly missed, never a preference or a style point, and say in your summary that you are raising it against an approval.' || 'Treat the code as it stood then as settled, and confine yourself to what has changed since. You may still raise something inside it, but only for a real defect they plainly missed, and say in your summary that you are raising it against an approval.' }}
+              ${{ steps.approval_diff.outputs.staged == 'true' && 'Treat everything they read as settled and review `.ai-review/since-approval.patch` - what changed after it - as the change in front of you. You may still raise something inside the approved code, but only for a real defect they plainly missed, never a preference or a style point, and say in that finding that you are raising it against an approval.' || 'Treat the code as it stood then as settled, and confine yourself to what has changed since. You may still raise something inside it, but only for a real defect they plainly missed, and say in that finding that you are raising it against an approval.' }}
 
             Finding nothing new since the last review is the ordinary outcome of a late round,
             not a sign you have not looked hard enough.
@@ -648,20 +653,21 @@ jobs:
               ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }}
               has already replied. Read the reply. If it made the change, do not raise it
               again. If it gave a reasoned argument for not making it, either accept the
-              argument or say in your summary that a person should settle it - **do not simply
+              argument or raise a finding saying a person should settle it - **do not simply
               repeat the original comment**.
               ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Two agents restating positions at each other is the failure mode this whole mechanism has to avoid.' || 'Restating a position the author has already answered is what makes a reviewer worth ignoring.' }}
             - An unanswered open thread is already raised. Do not duplicate it.
             - A failing `check` is already visible to whoever pushed the commit. Do not spend an
               inline comment restating what a linter said
-              ${{ steps.pull_request.outputs.ai_authored == 'true' && '- it has already reached the implementing agent, which is working on it.' || '- though where the change cannot be right while a check is red, that belongs in your summary.' }}
+              ${{ steps.pull_request.outputs.ai_authored == 'true' && '- it has already reached the implementing agent, which is working on it.' || '- though where the change cannot be right while a check is red, say so in your headline.' }}
 
-            A change that does what it set out to do and reads like the surrounding code
-            should get the `comment` verdict and a short summary saying so. Do not manufacture
-            a concern to justify the review, and do not request changes over a preference.
+            A change that does what it set out to do and reads like the surrounding code gets a
+            headline saying so and no findings. Do not manufacture a concern to justify the
+            review, and do not make a preference `blocking`.
             ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Every unnecessary round costs real money and moves nothing forward, and a reviewer that always finds something is worse than no reviewer at all because the loop never ends.' || 'A reviewer that always finds something is worse than no reviewer at all, because whoever reads it learns to stop.' }}
 
-            Request changes only for things that genuinely should not merge as they are:
+            A finding is `blocking` only for something that genuinely should not merge as it
+            is - and one blocking finding is what requests changes:
 
             - it does not do what the plan, the issue or its own description asked
             - a real bug, a broken edge case, a race, a resource leak
@@ -671,8 +677,8 @@ jobs:
             - it needs a test that is missing, where the rest of the repository tests that
               kind of thing
 
-            Everything smaller still goes in, under the `comment` verdict. The bar decides
-            the verdict, not whether something is worth saying at all.
+            Everything smaller is `should` or `nit`. The bar decides the severity, not whether
+            something is worth saying at all.
 
             A missing `CHANGELOG.md` entry is never a finding. Every repository here generates
             that file from the git log when it releases, so nothing in a pull request should be
@@ -682,14 +688,15 @@ jobs:
             cannot run them. Not being able to verify one is not a finding, and it is not grounds
             for requesting changes. What is worth saying is that the code cannot satisfy one as
             written, or that nothing in the diff addresses the steps a criterion covers - both of
-            those you can see. Where the change looks right but only a tester can settle it, say
-            which criteria those are in your summary, so whoever picks it up knows where to start.
+            those you can see. Where the change looks right but only a tester can settle a
+            criterion, list its id in `qa_focus`. Leave `qa_focus` empty when nothing has
+            changed since you last listed them.
 
             Do the reading yourself, in this run. You have no helpers to delegate to and
             nothing is arriving later, so never end a turn saying you are waiting on anything -
             there is nothing to wait for, and a run that stops to wait writes no review at all.
-            Where you could not settle something from the code, say so in the summary and move
-            on.
+            Where you could not settle something from the code, say so in the finding or the
+            headline and move on.
 
             Write your review to `.ai-review/review.json` and nothing else. Do not modify any
             other file - your edits are discarded, this job cannot push, and time spent
@@ -697,27 +704,42 @@ jobs:
 
             ```json
             {
-              "verdict": "changes_requested",
-              "summary": "markdown, for the top of the review",
-              "comments": [
-                {"path": "src/config.js", "line": 42, "body": "markdown, for this line"}
-              ]
+              "headline": "One sentence: your conclusion.",
+              "findings": [
+                {
+                  "severity": "blocking",
+                  "title": "What is wrong, in a line",
+                  "body": "Why, and what to do instead. Markdown.",
+                  "path": "src/config.js",
+                  "line": 42,
+                  "refs": ["S3"]
+                }
+              ],
+              "qa_focus": ["QA2"]
             }
             ```
 
-            - `verdict` - `changes_requested` or `comment`. Nothing else. You cannot approve;
-              merging is a person's decision. `comment` says nothing in the diff has to change, so
-              anything you left inline under it reads as a note rather than a demand.
-            - `summary` - what you looked at, what you concluded, and anything that does not
-              belong on one line. If your verdict is `comment` because it is fine, say that in
-              a sentence or two rather than padding it.
-              ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Cite the plan''s ids in brackets after what you are already saying - "the retry never backs off (S3)", "nothing here covers the migration (S6, QA2)". Never an id on its own: the plan lives on the issue, and whoever reads this review has your words and nothing else. `S3` alone tells them nothing, while the sentence with `S3` after it tells them everything and lets them go and find it. The same goes for an inline comment.' || '' }}
-            - `comments` - inline comments. `line` is the line number **in the new file**, and
-              it has to be a line the diff actually contains: an added line or a context line
-              inside a hunk. A comment on any other line is dropped before the review is
-              submitted, so check `.ai-review/diff.patch` for the number rather than guessing.
-              At most ${{ inputs.max_comments }}. Each one says what is wrong and what to do
-              instead - whoever acts on it has your words and the code, nothing else.
+            - `headline` - your conclusion in one sentence. Not what you read, not how.
+            - `findings` - one per problem. The workflow lays them out, groups them by
+              severity and decides the verdict from them, so do not write a summary of them
+              anywhere.
+              - `severity` - `blocking`, `should` or `nit`. The severity says how much it
+                matters, so the text never has to: no "non-blocking", "minor" or "small thing".
+              - `title` - the problem in one line. `body` - why it matters and what to do
+                instead, in a few sentences. Whoever acts on it has your words and the code,
+                nothing else.
+              - `path` and `line` - where it is, when it is somewhere. `line` is the line
+                number **in the new file**, and only a line the diff contains - an added line or
+                a context line inside a hunk - gets an inline comment. Check
+                `.ai-review/diff.patch` for the number rather than guessing; a finding on any
+                other line still reaches the review, but not next to the code. Leave both out
+                for a finding about the change as a whole.
+              - `refs` - ${{ steps.stage_issue.outputs.has_plan == 'true' && 'the plan ids the finding is about, such as `S3` or `QA2`. They are printed after the title.' || 'leave it empty.' }}
+            - `qa_focus` - QA criteria a tester should check first, by id. Usually empty.
+
+            ${{ steps.style.outputs.text }}
+
+            A code comment in the diff that restates what the code does is a `nit`.
 
             Your final message is not published anywhere. Put everything you want said in
             `review.json`; the final message is only for the run log, so a sentence on what
@@ -867,7 +889,7 @@ jobs:
           DROPPED: ${{ steps.submit.outputs.comments_dropped }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
-          SUMMARY_FILE: ${{ steps.report.outputs.result_file }}
+          BODY_FILE: ${{ steps.submit.outputs.body_file }}
           FOOTER: ${{ steps.footer.outputs.text }}
           # Only reaches the comment on the path where the review itself never did, since a
           # submitted review already carries this line. A report reading both sees one run
@@ -900,7 +922,7 @@ jobs:
               printf 'Reviewed %s' "$what"
               [[ "$POSTED" != '0' ]] && printf ' with %s inline comment(s)' "$POSTED"
               printf ' - %s.' "$outcome"
-              [[ "$DROPPED" != '0' ]] && printf ' %s comment(s) could not be placed on a line the diff contains; see the run log.' "$DROPPED"
+              [[ "$DROPPED" != '0' ]] && printf ' %s finding(s) are in the review body, because their line is not in the diff.' "$DROPPED"
               if [[ "$comment" == 'true' ]]; then
                 printf '\n\n**Github would not take this as a changes-requested review.** It does not allow one from the identity that opened this pull request, so this landed as a comment and it does not block merging.'
                 if [[ "$AI_AUTHORED" == 'true' ]]; then
@@ -917,8 +939,8 @@ jobs:
             comment='true'
             {
               printf 'The review could not be submitted, so here it is as a comment.\n\n'
-              if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
-                cat "$SUMMARY_FILE"
+              if [[ -n "$BODY_FILE" && -f "$BODY_FILE" ]]; then
+                cat "$BODY_FILE"
               else
                 printf 'The reviewing agent produced nothing. The run log has what it did.\n'
               fi
