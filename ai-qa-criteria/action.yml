@@ -16,10 +16,6 @@ inputs:
     description: 'The plan to read the criteria out of. `ai-stage-issue` writes this, and its `plan_file` output is what to pass here'
     required: false
     default: '.ai-plan/plan.md'
-  plan_url:
-    description: 'Link to the plan comment on the issue, for the line above the criteria. Left out when empty, which only costs the reader a link'
-    required: false
-    default: ''
   section:
     description: 'Heading of the plan section to copy, without the `##`. Everything under it up to the next `##` goes into the pull request'
     required: false
@@ -64,7 +60,6 @@ runs:
         GH_REPO: ${{ inputs.repository }}
         PR: ${{ inputs.pull_request }}
         PLAN_FILE: ${{ inputs.plan_file }}
-        PLAN_URL: ${{ inputs.plan_url }}
         SECTION: ${{ inputs.section }}
         MARKER: ${{ inputs.marker }}
         END_MARKER: ${{ inputs.end_marker }}
@@ -137,6 +132,12 @@ runs:
           { while (pending > 0) { print ""; pending-- } print; started = 1 }
         ' "$tmp/raw.md" > "$tmp/section.md"
 
+        # A plan from before plans left the section out says `None - ` and why, and that is nothing
+        # to test either
+        if head -n 1 "$tmp/section.md" | grep -q '^None\b'; then
+          : > "$tmp/section.md"
+        fi
+
         # `grep` reports "no match" as a failure, and this step runs under `set -e -o pipefail`
         criteria=$({ grep -oE '\*\*QA[0-9]+' "$tmp/section.md" || true; } | sort -u | wc -l)
 
@@ -149,14 +150,6 @@ runs:
           {
             printf '%s\n\n' "$MARKER"
             printf '## %s\n\n' "$SECTION"
-            if [[ -n "$PLAN_URL" ]]; then
-              printf 'Copied from the [plan](%s) so this can be tested without leaving the pull request. ' "$PLAN_URL"
-            else
-              printf 'Copied from the plan on the issue so this can be tested without leaving the pull request. '
-            fi
-            # A copy can always be a revision behind the thing it was copied from - this one is
-            # refreshed when the plan moves, but not by somebody editing the plan comment in place.
-            printf 'The plan is the original: where the two disagree, believe the plan.\n\n'
             cat "$tmp/section.md"
             printf '\n%s\n' "$END_MARKER"
           } > "$tmp/block.md"
@@ -185,8 +178,13 @@ runs:
           finish
         fi
 
-        if [[ ! -s "$tmp/section.md" && "$has_start" != 'true' ]]; then
-          echo "The plan has no '## $SECTION' to carry, so #$PR keeps the body it has"
+        # Nothing to carry, and nothing in the body to empty
+        if [[ ! -s "$tmp/section.md" ]] \
+           && { [[ "$has_start" != 'true' ]] \
+                || ! awk -v start="$MARKER" -v end="$END_MARKER" \
+                       '$0 == start { inside = 1; next } $0 == end { inside = 0 } inside && NF { found = 1 } END { exit !found }' \
+                       "$tmp/body.md"; }; then
+          echo "The plan has no QA criteria to carry, and #$PR carries none, so its body is left as it is"
           finish
         fi
 

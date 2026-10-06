@@ -665,11 +665,11 @@ jobs:
 
             A change that does what it set out to do and reads like the surrounding code gets a
             headline saying so and no findings. Do not manufacture a concern to justify the
-            review, and do not make a preference `blocking`.
+            review, and do not make a preference `high`.
             ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Every unnecessary round costs real money and moves nothing forward, and a reviewer that always finds something is worse than no reviewer at all because the loop never ends.' || 'A reviewer that always finds something is worse than no reviewer at all, because whoever reads it learns to stop.' }}
 
-            A finding is `blocking` only for something that genuinely should not merge as it
-            is - and one blocking finding is what requests changes:
+            A finding is `high` only for something that genuinely should not merge as it is -
+            and one high finding is what requests changes:
 
             - it does not do what the plan, the issue or its own description asked
             - a real bug, a broken edge case, a race, a resource leak
@@ -679,7 +679,8 @@ jobs:
             - it needs a test that is missing, where the rest of the repository tests that
               kind of thing
 
-            Everything smaller is `should` or `nit`. The bar decides the severity, not whether
+            Everything smaller is `medium` - worth fixing before this merges - or `low` - a small
+            improvement the author can take or leave. The bar decides the severity, not whether
             something is worth saying at all.
 
             A missing `CHANGELOG.md` entry is never a finding. Every repository here generates
@@ -709,7 +710,7 @@ jobs:
               "headline": "One sentence: your conclusion.",
               "findings": [
                 {
-                  "severity": "blocking",
+                  "severity": "high",
                   "title": "What is wrong, in a line",
                   "body": "Why, and what to do instead. Markdown.",
                   "path": "src/config.js",
@@ -721,11 +722,12 @@ jobs:
             }
             ```
 
-            - `headline` - your conclusion in one sentence. Not what you read, not how.
+            - `headline` - your conclusion in one short sentence, 25 words at most. Not what
+              you read, not how.
             - `findings` - one per problem. The workflow lays them out, groups them by
               severity and decides the verdict from them, so do not write a summary of them
               anywhere.
-              - `severity` - `blocking`, `should` or `nit`. The severity says how much it
+              - `severity` - `high`, `medium` or `low`. The severity says how much it
                 matters, so the text never has to: no "non-blocking", "minor" or "small thing".
               - `title` - the problem in one line. `body` - why it matters and what to do
                 instead, in a few sentences. Whoever acts on it has your words and the code,
@@ -741,7 +743,7 @@ jobs:
 
             ${{ steps.style.outputs.text }}
 
-            A code comment in the diff that restates what the code does is a `nit`.
+            A code comment in the diff that restates what the code does is `low`.
 
             Your final message is not published anywhere. Put everything you want said in
             `review.json`; the final message is only for the run log, so a sentence on what

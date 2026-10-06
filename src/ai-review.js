@@ -2,9 +2,13 @@
 // agent decides what to say; the shape of the review - its order, its headings, its length - is
 // decided here, so it is the same on every run.
 
-export const SEVERITIES = ['blocking', 'should', 'nit'];
+// Highest first. A `high` finding is what requests changes.
+export const SEVERITIES = ['high', 'medium', 'low'];
 
-const LABELS = { blocking: 'Blocking', should: 'Should fix', nit: 'Nit' };
+const LABELS = { high: '🔴 High', medium: '🟠 Medium', low: '🟡 Low' };
+
+// What a review written before the names changed called them
+const OLD_NAMES = { blocking: 'high', should: 'medium', nit: 'low' };
 
 const HEADLINE_MAX = 300;
 const TITLE_MAX = 150;
@@ -72,10 +76,12 @@ export function normaliseReview(raw) {
             continue;
         }
 
-        let severity = item.severity;
+        let severity = typeof item.severity === 'string' && Object.hasOwn(OLD_NAMES, item.severity)
+            ? OLD_NAMES[item.severity]
+            : item.severity;
         if (!SEVERITIES.includes(severity)) {
-            problems.push(`"${title}" has severity "${oneLine(severity, 30)}", treated as "should"`);
-            severity = 'should';
+            problems.push(`"${title}" has severity "${oneLine(item.severity, 30)}", treated as "medium"`);
+            severity = 'medium';
         }
 
         findings.push({
@@ -96,12 +102,13 @@ export function normaliseReview(raw) {
 }
 
 // `positions` holds `path:line` for every line an inline comment may sit on. A finding placed
-// inline is only counted in the body, so it is said once and tracked as a thread. One that cannot
-// be placed is not lost: its text goes into the body instead.
-export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX } = {}) {
+// inline is listed in the body by its title and tracked as a thread; one that cannot be placed
+// keeps its text in the body instead. `links` holds the address of each inline comment, in the
+// order of `comments` - known only once the review is posted, so the body is rendered again then.
+export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX, links = [] } = {}) {
     const { headline, findings, qaFocus, problems } = normaliseReview(raw);
 
-    const verdict = findings.some((f) => f.severity === 'blocking') ? 'changes_requested' : 'comment';
+    const verdict = findings.some((f) => f.severity === 'high') ? 'changes_requested' : 'comment';
 
     const comments = [];
     for (const finding of findings) {
@@ -109,6 +116,7 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
         finding.inline = Boolean(finding.path && finding.line && positions.has(where) && comments.length < maxComments);
 
         if (finding.inline) {
+            finding.link = typeof links[comments.length] === 'string' ? links[comments.length] : '';
             comments.push({
                 path: finding.path,
                 line: finding.line,
@@ -119,33 +127,34 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
         }
     }
 
-    const inline = SEVERITIES
-        .map((severity) => [findings.filter((f) => f.inline && f.severity === severity).length, severity])
-        .filter(([count]) => count)
-        .map(([count, severity]) => `${count} ${LABELS[severity].toLowerCase()}`);
+    const status = verdict === 'changes_requested'
+        ? '### 🔴 Changes requested'
+        : findings.length ? '### 🟡 Changes suggested' : '### 🟢 Looks good';
 
-    // Each finding in full, and as its title alone for when the whole review would not fit
-    const entries = findings.filter((f) => !f.inline).map((f) => {
-        const head = `- ${f.title}${refsSuffix(f.refs)}`;
+    const counts = SEVERITIES
+        .map((severity) => [findings.filter((f) => f.severity === severity).length, severity])
+        .filter(([count]) => count)
+        .map(([count, severity]) => `${LABELS[severity].split(' ')[0]} ${count} ${severity}`);
+
+    // Each finding in the list, and as its title alone for when the whole review would not fit
+    const entries = findings.map((f, index) => {
+        const title = f.link ? `[${f.title.replace(/[[\]]/g, '\\$&')}](${f.link})` : f.title;
         const location = f.path ? ` - \`${f.path}${f.line ? ':' + f.line : ''}\`` : '';
-        const body = f.body ? '\n\n' + clip(f.body, maxLength).replace(/^/gm, '  ') : '';
-        return { finding: f, full: head + location + body, short: head + location, use: 'full' };
+        const head = `${index + 1}. **${LABELS[f.severity]}** ${title}${refsSuffix(f.refs)}${location}`;
+        const body = !f.inline && f.body ? '\n\n' + clip(f.body, maxLength).replace(/^/gm, '   ') : '';
+        return { finding: f, full: head + body, short: head, use: 'full' };
     });
 
     const build = () => {
-        const parts = [`**${headline || 'The reviewing agent gave no headline.'}**`];
+        const parts = [status, headline || 'The reviewing agent gave no headline.'];
 
-        if (inline.length) {
-            parts.push(`${comments.length} inline comment${comments.length === 1 ? '' : 's'}: ${inline.join(', ')}.`);
+        if (counts.length) {
+            parts.push(`**Findings:** ${counts.join(' · ')}`);
         }
 
-        for (const severity of SEVERITIES) {
-            const lines = entries
-                .filter((e) => e.finding.severity === severity && e.use !== 'dropped')
-                .map((e) => e[e.use]);
-            if (lines.length) {
-                parts.push(`**${LABELS[severity]}**\n\n${lines.join('\n')}`);
-            }
+        const lines = entries.filter((e) => e.use !== 'dropped').map((e) => e[e.use]);
+        if (lines.length) {
+            parts.push(lines.join('\n'));
         }
 
         const dropped = entries.filter((e) => e.use === 'dropped').length;

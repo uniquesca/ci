@@ -1175,7 +1175,6 @@ jobs:
           # The plan the agent just wrote, rather than the comment it was posted as - the same
           # file the comment above was built from, without the marker and footer wrapped round it
           plan_file: ${{ steps.render.outputs.plan_file }}
-          plan_url: ${{ steps.post.outputs.url }}
 
       # A failed run is otherwise invisible from the issue - whoever ran the command is
       # left waiting for a comment that never comes. Scoped to these steps' own
