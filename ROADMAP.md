@@ -133,14 +133,14 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
 - **The report after each round:** notes for the reviewer, what was not done, and the questions for
   a person come first, then the QA steps. What was done and how it was checked are folded away. A
   status block at the top of the pull request is rewritten every round.
-- **The plan:** a summary, risks, steps, QA steps and checks, each with an id that stays the same
-  when the plan is revised.
+- **The plan:** a short summary, the questions that need a decision, the step titles and the QA
+  steps. The whole plan, with each step's detail and the checks, is folded underneath as JSON for
+  the agents. Every item has an id that stays the same when the plan is revised.
 - **A shared style guide** in every prompt: say the conclusion first, do not describe what you read,
   refer to ids instead of repeating things.
 
-Watch the first real runs for: whether the planner can write its one file, plans that only fit
-under GitHub's comment size limit without their data, and how often the plain answer is used
-instead of the data.
+Watch the first real runs for: whether the planner can write its one file, how long the visible
+part of a plan really is, and how often the plain answer is used instead of the data.
 
 ## Next
 

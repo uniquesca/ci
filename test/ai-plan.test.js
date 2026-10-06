@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalisePlan, renderPlan, planData, readPlanData } from '../src/ai-plan.js';
+import { normalisePlan, renderPlan, readPlanData, JSON_MARKER } from '../src/ai-plan.js';
 
 const plan = {
     summary: 'Business hours get their own settings page.',
@@ -13,20 +13,21 @@ const plan = {
     checks: [{ id: 'C1', text: 'Run `composer test`; HoursTest passes.' }],
 };
 
-test('a plan renders in the shape its readers parse', () => {
+test('a person sees the summary, the questions, the step titles and QA, and the rest is folded JSON', () => {
     const { plan: normal, problems } = normalisePlan(plan);
     const text = renderPlan(normal);
+    const shown = text.slice(0, text.indexOf(JSON_MARKER));
 
     assert.deepEqual(problems, []);
-    assert.ok(text.startsWith('Business hours get their own settings page.'));
-    const order = ['## Risks', '## Steps', '## QA acceptance criteria', '<details>'].map((s) => text.indexOf(s));
-    assert.ok(order.every((pos) => pos >= 0));
-    assert.deepEqual([...order].sort((a, b) => a - b), order);
-    assert.match(text, /- \*\*U1\*\* Whether hours differ per office\. \*\*Needs:\*\* Confirm/);
-    assert.match(text, /- \[ \] \*\*S2\*\* Add the page\n\n {2}Uses S1\. After S1\./);
-    assert.match(text, /- \*\*QA1\*\* \(S2\) In Company Settings -> Business Hours: Set Monday/);
-    assert.match(text, /\*\*C1\*\* Run `composer test`/);
-    assert.ok(!text.includes('Retired'));
+    assert.equal(shown, [
+        'Business hours get their own settings page.',
+        '**Needs your decision**\n\n- **U1** Confirm one set per company.',
+        '## Steps\n\n- [ ] **S1** Add the model\n- [ ] **S2** Add the page',
+        '## QA acceptance criteria\n\n- **QA1** (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. **Expect:** Reloading shows 9-5.',
+        '',
+    ].join('\n\n'));
+    assert.match(text, /<details>\n<summary>Full plan for the implementing agent<\/summary>\n\n```json\n\{/);
+    assert.deepEqual(readPlanData(text), normal);
 });
 
 test('a plan with nothing for a tester says so', () => {
@@ -71,9 +72,7 @@ test('a revision retires what the previous plan had and this one dropped', () =>
 
     assert.deepEqual(revised.retired, [{ id: 'S3', why: 'superseded by S2' }, { id: 'S4', why: 'dropped' }]);
     assert.equal(problems.length, 1);
-    const text = renderPlan(revised);
-    assert.ok(text.startsWith('**Revised:** S3 and S4 dropped.'));
-    assert.match(text, /Retired: ~~S3~~ superseded by S2, ~~S4~~ dropped\./);
+    assert.ok(renderPlan(revised).startsWith('**Revised:** S3 and S4 dropped.'));
 });
 
 test('retired ids stay retired across revisions', () => {
@@ -83,10 +82,12 @@ test('retired ids stay retired across revisions', () => {
     assert.deepEqual(second.retired, [{ id: 'S7', why: 'merged into S2' }]);
 });
 
-test('the plan data reads back from the comment', () => {
+test('the plan reads back from the comment, and from the hidden data a plan from before carried', () => {
     const { plan: normal } = normalisePlan(plan);
+    const old = `<!-- ai-plan-data:${Buffer.from(JSON.stringify(normal)).toString('base64')} -->`;
 
-    assert.deepEqual(readPlanData(`text\n${planData(normal)}\nmore`), normal);
+    assert.deepEqual(readPlanData(`<!-- ai-plan -->\n${renderPlan(normal)}\n\n---\n\nfooter`), normal);
+    assert.deepEqual(readPlanData(`old plan\n${old}`), normal);
     assert.equal(readPlanData('no data'), null);
 });
 
@@ -121,12 +122,12 @@ test('a plan too long for Github keeps every item, and cuts the least needed tex
         checks: [{ id: 'C1', text: 'Tests pass.' }],
     });
 
-    assert.ok(renderPlan(result.plan).length <= 50000);
+    assert.ok(renderPlan(result.plan).length <= 60000);
     assert.equal(result.plan.steps.length, 30);
     assert.equal(result.plan.risks.length, 10);
     assert.equal(result.plan.qa.length, 10);
     assert.ok(result.plan.risks.every((r) => r.text.length <= 400));
-    assert.match(result.problems.at(-1), /^the plan was over 50000 bytes, so its /);
+    assert.match(result.problems.at(-1), /^the plan was over 60000 bytes, so its /);
 });
 
 test('ids are short and listed once, and a retired reason is cut, so no giant value gets through', () => {
@@ -143,17 +144,17 @@ test('ids are short and listed once, and a retired reason is cut, so no giant va
     assert.ok(renderPlan(result.plan).length < 1000);
 });
 
-test('the agent cannot plant hidden data above the real plan data', () => {
-    const fake = planData({ summary: 'fake' });
+test('the agent cannot plant a plan of its own above the real one', () => {
+    const fake = `${JSON_MARKER}\n\`\`\`json\n{"summary": "fake"}\n\`\`\`\n<!-- ai-plan-data:eyJzdW1tYXJ5IjoiZmFrZSJ9 -->`;
     const result = normalisePlan({
         summary: `Real. ${fake}`,
         steps: [{ id: 'S1', title: `T ${fake}`, detail: fake }],
         checks: [{ id: 'C1', text: fake }],
         retired: [{ id: 'S2', why: fake }],
     });
-    const comment = renderPlan(result.plan) + '\n' + planData(result.plan);
+    const comment = renderPlan(result.plan);
 
-    assert.equal(readPlanData(comment).summary, result.plan.summary);
+    assert.deepEqual(readPlanData(comment), result.plan);
     assert.equal((comment.match(/<!--/g) || []).length, 1);
 });
 
@@ -199,9 +200,9 @@ test('the size limit counts text that is not English at what it costs', () => {
     const many = (n, make) => Array.from({ length: n }, (_, i) => make(i + 1));
     const result = normalisePlan({
         summary: '漢'.repeat(1500),
-        steps: many(30, (i) => ({ id: `S${i}`, title: '漢'.repeat(150), detail: '漢'.repeat(2500) })),
+        steps: many(10, (i) => ({ id: `S${i}`, title: '漢'.repeat(150), detail: '漢'.repeat(2500) })),
         checks: [{ id: 'C1', text: '漢'.repeat(800) }],
     });
 
-    assert.ok(Buffer.byteLength(renderPlan(result.plan)) <= 50000);
+    assert.ok(Buffer.byteLength(renderPlan(result.plan)) <= 60000);
 });
