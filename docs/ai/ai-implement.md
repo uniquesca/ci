@@ -130,7 +130,8 @@ An **approved** or plain **commented** review from a person deliberately does no
 decision; a passing remark is not.
 
 Each round ends with the agent pushing to the same branch, **replying to every thread it was
-given**, and posting one summary comment. It replies even to the comments it decided against -
+given**, posting one round comment, and rewriting the status at the top of the pull request - where
+it stands, and what is waiting on a decision. It replies even to the comments it decided against -
 "I did not do this, because X" is where you find out you disagree.
 
 ### What to do with a reply
@@ -292,6 +293,9 @@ record shows was settled, the round replies saying where it was settled and leav
 What the checks printed reaches the round only where a check went red: a report is kept for a
 failing check, deleted for a passing one and capped at 200 KB, so `.ai-reports/` holds failures and
 nothing else, and an all-green run uploads no artifact at all.
+
+The round is also handed what the previous run reported, read back out of the status block, so it
+starts from where the last run said things stand.
 
 Every round uploads all of it as an `ai-context-implement` artifact, together with the replies the
 agent wrote and the check reports it read.
