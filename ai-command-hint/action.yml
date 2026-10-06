@@ -1,0 +1,67 @@
+name: AI command hint
+
+description: Answer a comment that meant to run an AI command but cannot, because the command is not at the start or is on the wrong kind of page
+
+inputs:
+  command:
+    description: 'The command, e.g. `/ai-plan`'
+    required: true
+  works_on:
+    description: 'Where the command runs - `issue`, `pull-request` or `both`'
+    required: true
+  token:
+    description: 'Github token. Needs `issues: write`, and `pull-requests: write` to answer on a pull request'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        COMMAND: ${{ inputs.command }}
+        WORKS_ON: ${{ inputs.works_on }}
+        BODY: ${{ github.event.comment.body }}
+        COMMENTER: ${{ github.event.comment.user.login }}
+        NUMBER: ${{ github.event.issue.number }}
+        ON_PR: ${{ github.event.issue.pull_request && 'true' || 'false' }}
+      run: |
+        here='issue'
+        [[ "$ON_PR" == 'true' ]] && here='pull-request'
+
+        # Only a line that starts with the command, and not inside a quote, counts as an
+        # attempt to run it. A command mentioned mid-sentence is somebody talking about it.
+        #
+        # In any case, because the job gates in front of this match it that way - Github's
+        # `contains` and `startsWith` ignore case - and a comment they let through must not end
+        # up here answered with nothing.
+        command=${COMMAND,,}
+        attempt='false'
+        while IFS= read -r line; do
+          line=${line%$'\r'}
+          line=${line,,}
+          if [[ "$line" == "$command" || "$line" == "$command"[[:space:]]* ]]; then
+            attempt='true'
+            break
+          fi
+        done <<< "$BODY"
+
+        if [[ "$attempt" != 'true' ]]; then
+          echo "No line starts with $COMMAND - nothing to answer"
+          exit 0
+        fi
+
+        first_line=${BODY%%$'\n'*}
+        declare -A named=([issue]='an issue' [pull-request]='a pull request')
+
+        if [[ "$WORKS_ON" != 'both' && "$WORKS_ON" != "$here" ]]; then
+          message="@$COMMENTER \`$COMMAND\` runs on ${named[$WORKS_ON]}, and this is ${named[$here]}. Post it there instead."
+        elif [[ "${first_line,,}" != "$command"* ]]; then
+          message="@$COMMENTER \`$COMMAND\` only runs when it is the very first thing in the comment. Post it again with the command first - anything after it is still read."
+        else
+          exit 0
+        fi
+
+        gh issue comment "$NUMBER" --body "$message" \
+          || echo "::warning title=Could not answer::Nothing was posted on #$NUMBER"
