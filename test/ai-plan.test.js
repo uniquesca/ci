@@ -128,3 +128,17 @@ test('a plan too long for Github keeps every item, and cuts the least needed tex
     assert.ok(result.plan.risks.every((r) => r.text.length <= 400));
     assert.match(result.problems.at(-1), /^the plan was over 50000 characters, so its /);
 });
+
+test('ids are short and listed once, and a retired reason is cut, so no giant value gets through', () => {
+    const result = normalisePlan({
+        summary: 'S.',
+        steps: [{ id: 'S1', title: 'A' }, { id: 'S2', title: 'B', depends_on: Array(70000).fill('S1') }, { id: `S${'9'.repeat(70000)}`, title: 'C' }],
+        checks: [{ id: 'C1', text: 'C' }],
+        retired: [{ id: 'S3', why: 'w'.repeat(70000) }, { id: 'S'.repeat(70000), why: 'x' }],
+    });
+
+    assert.deepEqual(result.plan.steps.map((s) => s.id), ['S1', 'S2']);
+    assert.deepEqual(result.plan.steps[1].depends_on, ['S1']);
+    assert.deepEqual(result.plan.retired.map((r) => [r.id, r.why.length]), [['S3', 300]]);
+    assert.ok(renderPlan(result.plan).length < 1000);
+});

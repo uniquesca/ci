@@ -3,7 +3,7 @@
 // here. The markdown keeps the shape every reader of a plan already parses - the `## Steps`
 // heading, `**C1**`, the `## QA acceptance criteria` section the pull request copies.
 
-const PREFIX = { risks: /^[RU]\d+$/, steps: /^S\d+$/, qa: /^QA\d+$/, checks: /^C\d+$/ };
+const PREFIX = { risks: /^[RU]\d{1,4}$/, steps: /^S\d{1,4}$/, qa: /^QA\d{1,4}$/, checks: /^C\d{1,4}$/ };
 
 export const DATA_PATTERN = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
 
@@ -44,8 +44,9 @@ function clip(value, max, problems, what) {
     return trimmed.slice(0, max - 1).trimEnd() + '…';
 }
 
+// Each id once, and only something short enough to be one
 function ids(list) {
-    return (Array.isArray(list) ? list : []).filter((id) => typeof id === 'string' && id);
+    return [...new Set((Array.isArray(list) ? list : []).filter((id) => typeof id === 'string' && id && id.length <= 20))];
 }
 
 function idsText(list) {
@@ -77,7 +78,7 @@ export function normalisePlan(raw, previous = null) {
     const section = (name, pick) => (Array.isArray(raw[name]) ? raw[name] : []).map((item) => {
         const id = text(item?.id).trim();
         if (!PREFIX[name].test(id)) {
-            problems.push(`"${id}" is not a valid id for ${name}, dropped`);
+            problems.push(`"${shorten(id, 30)}" is not a valid id for ${name}, dropped`);
             return null;
         }
         if (seen.has(id)) {
@@ -129,8 +130,8 @@ export function normalisePlan(raw, previous = null) {
     // old comment citing one still reads. Whatever the previous plan had that this one neither
     // uses nor retires is retired here rather than forgotten.
     const reasons = (list) => (Array.isArray(list) ? list : [])
-        .filter((item) => typeof item?.id === 'string' && text(item.why).trim())
-        .map((item) => [item.id.trim(), text(item.why).trim()]);
+        .filter((item) => typeof item?.id === 'string' && item.id.trim().length <= 20 && text(item.why).trim())
+        .map((item) => [item.id.trim(), shorten(text(item.why).replace(/\s+/g, ' ').trim(), 300)]);
     const why = new Map([...reasons(previous?.retired), ...reasons(raw.retired)]);
 
     const candidates = new Set([...allIds(previous), ...why.keys()]);
