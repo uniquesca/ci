@@ -216,9 +216,16 @@ runs:
           cp "$tmp/block.md" "$tmp/new-body.md"
         fi
 
+        # `synced` says the body carries criteria, so emptying a stale block leaves it false
+        if [[ -s "$tmp/section.md" ]]; then
+          done_message="Carried $criteria QA criteri(a) into the body of #$PR"
+        else
+          done_message="Emptied the QA criteria an earlier plan left in #$PR"
+        fi
+
         if cmp -s "$tmp/body.md" "$tmp/new-body.md"; then
-          synced='true'
-          echo "#$PR already carries these $criteria QA criteri(a), nothing to edit"
+          [[ -s "$tmp/section.md" ]] && synced='true'
+          echo "#$PR already carries what the plan asks for, nothing to edit"
           finish
         fi
 
@@ -229,8 +236,8 @@ runs:
         fi
 
         if gh pr edit "$PR" --body-file "$tmp/new-body.md" > /dev/null 2> "$tmp/error.log"; then
-          synced='true'
-          echo "Carried $criteria QA criteri(a) into the body of #$PR"
+          [[ -s "$tmp/section.md" ]] && synced='true'
+          echo "$done_message"
         else
           echo "::warning title=Could not update the body::The QA criteria were not carried into #$PR - they are on the issue"
           cat "$tmp/error.log"
