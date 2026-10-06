@@ -32,10 +32,16 @@ runs:
 
         # Only a line that starts with the command, and not inside a quote, counts as an
         # attempt to run it. A command mentioned mid-sentence is somebody talking about it.
+        #
+        # In any case, because the job gates in front of this match it that way - Github's
+        # `contains` and `startsWith` ignore case - and a comment they let through must not end
+        # up here answered with nothing.
+        command=${COMMAND,,}
         attempt='false'
         while IFS= read -r line; do
           line=${line%$'\r'}
-          if [[ "$line" == "$COMMAND" || "$line" == "$COMMAND"[[:space:]]* ]]; then
+          line=${line,,}
+          if [[ "$line" == "$command" || "$line" == "$command"[[:space:]]* ]]; then
             attempt='true'
             break
           fi
@@ -46,11 +52,12 @@ runs:
           exit 0
         fi
 
+        first_line=${BODY%%$'\n'*}
         declare -A named=([issue]='an issue' [pull-request]='a pull request')
 
         if [[ "$WORKS_ON" != 'both' && "$WORKS_ON" != "$here" ]]; then
           message="@$COMMENTER \`$COMMAND\` runs on ${named[$WORKS_ON]}, and this is ${named[$here]}. Post it there instead."
-        elif [[ "${BODY%%$'\n'*}" != "$COMMAND"* ]]; then
+        elif [[ "${first_line,,}" != "$command"* ]]; then
           message="@$COMMENTER \`$COMMAND\` only runs when it is the very first thing in the comment. Post it again with the command first - anything after it is still read."
         else
           exit 0
