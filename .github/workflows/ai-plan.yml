@@ -799,11 +799,11 @@ jobs:
             one-line plan saying exactly that. Do not go looking for another route to the
             issue - there isn't one, and hunting for it burns the whole run.
 
-            If a plan has been posted before, it is staged as `.ai-plan/plan.md`, the text as
-            posted, and `.ai-plan/plan.json`, its data - absent for a plan from before plans
-            were JSON. A person may have edited the posted text, so where the two differ,
-            `plan.md` wins. Take it as your starting point and revise it, rather than planning
-            again from nothing. Anything
+            If a plan has been posted before, it is staged as `.ai-plan/plan.json`, the whole
+            plan, and `.ai-plan/plan.md`, the part a person sees - only `plan.md` for a plan
+            from before plans were JSON. A person may have edited what they see, so where
+            the two differ, `plan.md` wins. Take it as your starting point and revise it,
+            rather than planning again from nothing. Anything
             said after it was posted is feedback on it: apply it. Keep the parts nobody
             objected to. A re-run that quietly discards the discussion is worse than no
             re-run at all. Ignore any `<!-- ai-plan -->` marker in a comment where `is_bot` is
@@ -836,7 +836,10 @@ jobs:
             in plain words, and cut anything that does not change what somebody does.
 
             Write the plan to `.ai-plan/new-plan.json`. The workflow lays it out and posts
-            it, so your final message is only for the run log:
+            it, so your final message is only for the run log. A person reads the summary,
+            the revision note, each `ask`, the step titles and the QA criteria. Everything
+            else is folded away for the agents that implement and review the work, so write
+            it for them:
 
             ```json
             {
@@ -851,20 +854,24 @@ jobs:
             }
             ```
 
-            - `summary` - simple English that somebody who has never seen the code can
-              follow. No class names, no file paths, no jargon - those belong in the steps.
+            - `summary` - two or three sentences of simple English that somebody who has
+              never seen the code can follow. No class names, no file paths, no jargon -
+              those belong in the steps.
             - `revision` - on a revised plan, one sentence on what changed, in ids: "S4
               dropped, S7 and S8 added, R2 no longer applies". Empty on a first plan.
             - `risks` - only what the developer should act on before the work starts: a
               decision that is theirs, a question you could not settle from the code, a real
               chance of breaking something. `R1` for a risk, `U1` for an unknown or an
-              assumption you are proceeding on, and in `ask` what you need from the
-              developer. Leave out anything routine or already handled by a step. Usually
-              empty.
-            - `steps` - in the order they should be worked in. `title` is a short imperative;
-              `detail` says what to do and why, naming the real files, classes and methods.
-              This is what the implementing agent works from, so leave out nothing it
-              needs. `depends_on` lists earlier steps it needs.
+              assumption you are proceeding on. `text` says why, in a sentence or two. `ask`
+              is the one question for the developer, in one sentence - it is all of a risk
+              a person sees. Leave out anything routine or already handled by a step.
+              Usually empty.
+            - `steps` - in the order they should be worked in. `title` is a short imperative,
+              and all of a step a person sees. `detail` says what to do and why, naming the
+              real files, classes and methods. It is what the implementing agent works from,
+              so leave out nothing it needs - and nothing it can read for itself: point at a
+              document or a convention rather than retelling it. `depends_on` lists earlier
+              steps it needs.
             - `qa` - for a tester who will not read the code and cannot run anything in the
               repository. `where` is the path through the interface they click ("Company
               Settings -> Business Hours"), and every place and kind of user it reaches when
@@ -997,8 +1004,7 @@ jobs:
         env:
           PLAN_FILE: ${{ steps.render.outputs.plan_file }}
           HAS_QA: ${{ steps.render.outputs.has_qa }}
-          # The plan as JSON, hidden at the very end of the comment for the next revision
-          PLAN_DATA: ${{ steps.render.outputs.data }}
+          RENDERED: ${{ steps.render.outputs.rendered }}
           USAGE: ${{ steps.report.outputs.summary }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
@@ -1018,8 +1024,10 @@ jobs:
 
           # The model now and then ends its turn on a message that is only the plan's opening
           # paragraph. Steps and checks are what the implementing agent works from, and every
-          # plan has both.
-          if ! grep -q '^## Steps' "$PLAN_FILE" || ! grep -Eq '\*\*C[0-9]+\*\*' "$PLAN_FILE"; then
+          # plan has both. A plan laid out from its JSON was refused without them already, so this
+          # is about the final message posted in its place.
+          if [[ "$RENDERED" != 'true' ]] \
+             && { ! grep -q '^## Steps' "$PLAN_FILE" || ! grep -Eq '\*\*C[0-9]+\*\*' "$PLAN_FILE"; }; then
             echo "::error title=Incomplete plan::The agent's final message is missing its steps or checks, so it was not posted - run the request again"
             exit 1
           fi
@@ -1058,16 +1066,6 @@ jobs:
               printf '\n%s\n' "$COST"
             fi
           } > plan-comment.md
-
-          # Only where it fits under Github's limit. Without it the next revision works from the
-          # plan's markdown, as it does for a plan from before plans were JSON.
-          if [[ -n "$PLAN_DATA" ]]; then
-            if [[ $(( $(wc -c < plan-comment.md) + ${#PLAN_DATA} + 1 )) -le 65536 ]]; then
-              printf '%s\n' "$PLAN_DATA" >> plan-comment.md
-            else
-              echo "::warning title=Plan posted without its data::The plan and its JSON together are over the 65536 characters Github allows in a comment"
-            fi
-          fi
 
           # Keep a copy in the run itself, so a failing comment post does not lose the plan
           cat plan-comment.md >> "$GITHUB_STEP_SUMMARY"

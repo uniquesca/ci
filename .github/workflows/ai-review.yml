@@ -591,16 +591,17 @@ jobs:
             - `.ai-review/pull-request.json` - the title and description the author gave it.
               ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Context around the plan below.' || '**This is the specification.** What the author says the change is for is what to measure it against, and a description that does not match the diff is itself worth saying.' }}
             ${{ steps.pull_request.outputs.ai_authored == 'true' && '- `.ai-review/last-report.json` - what the implementing agent says it did and left undone. Judge the change against it, do not retell it. Missing when it left no report.' || '' }}
-            - `.ai-plan/plan.md` - the approved plan the change was built from, when this pull
-              request answers to an issue carrying one. If the file is not there, it does not,
-              and nothing is missing. Where it is there it is the specification, and "this does
-              not do what the plan says" is the most valuable finding you can produce. Its items
-              are numbered `S1` for a step, `R1` for a risk, `U1` for an unknown or an
-              assumption, `C1` for a check that proves the work is done and `QA1` for an
-              acceptance criterion a tester verifies by hand, each naming the steps it covers.
-              Those ids are what to check the diff against, and what to cite when something is
-              missing. An older plan may not have them, in which case refer to its steps by
-              their titles.
+            - `.ai-plan/plan.json` - the approved plan the change was built from, when this pull
+              request answers to an issue carrying one, with `.ai-plan/plan.md` beside it: the part
+              a person sees, which wins where a person edited it. A plan from before plans were JSON
+              has only `plan.md`. If neither is there, the pull request answers to no plan, and
+              nothing is missing. Where it is there it is the specification, and "this does not do
+              what the plan says" is the most valuable finding you can produce. Its items are
+              numbered `S1` for a step, `R1` for a risk, `U1` for an unknown or an assumption, `C1`
+              for a check that proves the work is done and `QA1` for an acceptance criterion a
+              tester verifies by hand, each naming the steps it covers. Those ids are what to check
+              the diff against, and what to cite when something is missing. An older plan may not
+              have them, in which case refer to its steps by their titles.
             - `.ai-plan/issue.json` - why the work was wanted in the first place, when there is
               an issue behind it.
             - `.ai-review/feedback.json` - what has already been said on this pull request, and

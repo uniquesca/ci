@@ -1,20 +1,26 @@
 // Turns the plan a planning agent wrote as JSON into the comment posted on the issue. The agent
 // decides what the plan says; the layout, and the bookkeeping of which ids exist, are decided
-// here. The markdown keeps the shape every reader of a plan already parses - the `## Steps`
-// heading, `**C1**`, the `## QA acceptance criteria` section the pull request copies.
+// here. A person sees the summary, what needs their decision, the step titles and the QA criteria
+// the pull request copies. The whole plan is folded underneath as JSON - the one copy the agents
+// work from, and what the next revision starts from.
 
 const PREFIX = { risks: /^[RU]\d{1,4}$/, steps: /^S\d{1,4}$/, qa: /^QA\d{1,4}$/, checks: /^C\d{1,4}$/ };
 
-export const DATA_PATTERN = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
+// Where the plan's JSON starts in the comment. Safe as a marker because the agent's text cannot
+// contain `<!--` - see `visible`.
+export const JSON_MARKER = '<!-- ai-plan-json -->';
+
+// How a plan from before the JSON was folded carried it: hidden, base64-encoded
+const OLD_DATA = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
 
 // Github refuses a comment over 65,536 characters, and the workflow checks the comment in bytes, so
 // text that is not English counts at what it costs. What is left goes to the lines the workflow
-// adds around the plan; the hidden data goes in only where there is still room for it.
-const PLAN_MAX = 50000;
+// adds around the plan.
+const PLAN_MAX = 60000;
 
 // When a plan is too long, its text is cut to these lengths a step at a time, the least needed
 // first. Nothing is dropped: every step, check and QA item is something the implementing agent
-// or a tester works from.
+// or a tester works from. `null` is the plan's own fields.
 const SHORTER = [
     ['risks', ['text'], 400, 'risks'],
     ['qa', ['do', 'expect'], 400, 'QA steps'],
@@ -26,6 +32,11 @@ const SHORTER = [
     ['steps', ['detail'], 200, 'step details'],
     ['checks', ['text'], 300, 'checks'],
     ['retired', ['why'], 60, 'reasons for retiring'],
+    [null, ['summary'], 500, 'summary'],
+    ['qa', ['where', 'do', 'expect'], 120, 'QA steps'],
+    ['risks', ['text', 'ask'], 120, 'risks'],
+    ['steps', ['title'], 80, 'step titles'],
+    ['checks', ['text'], 150, 'checks'],
 ];
 
 function shorten(value, max) {
@@ -195,7 +206,7 @@ export function normalisePlan(raw, previous = null) {
         if (size() <= PLAN_MAX) {
             break;
         }
-        for (const item of plan[name]) {
+        for (const item of name ? plan[name] : [plan]) {
             for (const field of fields) {
                 item[field] = shorten(item[field], max);
             }
@@ -210,25 +221,14 @@ export function normalisePlan(raw, previous = null) {
 }
 
 export function renderPlan(plan) {
-    const parts = [];
+    const parts = [plan.revision ? `**Revised:** ${plan.revision}\n\n${plan.summary}` : plan.summary];
 
-    parts.push(plan.revision ? `**Revised:** ${plan.revision}\n\n${plan.summary}` : plan.summary);
-
-    if (plan.risks.length) {
-        parts.push('## Risks, unknowns and assumptions\n\n' + plan.risks
-            .map((r) => `- **${r.id}** ${r.text}${r.ask ? ` **Needs:** ${r.ask}` : ''}`)
-            .join('\n'));
+    const asks = plan.risks.filter((r) => r.ask);
+    if (asks.length) {
+        parts.push('**Needs your decision**\n\n' + asks.map((r) => `- **${r.id}** ${r.ask}`).join('\n'));
     }
 
-    const steps = plan.steps.map((s) => {
-        const after = s.depends_on.length ? ` After ${s.depends_on.join(', ')}.` : '';
-        const detail = (s.detail + after).trim();
-        return `- [ ] **${s.id}** ${s.title}` + (detail ? '\n\n' + detail.replace(/^/gm, '  ') : '');
-    });
-    if (plan.retired.length) {
-        steps.push('Retired: ' + plan.retired.map((r) => `~~${r.id}~~ ${r.why}`).join(', ') + '.');
-    }
-    parts.push('## Steps\n\n' + steps.join('\n\n'));
+    parts.push('## Steps\n\n' + plan.steps.map((s) => `- [ ] **${s.id}** ${s.title}`).join('\n'));
 
     if (plan.qa.length) {
         parts.push('## QA acceptance criteria\n\n' + plan.qa.map((q) => {
@@ -239,24 +239,24 @@ export function renderPlan(plan) {
         parts.push(`## QA acceptance criteria\n\nNone - ${plan.qa_none}`);
     }
 
-    parts.push('<details>\n<summary>Checks for the implementing agent</summary>\n\n'
-        + plan.checks.map((c) => `**${c.id}** ${c.text}`).join('\n\n')
-        + '\n\n</details>');
+    // A JSON string holds no raw line break, so no line of it can close the fence early
+    parts.push(`${JSON_MARKER}\n<details>\n<summary>Full plan for the implementing agent</summary>\n\n`
+        + '```json\n' + JSON.stringify(plan, null, 2) + '\n```\n\n</details>');
 
     return parts.join('\n\n');
 }
 
-export function planData(plan) {
-    return `<!-- ai-plan-data:${Buffer.from(JSON.stringify(plan)).toString('base64')} -->`;
-}
-
+// The plan's JSON out of a posted comment, or out of the hidden data a plan from before carried
 export function readPlanData(text) {
-    const match = DATA_PATTERN.exec(String(text ?? ''));
-    if (!match) {
-        return null;
-    }
+    const body = String(text ?? '');
+    const start = body.indexOf(JSON_MARKER);
+    const folded = start === -1 ? null : /```json\n([\s\S]*?)\n```/.exec(body.slice(start));
+    const old = OLD_DATA.exec(body);
     try {
-        return JSON.parse(Buffer.from(match[1], 'base64').toString('utf8'));
+        if (folded) {
+            return JSON.parse(folded[1]);
+        }
+        return old ? JSON.parse(Buffer.from(old[1], 'base64').toString('utf8')) : null;
     } catch {
         return null;
     }

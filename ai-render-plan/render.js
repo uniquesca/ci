@@ -3,13 +3,13 @@
 // the agent ended on, which the caller checks the way it always has.
 import fs from 'node:fs';
 import path from 'node:path';
-import { normalisePlan, renderPlan, planData } from '../src/ai-plan.js';
+import { normalisePlan, renderPlan } from '../src/ai-plan.js';
 
 const env = process.env;
 const out = path.join(env.RUNNER_TEMP, 'ai-render-plan');
 fs.mkdirSync(out, { recursive: true });
 
-const outputs = { rendered: 'false', plan_file: '', data: '', has_qa: 'false' };
+const outputs = { rendered: 'false', plan_file: '', has_qa: 'false' };
 
 function warn(message) {
     console.log(`::warning title=Plan problem::${message}`);
@@ -73,7 +73,7 @@ const file = path.join(out, 'plan.md');
 
 if (plan) {
     fs.writeFileSync(file, renderPlan(plan) + '\n');
-    Object.assign(outputs, { rendered: 'true', plan_file: file, data: planData(plan), has_qa: String(plan.qa.length > 0) });
+    Object.assign(outputs, { rendered: 'true', plan_file: file, has_qa: String(plan.qa.length > 0) });
 } else if (env.INPUT_FALLBACK_FILE && fs.existsSync(env.INPUT_FALLBACK_FILE)) {
     warn('Posting the final message the agent ended on instead');
     const text = fs.readFileSync(env.INPUT_FALLBACK_FILE, 'utf8');

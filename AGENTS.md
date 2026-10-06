@@ -24,6 +24,8 @@ Read what you wrote as if somebody else wrote it, and go through this on every c
 - **Names that changed.** For any input, output, label or behaviour you changed, grep `docs/` and
   the other workflows for its name.
 - **Comments are claims.** A comment saying something is safe is what you are checking, not proof.
+- **What the AI posts.** A change to what an AI workflow writes is run once for real, and the result
+  read, before it merges. Tests with made-up data do not show that a plan is 8,000 characters long.
 
 ## Moving to the next major version
 
