@@ -70,7 +70,7 @@ while editing, and guessing where the block ended would eat whatever they wrote 
 
 The plan lives on the issue in one copy, and a second copy anybody can edit is a specification that
 disagrees with itself. So this one is not a second copy to maintain: it is replaced wholesale
-whenever the plan moves, and it says so, pointing at the plan as the original.
+whenever the plan moves. The plan stays the original, linked at the top of the pull request.
 
 Two things call it. `ai-implement` seeds the block when it opens the pull request, and refreshes it
 on a round that [worked to a revised plan](../ai/ai-implement.md#when-the-plan-is-revised-under-the-work).

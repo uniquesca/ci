@@ -10,7 +10,7 @@ const PREFIX = { risks: /^[RU]\d{1,4}$/, steps: /^S\d{1,4}$/, qa: /^QA\d{1,4}$/,
 // contain `<!--` - see `visible`.
 export const JSON_MARKER = '<!-- ai-plan-json -->';
 
-// How a plan from before the JSON was folded carried it: hidden, base64-encoded
+// The other way a plan carries its JSON: hidden, base64-encoded
 const OLD_DATA = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
 
 // Github refuses a comment over 65,536 characters, and the workflow checks the comment in bytes, so
@@ -245,7 +245,7 @@ export function renderPlan(plan) {
     return parts.join('\n\n');
 }
 
-// The plan's JSON out of a posted comment, or out of the hidden data a plan from before carried
+// The plan's JSON out of a posted comment, folded or hidden
 export function readPlanData(text) {
     const body = String(text ?? '');
     const start = body.indexOf(JSON_MARKER);
