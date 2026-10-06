@@ -70,6 +70,27 @@ test('malformed input never throws', () => {
     }
 });
 
+test('a value that is not text where text belongs reads as missing, and never throws', () => {
+    const notText = { toString: null };
+    const result = renderReview({
+        headline: notText,
+        findings: [{ title: notText }, { title: 'Kept', severity: notText, body: notText }],
+    });
+
+    assert.deepEqual(result.problems, [
+        'no headline',
+        'a finding without a title was dropped',
+        '"Kept" has severity "", treated as "should"',
+    ]);
+    assert.match(result.body, /- Kept$/m);
+});
+
+test('findings that are not a list are reported, not silently dropped', () => {
+    const result = renderReview({ headline: 'Fine.', findings: { title: 'Lost' } });
+
+    assert.deepEqual(result.problems, ['findings is not a list, so none were read']);
+});
+
 test('QA focus becomes one line', () => {
     const result = renderReview({ headline: 'h', findings: [], qa_focus: ['QA2', 'QA4'] });
 

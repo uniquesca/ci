@@ -9,13 +9,19 @@ const LABELS = { blocking: 'Blocking', should: 'Should fix', nit: 'Nit' };
 const HEADLINE_MAX = 300;
 const TITLE_MAX = 150;
 
-function clip(text, max) {
-    const flat = String(text ?? '').trim();
+// Only a string or a number is text. Anything else the agent wrote where text belongs - an object,
+// a list - reads as missing: turning it into a string can throw, and would print nonsense if not.
+function text(value) {
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+function clip(value, max) {
+    const flat = text(value).trim();
     return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat;
 }
 
-function oneLine(text, max) {
-    return clip(String(text ?? '').replace(/\s+/g, ' '), max);
+function oneLine(value, max) {
+    return clip(text(value).replace(/\s+/g, ' '), max);
 }
 
 function refsSuffix(refs) {
@@ -37,6 +43,10 @@ export function normaliseReview(raw) {
         problems.push('no headline');
     }
 
+    if (review.findings !== undefined && !Array.isArray(review.findings)) {
+        problems.push('findings is not a list, so none were read');
+    }
+
     const findings = [];
     for (const item of Array.isArray(review.findings) ? review.findings : []) {
         const title = oneLine(item?.title, TITLE_MAX);
@@ -47,14 +57,14 @@ export function normaliseReview(raw) {
 
         let severity = item.severity;
         if (!SEVERITIES.includes(severity)) {
-            problems.push(`"${title}" has severity "${severity}", treated as "should"`);
+            problems.push(`"${title}" has severity "${oneLine(severity, 30)}", treated as "should"`);
             severity = 'should';
         }
 
         findings.push({
             severity,
             title,
-            body: String(item.body ?? '').trim(),
+            body: text(item.body).trim(),
             path: typeof item.path === 'string' && item.path ? item.path : null,
             line: Number.isInteger(item.line) ? item.line : null,
             refs: (Array.isArray(item.refs) ? item.refs : []).filter((ref) => typeof ref === 'string' && ref),

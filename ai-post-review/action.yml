@@ -175,9 +175,14 @@ runs:
         # The agent read a diff and review threads that any collaborator can write, so what it
         # hands back is untreated input rather than trusted structure. The renderer validates it,
         # derives the verdict from the findings, and lays the review out.
-        outcome=$(node "$GITHUB_ACTION_PATH/render.js" "$REVIEW_FILE" "$tmp/positions.json" "$tmp")
+        if ! outcome=$(node "$GITHUB_ACTION_PATH/render.js" "$REVIEW_FILE" "$tmp/positions.json" "$tmp"); then
+          echo "::warning title=Review unusable::$REVIEW_FILE could not be laid out"
+          finish
+        fi
 
-        body_file="$tmp/body.md"
+        # What a caller posts when the review could not be submitted, so it carries every
+        # finding's text - the inline comments that held some of it never went out
+        body_file="$tmp/body-full.md"
         verdict=$(jq -r '.verdict' <<< "$outcome")
         comments_posted=$(jq -r '.comments' <<< "$outcome")
         comments_dropped=$(jq -r '.unplaced' <<< "$outcome")
@@ -204,7 +209,11 @@ runs:
             printf '%s\n' "$FOOTER"
           fi > "$tmp/footer.md"
 
-          jq -n --rawfile summary "$tmp/body.md" \
+          # Without the inline comments, the body has to carry their text itself
+          local summary="$tmp/body-full.md"
+          [[ "$2" == 'true' ]] && summary="$tmp/body.md"
+
+          jq -n --rawfile summary "$summary" \
                 --rawfile footer "$tmp/footer.md" \
                 --slurpfile comments "$tmp/comments.json" \
                 --arg marker "$MARKER" \
