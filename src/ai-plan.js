@@ -225,18 +225,17 @@ export function renderPlan(plan) {
 
     const asks = plan.risks.filter((r) => r.ask);
     if (asks.length) {
-        parts.push('**Needs your decision**\n\n' + asks.map((r) => `- **${r.id}** ${r.ask}`).join('\n'));
+        parts.push('## Needs your decision\n\n' + asks.map((r) => `- **${r.id}** ${r.ask}`).join('\n'));
     }
 
     parts.push('## Steps\n\n' + plan.steps.map((s) => `- [ ] **${s.id}** ${s.title}`).join('\n'));
 
+    // A plan with nothing for a tester says why in its JSON, and shows no section at all
     if (plan.qa.length) {
         parts.push('## QA acceptance criteria\n\n' + plan.qa.map((q) => {
             const where = q.where ? `In ${q.where}: ` : '';
             return `- **${q.id}**${idsText(q.covers)} ${where}${q.do} **Expect:** ${q.expect}`;
         }).join('\n'));
-    } else if (plan.qa_none) {
-        parts.push(`## QA acceptance criteria\n\nNone - ${plan.qa_none}`);
     }
 
     // A JSON string holds no raw line break, so no line of it can close the fence early

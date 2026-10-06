@@ -37,7 +37,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 |---|---|
 | `submitted` | Whether a review was submitted - `true` or `false` |
 | `event` | What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Empty when nothing was |
-| `verdict` | `changes_requested` when a finding is blocking, `comment` otherwise |
+| `verdict` | `changes_requested` when a finding is high, `comment` otherwise |
 | `comments_posted` | How many inline comments the submitted review carries |
 | `comments_dropped` | How many findings named a line but went into the body instead - off the diff, or over the cap |
 | `body_file` | The rendered review body, for a caller to post when the review could not be submitted |
@@ -62,13 +62,14 @@ saying so - the inline comments survive a comment review perfectly well.
 
 ### The review file, and the verdict
 
-The agent writes `headline`, one sentence, and `findings`, each with a `severity` of `blocking`,
-`should` or `nit`, a `title`, a `body`, and optionally `path`, `line` and `refs` (plan ids). One
-blocking finding requests changes; anything else comments. Approving is not an option - merging is a
-person's decision. `src/ai-review.js` lays the body out: the headline, a count of the inline
-comments by severity, the findings that could not go inline grouped by severity, then `qa_focus` as
-one line. Anything malformed is normalised or dropped with a warning, never allowed to fail the
-review.
+The agent writes `headline`, one sentence, and `findings`, each with a `severity` of `high`,
+`medium` or `low`, a `title`, a `body`, and optionally `path`, `line` and `refs` (plan ids). One
+high finding requests changes; anything else comments. Approving is not an option - merging is a
+person's decision. `src/ai-review.js` lays the body out: a verdict line, the headline, a count by
+severity, then every finding from high to low - by its title where it is an inline comment, in full
+where it is not - and `qa_focus` as one line. Once the review is posted, the list is linked to its
+inline comments. Anything malformed is normalised or dropped with a warning, never allowed to fail
+the review.
 
 ### Inline comments, and why some are not
 

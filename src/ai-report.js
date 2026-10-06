@@ -71,6 +71,7 @@ export function normaliseReport(raw) {
     if (!headline) {
         problems.push('no headline');
     }
+    const summary = clip(report.summary, 600);
 
     const leftOut = { count: 0 };
     const done = list(leftOut, report.done, problems, 'done', (item) => {
@@ -108,7 +109,7 @@ export function normaliseReport(raw) {
         return ask && { ask, refs: refs(item) };
     });
 
-    const result = { headline, done, notes, not_done: notDone, verification, decisions, left_out: leftOut.count };
+    const result = { headline, summary, done, notes, not_done: notDone, verification, decisions, left_out: leftOut.count };
     while (Buffer.byteLength(JSON.stringify(result)) > REPORT_MAX) {
         const name = LEAVE_OUT_ORDER.find((list) => result[list].length);
         if (!name) {
@@ -138,18 +139,23 @@ export function renderReport(report, { underStatus = false } = {}) {
         parts.push(`**${report.headline}**`);
     }
 
+    // A report from before the field existed has none
+    if (report.summary) {
+        parts.push(report.summary);
+    }
+
     if (report.notes.length) {
-        parts.push('**For the reviewer**\n\n' + report.notes.map((n) => `- ${n.note}${refsText(n.refs)}`).join('\n'));
+        parts.push('## For the reviewer\n\n' + report.notes.map((n) => `- ${n.note}${refsText(n.refs)}`).join('\n'));
     }
 
     if (report.not_done.length) {
-        parts.push('**Not done**\n\n' + report.not_done
+        parts.push('## Not done\n\n' + report.not_done
             .map((n) => `- ${n.what}${refsText(n.refs)}${n.why ? ` - ${n.why}` : ''}`)
             .join('\n'));
     }
 
     if (!underStatus && report.decisions.length) {
-        parts.push('**Needs a decision**\n\n' + report.decisions.map((d) => `- ${d.ask}${refsText(d.refs)}`).join('\n'));
+        parts.push('## Needs a decision\n\n' + report.decisions.map((d) => `- ${d.ask}${refsText(d.refs)}`).join('\n'));
     }
 
     const details = [];

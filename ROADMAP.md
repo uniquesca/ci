@@ -127,9 +127,9 @@ Still open from step 1:
 The AI writes its answer as data, and the workflow checks it and lays it out the same way every
 time. If the data is missing or broken, the AI's plain answer is used instead.
 
-- **The review:** a one-line summary and how many inline comments there are of each kind:
-  `blocking`, `should` or `nit`. The findings are in the inline comments, not repeated. Only a
-  blocking finding asks for changes.
+- **The review:** a verdict, a one-line summary, a count of findings by severity - 🔴 high,
+  🟠 medium, 🟡 low - and the findings from high to low, each linked to its inline comment. Only a
+  high finding asks for changes.
 - **The report after each round:** notes for the reviewer, what was not done, and the questions for
   a person come first, then the QA steps. What was done and how it was checked are folded away. A
   status block at the top of the pull request is rewritten every round.

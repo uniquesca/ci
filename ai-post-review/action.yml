@@ -52,7 +52,7 @@ outputs:
     description: 'What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Not always what was asked for: a rejected `REQUEST_CHANGES` is downgraded rather than lost'
     value: ${{ steps.review.outputs.event }}
   verdict:
-    description: 'The verdict the findings call for - `changes_requested` when one is blocking, `comment` otherwise'
+    description: 'The verdict the findings call for - `changes_requested` when one is high, `comment` otherwise'
     value: ${{ steps.review.outputs.verdict }}
   comments_posted:
     description: 'How many inline comments the submitted review carries'
@@ -196,11 +196,37 @@ runs:
         submit() {
           local payload="$1"
           if gh api --method POST "repos/$GH_REPO/pulls/$PR/reviews" \
-               --input "$payload" --silent 2> "$tmp/error.log"; then
+               --input "$payload" > "$tmp/response.json" 2> "$tmp/error.log"; then
             return 0
           fi
           cat "$tmp/error.log"
           return 1
+        }
+
+        # An inline comment has no address until the review is posted, so the list in the body is
+        # linked to the comments afterwards. Nothing here fails the review: it is already posted,
+        # and an unlinked list still says everything.
+        link_comments() {
+          local id
+          id=$(jq -r '.id // empty' "$tmp/response.json" 2> /dev/null || true)
+          [[ -n "$id" && "$comments_posted" -gt 0 ]] || return 0
+
+          if ! posted=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/reviews/$id/comments?per_page=100" 2> /dev/null); then
+            echo "::warning title=Findings not linked::The comments of review $id could not be read"
+            return 0
+          fi
+          # Oldest first is the order they were sent in, which is the order the list numbers them
+          jq -s 'add // [] | sort_by(.id) | map(.html_url)' <<< "$posted" > "$tmp/links.json"
+          if [[ "$(jq 'length' "$tmp/links.json")" != "$comments_posted" ]]; then
+            echo "::warning title=Findings not linked::Review $id has a different number of comments than were sent"
+            return 0
+          fi
+
+          node "$GITHUB_ACTION_PATH/render.js" "$REVIEW_FILE" "$tmp/positions.json" "$tmp" "$tmp/links.json" > /dev/null \
+            && build "$event" true \
+            && jq '{body}' "$tmp/payload.json" > "$tmp/update.json" \
+            && gh api --method PUT "repos/$GH_REPO/pulls/$PR/reviews/$id" --input "$tmp/update.json" --silent \
+            || echo "::warning title=Findings not linked::The list in review $id was left without links to its comments"
         }
 
         build() {
@@ -250,6 +276,7 @@ runs:
         if try "$event" true; then
           submitted='true'
           echo "Submitted a $event review on #$PR with $comments_posted inline comment(s)"
+          link_comments
           finish
         fi
 
@@ -262,6 +289,7 @@ runs:
           if try "$event" true; then
             submitted='true'
             echo "Submitted a COMMENT review on #$PR with $comments_posted inline comment(s)"
+            link_comments
             finish
           fi
         fi

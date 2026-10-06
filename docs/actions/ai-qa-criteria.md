@@ -14,7 +14,6 @@ Used by [`ai-implement`](../ai/ai-implement.md) and [`ai-plan`](../ai/ai-plan.md
     token: ${{ github.token }}
     # What `ai-stage-issue` staged, or whatever file the plan is in
     plan_file: ${{ steps.issue.outputs.plan_file }}
-    plan_url: ${{ steps.issue.outputs.plan_url }}
 ```
 
 The copy is a marked block, replaced in place every time this runs, so calling it again after the
@@ -28,7 +27,6 @@ plan changes is the whole update. Nothing here fails the run.
 | `repository` | yes | | Repository the pull request belongs to, in `owner/name` form |
 | `token` | yes | | Github token the body is edited with. Needs `pull-requests: write` |
 | `plan_file` | no | `.ai-plan/plan.md` | The plan to read the criteria out of |
-| `plan_url` | no | | Link to the plan comment, for the line above the criteria. Left out when empty |
 | `section` | no | `QA acceptance criteria` | Heading to copy, without the `##` |
 | `marker` | no | `<!-- ai-qa-criteria -->` | Hidden line that opens the block |
 | `end_marker` | no | `<!-- /ai-qa-criteria -->` | Hidden line that closes it |
@@ -52,8 +50,9 @@ The one thing dropped is the `Retired:` line, where a revised plan records the
 two versions of the plan, and a tester should see what they have to test and nothing else. The plan
 on the issue still has it.
 
-A plan with no such section - one written before the section existed - leaves the body exactly as it
-is, with `synced` coming back `false`. That is not an error.
+A plan with no such section, or one that only says `None - ` and why, has nothing for a tester. A
+block the body already carries is emptied, keeping its markers for criteria a later revision adds; a
+body without one is left as it is. Either way `synced` comes back `false`, and neither is an error.
 
 ### Where the block lands
 

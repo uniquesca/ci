@@ -16,10 +16,6 @@ inputs:
     description: 'The plan to read the criteria out of. `ai-stage-issue` writes this, and its `plan_file` output is what to pass here'
     required: false
     default: '.ai-plan/plan.md'
-  plan_url:
-    description: 'Link to the plan comment on the issue, for the line above the criteria. Left out when empty, which only costs the reader a link'
-    required: false
-    default: ''
   section:
     description: 'Heading of the plan section to copy, without the `##`. Everything under it up to the next `##` goes into the pull request'
     required: false
@@ -64,7 +60,6 @@ runs:
         GH_REPO: ${{ inputs.repository }}
         PR: ${{ inputs.pull_request }}
         PLAN_FILE: ${{ inputs.plan_file }}
-        PLAN_URL: ${{ inputs.plan_url }}
         SECTION: ${{ inputs.section }}
         MARKER: ${{ inputs.marker }}
         END_MARKER: ${{ inputs.end_marker }}
@@ -137,28 +132,28 @@ runs:
           { while (pending > 0) { print ""; pending-- } print; started = 1 }
         ' "$tmp/raw.md" > "$tmp/section.md"
 
-        if [[ ! -s "$tmp/section.md" ]]; then
-          echo "The plan has no '## $SECTION' to carry, so #$PR keeps the body it has"
-          finish
+        # A plan from before plans left the section out says `None - ` and why, and that is nothing
+        # to test either
+        if head -n 1 "$tmp/section.md" | grep -q '^None\b'; then
+          : > "$tmp/section.md"
         fi
 
         # `grep` reports "no match" as a failure, and this step runs under `set -e -o pipefail`
         criteria=$({ grep -oE '\*\*QA[0-9]+' "$tmp/section.md" || true; } | sort -u | wc -l)
 
-        {
-          printf '%s\n\n' "$MARKER"
-          printf '## %s\n\n' "$SECTION"
-          if [[ -n "$PLAN_URL" ]]; then
-            printf 'Copied from the [plan](%s) so this can be tested without leaving the pull request. ' "$PLAN_URL"
-          else
-            printf 'Copied from the plan on the issue so this can be tested without leaving the pull request. '
-          fi
-          # A copy can always be a revision behind the thing it was copied from - this one is
-          # refreshed when the plan moves, but not by somebody editing the plan comment in place.
-          printf 'The plan is the original: where the two disagree, believe the plan.\n\n'
-          cat "$tmp/section.md"
-          printf '\n%s\n' "$END_MARKER"
-        } > "$tmp/block.md"
+        # A plan with nothing for a tester has no section. A pull request carrying criteria from
+        # an earlier plan has them emptied rather than left behind; the markers stay, so criteria
+        # a later revision adds go back in the same place.
+        if [[ ! -s "$tmp/section.md" ]]; then
+          printf '%s\n%s\n' "$MARKER" "$END_MARKER" > "$tmp/block.md"
+        else
+          {
+            printf '%s\n\n' "$MARKER"
+            printf '## %s\n\n' "$SECTION"
+            cat "$tmp/section.md"
+            printf '\n%s\n' "$END_MARKER"
+          } > "$tmp/block.md"
+        fi
 
         if ! gh pr view "$PR" --json body --jq '.body // ""' > "$tmp/raw-body.md" 2> "$tmp/error.log"; then
           echo "::warning title=Could not read the body::#$PR was not readable, so its QA criteria were left alone"
@@ -180,6 +175,16 @@ runs:
           # Guessing where the block ended would eat whatever they wrote in between, and adding a
           # second block would leave two lists disagreeing with each other.
           echo "::warning title=Block is half there::#$PR carries one of the two QA criteria markers and not the other, so its body was left alone. Delete the stray marker to have the criteria written again"
+          finish
+        fi
+
+        # Nothing to carry, and nothing in the body to empty
+        if [[ ! -s "$tmp/section.md" ]] \
+           && { [[ "$has_start" != 'true' ]] \
+                || ! awk -v start="$MARKER" -v end="$END_MARKER" \
+                       '$0 == start { inside = 1; next } $0 == end { inside = 0 } inside && NF { found = 1 } END { exit !found }' \
+                       "$tmp/body.md"; }; then
+          echo "The plan has no QA criteria to carry, and #$PR carries none, so its body is left as it is"
           finish
         fi
 
@@ -209,9 +214,16 @@ runs:
           cp "$tmp/block.md" "$tmp/new-body.md"
         fi
 
+        # `synced` says the body carries criteria, so emptying a stale block leaves it false
+        if [[ -s "$tmp/section.md" ]]; then
+          done_message="Carried $criteria QA criteri(a) into the body of #$PR"
+        else
+          done_message="Emptied the QA criteria an earlier plan left in #$PR"
+        fi
+
         if cmp -s "$tmp/body.md" "$tmp/new-body.md"; then
-          synced='true'
-          echo "#$PR already carries these $criteria QA criteri(a), nothing to edit"
+          [[ -s "$tmp/section.md" ]] && synced='true'
+          echo "#$PR already carries what the plan asks for, nothing to edit"
           finish
         fi
 
@@ -222,8 +234,8 @@ runs:
         fi
 
         if gh pr edit "$PR" --body-file "$tmp/new-body.md" > /dev/null 2> "$tmp/error.log"; then
-          synced='true'
-          echo "Carried $criteria QA criteri(a) into the body of #$PR"
+          [[ -s "$tmp/section.md" ]] && synced='true'
+          echo "$done_message"
         else
           echo "::warning title=Could not update the body::The QA criteria were not carried into #$PR - they are on the issue"
           cat "$tmp/error.log"

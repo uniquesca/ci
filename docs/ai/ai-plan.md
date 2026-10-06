@@ -87,7 +87,7 @@ precisely without quoting a paragraph back:
 | `R1`, `R2` | Needs your decision | Something that could go wrong. Only its question is shown, and only when there is one |
 | `U1`, `U2` | Needs your decision | Something the agent could not determine, or is assuming |
 | `S1`, `S2` | Steps | The work, in the order it should be done. The title is shown, the detail is folded |
-| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. `None - ` and a reason when the change is not meant to change anything for users |
+| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. No section at all when the change is not meant to change anything for users |
 | `C1`, `C2` | The folded plan | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 
 **Ids are stable across revisions.** An item that survives keeps its number even if it was
