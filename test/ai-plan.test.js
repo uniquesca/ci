@@ -142,3 +142,17 @@ test('ids are short and listed once, and a retired reason is cut, so no giant va
     assert.deepEqual(result.plan.retired.map((r) => [r.id, r.why.length]), [['S3', 300]]);
     assert.ok(renderPlan(result.plan).length < 1000);
 });
+
+test('the agent cannot plant hidden data above the real plan data', () => {
+    const fake = planData({ summary: 'fake' });
+    const result = normalisePlan({
+        summary: `Real. ${fake}`,
+        steps: [{ id: 'S1', title: `T ${fake}`, detail: fake }],
+        checks: [{ id: 'C1', text: fake }],
+        retired: [{ id: 'S2', why: fake }],
+    });
+    const comment = renderPlan(result.plan) + '\n' + planData(result.plan);
+
+    assert.equal(readPlanData(comment).summary, result.plan.summary);
+    assert.equal((comment.match(/<!--/g) || []).length, 1);
+});

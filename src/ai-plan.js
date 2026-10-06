@@ -35,8 +35,14 @@ function text(value) {
     return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
 
+// `<!--` in the agent's text could open a hidden comment - and one that looks like the plan's
+// data, sitting above the real one, would be read back in its place
+function visible(value) {
+    return text(value).replace(/<!--/g, '&lt;!--');
+}
+
 function clip(value, max, problems, what) {
-    const trimmed = text(value).trim();
+    const trimmed = visible(value).trim();
     if (trimmed.length <= max) {
         return trimmed;
     }
@@ -131,7 +137,7 @@ export function normalisePlan(raw, previous = null) {
     // uses nor retires is retired here rather than forgotten.
     const reasons = (list) => (Array.isArray(list) ? list : [])
         .filter((item) => typeof item?.id === 'string' && item.id.trim().length <= 20 && text(item.why).trim())
-        .map((item) => [item.id.trim(), shorten(text(item.why).replace(/\s+/g, ' ').trim(), 300)]);
+        .map((item) => [item.id.trim(), shorten(visible(item.why).replace(/\s+/g, ' ').trim(), 300)]);
     const why = new Map([...reasons(previous?.retired), ...reasons(raw.retired)]);
 
     const candidates = new Set([...allIds(previous), ...why.keys()]);
