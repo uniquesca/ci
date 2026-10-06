@@ -27,6 +27,20 @@ function oneLine(value, max) {
     return clip(text(value).replace(/\s+/g, ' '), max);
 }
 
+// References are plan ids like S3 or QA2. Anything longer is not one, and a list longer than this
+// is not a reference any more - both would otherwise make a comment Github refuses.
+const ID_MAX = 20;
+const IDS_MAX = 10;
+
+function idList(value, problems, what) {
+    const all = (Array.isArray(value) ? value : []).filter((id) => typeof id === 'string' && id);
+    const kept = all.filter((id) => id.length <= ID_MAX).slice(0, IDS_MAX);
+    if (kept.length < all.length) {
+        problems.push(`${what} had ids over ${ID_MAX} characters or more than ${IDS_MAX} of them, some were left out`);
+    }
+    return kept;
+}
+
 function refsSuffix(refs) {
     return refs.length ? ` (${refs.join(', ')})` : '';
 }
@@ -70,14 +84,13 @@ export function normaliseReview(raw) {
             body: text(item.body).trim(),
             path: typeof item.path === 'string' && item.path ? item.path : null,
             line: Number.isInteger(item.line) ? item.line : null,
-            refs: (Array.isArray(item.refs) ? item.refs : []).filter((ref) => typeof ref === 'string' && ref),
+            refs: idList(item.refs, problems, `"${title}"`),
         });
     }
 
     findings.sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
 
-    const qaFocus = (Array.isArray(review.qa_focus) ? review.qa_focus : [])
-        .filter((id) => typeof id === 'string' && id);
+    const qaFocus = idList(review.qa_focus, problems, 'qa_focus');
 
     return { headline, findings, qaFocus, problems };
 }

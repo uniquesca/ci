@@ -135,3 +135,17 @@ test('a review too long for Github loses the text of its least severe findings f
     assert.match(dropped.body, /did not fit/);
     assert.equal(dropped.verdict, 'changes_requested');
 });
+
+test('references and QA focus are short ids, so a giant one cannot push a review past Github', () => {
+    const huge = 'S'.repeat(70000);
+    const result = renderReview({
+        headline: 'H.',
+        findings: [{ severity: 'should', title: 'T', path: 'src/a.js', line: 10, refs: ['S1', huge, ...Array(20).fill('S2')] }],
+        qa_focus: [huge, 'QA1'],
+    }, { positions });
+
+    assert.equal(result.comments[0].body, '**Should fix:** T (S1, S2, S2, S2, S2, S2, S2, S2, S2, S2)');
+    assert.match(result.body, /For a tester to check first: QA1\./);
+    assert.ok(result.body.length < 1000);
+    assert.equal(result.problems.length, 2);
+});
