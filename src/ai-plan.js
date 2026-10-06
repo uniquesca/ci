@@ -7,7 +7,8 @@ const PREFIX = { risks: /^[RU]\d{1,4}$/, steps: /^S\d{1,4}$/, qa: /^QA\d{1,4}$/,
 
 export const DATA_PATTERN = /<!-- ai-plan-data:([A-Za-z0-9+/=]+) -->/;
 
-// Github refuses a comment over 65,536 characters. What is left goes to the lines the workflow
+// Github refuses a comment over 65,536 characters, and the workflow checks the comment in bytes, so
+// text that is not English counts at what it costs. What is left goes to the lines the workflow
 // adds around the plan; the hidden data goes in only where there is still room for it.
 const PLAN_MAX = 50000;
 
@@ -23,6 +24,8 @@ const SHORTER = [
     ['steps', ['detail'], 800, 'step details'],
     ['steps', ['detail'], 400, 'step details'],
     ['steps', ['detail'], 200, 'step details'],
+    ['checks', ['text'], 300, 'checks'],
+    ['retired', ['why'], 60, 'reasons for retiring'],
 ];
 
 function shorten(value, max) {
@@ -39,6 +42,17 @@ function text(value) {
 // data, sitting above the real one, would be read back in its place
 function visible(value) {
     return text(value).replace(/<!--/g, '&lt;!--');
+}
+
+// A field laid out on one line of the plan: a line break in it would start a line of its own, and
+// `---` or a heading there ends or fakes the QA section `ai-qa-criteria` copies
+function line(value) {
+    return visible(value).replace(/\s+/g, ' ');
+}
+
+// A field that keeps its paragraphs: a line that would end or fake a section is shown as text
+function block(value) {
+    return visible(value).replace(/^([ \t]*)(#|-{3,}|\*{3,}|_{3,}|<\/?details)/gm, '$1\\$2');
 }
 
 function clip(value, max, problems, what) {
@@ -80,11 +94,18 @@ export function normalisePlan(raw, previous = null) {
         return { plan: null, problems: ['the plan is not a JSON object'] };
     }
 
+    // A retired id stays retired: an old comment citing it has to keep meaning what it meant
+    const retiredBefore = new Set(allIds({ retired: previous?.retired }));
+
     const seen = new Set();
     const section = (name, pick) => (Array.isArray(raw[name]) ? raw[name] : []).map((item) => {
         const id = text(item?.id).trim();
         if (!PREFIX[name].test(id)) {
             problems.push(`"${shorten(id, 30)}" is not a valid id for ${name}, dropped`);
+            return null;
+        }
+        if (retiredBefore.has(id)) {
+            problems.push(`${id} was retired by an earlier plan and cannot be used again, dropped`);
             return null;
         }
         if (seen.has(id)) {
@@ -96,25 +117,25 @@ export function normalisePlan(raw, previous = null) {
     }).filter(Boolean);
 
     const plan = {
-        summary: clip(raw.summary, 1500, problems, 'The summary'),
-        revision: clip(raw.revision, 600, problems, 'The revision note'),
+        summary: clip(block(raw.summary), 1500, problems, 'The summary'),
+        revision: clip(line(raw.revision), 600, problems, 'The revision note'),
         risks: section('risks', (item, id) => ({
-            text: clip(item.text, 1000, problems, id),
-            ask: clip(item.ask, 500, problems, id),
+            text: clip(line(item.text), 1000, problems, id),
+            ask: clip(line(item.ask), 500, problems, id),
         })),
         steps: section('steps', (item, id) => ({
-            title: clip(text(item.title).replace(/\s+/g, ' '), 150, problems, id),
-            detail: clip(item.detail, 2500, problems, id),
+            title: clip(line(item.title), 150, problems, id),
+            detail: clip(block(item.detail), 2500, problems, id),
             depends_on: ids(item.depends_on),
         })),
         qa: section('qa', (item, id) => ({
             covers: ids(item.covers),
-            where: clip(item.where, 300, problems, id),
-            do: clip(item.do, 800, problems, id),
-            expect: clip(item.expect, 800, problems, id),
+            where: clip(line(item.where), 300, problems, id),
+            do: clip(line(item.do), 800, problems, id),
+            expect: clip(line(item.expect), 800, problems, id),
         })),
-        qa_none: clip(raw.qa_none, 500, problems, 'qa_none'),
-        checks: section('checks', (item, id) => ({ text: clip(item.text, 800, problems, id) })),
+        qa_none: clip(line(raw.qa_none), 500, problems, 'qa_none'),
+        checks: section('checks', (item, id) => ({ text: clip(block(item.text), 800, problems, id) })),
         retired: [],
     };
 
@@ -135,9 +156,19 @@ export function normalisePlan(raw, previous = null) {
     // Retired ids are kept for good, so the next revision knows which numbers are used and an
     // old comment citing one still reads. Whatever the previous plan had that this one neither
     // uses nor retires is retired here rather than forgotten.
+    const validId = (id) => Object.values(PREFIX).some((pattern) => pattern.test(id));
     const reasons = (list) => (Array.isArray(list) ? list : [])
-        .filter((item) => typeof item?.id === 'string' && item.id.trim().length <= 20 && text(item.why).trim())
-        .map((item) => [item.id.trim(), shorten(visible(item.why).replace(/\s+/g, ' ').trim(), 300)]);
+        .filter((item) => {
+            if (typeof item?.id !== 'string' || !text(item.why).trim()) {
+                return false;
+            }
+            if (!validId(item.id.trim())) {
+                problems.push(`"${shorten(item.id.trim(), 30)}" is not a valid id to retire, dropped`);
+                return false;
+            }
+            return true;
+        })
+        .map((item) => [item.id.trim(), shorten(line(item.why).trim(), 300)]);
     const why = new Map([...reasons(previous?.retired), ...reasons(raw.retired)]);
 
     const candidates = new Set([...allIds(previous), ...why.keys()]);
@@ -159,8 +190,9 @@ export function normalisePlan(raw, previous = null) {
         problems.push('no summary');
     }
 
+    const size = () => Buffer.byteLength(renderPlan(plan));
     for (const [name, fields, max, what] of SHORTER) {
-        if (renderPlan(plan).length <= PLAN_MAX) {
+        if (size() <= PLAN_MAX) {
             break;
         }
         for (const item of plan[name]) {
@@ -168,7 +200,10 @@ export function normalisePlan(raw, previous = null) {
                 item[field] = shorten(item[field], max);
             }
         }
-        problems.push(`the plan was over ${PLAN_MAX} characters, so its ${what} were cut to ${max} characters`);
+        problems.push(`the plan was over ${PLAN_MAX} bytes, so its ${what} were cut to ${max} characters`);
+    }
+    if (size() > PLAN_MAX) {
+        problems.push(`the plan is still over ${PLAN_MAX} bytes with every text cut short, and may be too long to post`);
     }
 
     return { plan, problems };

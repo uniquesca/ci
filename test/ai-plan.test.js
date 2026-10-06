@@ -126,7 +126,7 @@ test('a plan too long for Github keeps every item, and cuts the least needed tex
     assert.equal(result.plan.risks.length, 10);
     assert.equal(result.plan.qa.length, 10);
     assert.ok(result.plan.risks.every((r) => r.text.length <= 400));
-    assert.match(result.problems.at(-1), /^the plan was over 50000 characters, so its /);
+    assert.match(result.problems.at(-1), /^the plan was over 50000 bytes, so its /);
 });
 
 test('ids are short and listed once, and a retired reason is cut, so no giant value gets through', () => {
@@ -155,4 +155,53 @@ test('the agent cannot plant hidden data above the real plan data', () => {
 
     assert.equal(readPlanData(comment).summary, result.plan.summary);
     assert.equal((comment.match(/<!--/g) || []).length, 1);
+});
+
+test('the agent cannot end the QA section early or plant one of its own', () => {
+    const result = normalisePlan({
+        summary: 'Real.\n## QA acceptance criteria\n- fake',
+        risks: [{ id: 'R1', text: 'Risk\n## QA acceptance criteria\n- fake' }],
+        steps: [{ id: 'S1', title: 'T', detail: 'Do it.\n---\n<details>' }],
+        qa: [{ id: 'QA1', covers: ['S1'], do: 'Open it\n---\nmore', expect: 'Works' }],
+        checks: [{ id: 'C1', text: 'Tests pass.\n</details>\n## QA acceptance criteria' }],
+    });
+    const markdown = renderPlan(result.plan);
+
+    assert.equal(markdown.match(/^## QA acceptance criteria/gm).length, 1);
+    assert.doesNotMatch(markdown, /^---/m);
+    assert.equal(markdown.match(/^<\/?details>/gm).length, 2);
+    assert.match(markdown, /- \*\*QA1\*\* \(S1\) Open it --- more \*\*Expect:\*\* Works/);
+});
+
+test('a retired id stays retired, and only a valid id can be retired', () => {
+    const previous = normalisePlan({
+        summary: 'Old.',
+        steps: [{ id: 'S1', title: 'A' }, { id: 'S2', title: 'B' }],
+        checks: [{ id: 'C1', text: 'C' }],
+        retired: [],
+    }).plan;
+    previous.retired = [{ id: 'S3', why: 'merged into S2' }];
+
+    const result = normalisePlan({
+        summary: 'New.',
+        steps: [{ id: 'S1', title: 'A' }, { id: 'S2', title: 'B' }, { id: 'S3', title: 'Back again' }],
+        checks: [{ id: 'C1', text: 'C' }],
+        retired: [{ id: 'not-an-id', why: 'x' }],
+    }, previous);
+
+    assert.deepEqual(result.plan.steps.map((s) => s.id), ['S1', 'S2']);
+    assert.deepEqual(result.plan.retired, [{ id: 'S3', why: 'merged into S2' }]);
+    assert.ok(result.problems.includes('S3 was retired by an earlier plan and cannot be used again, dropped'));
+    assert.ok(result.problems.includes('"not-an-id" is not a valid id to retire, dropped'));
+});
+
+test('the size limit counts text that is not English at what it costs', () => {
+    const many = (n, make) => Array.from({ length: n }, (_, i) => make(i + 1));
+    const result = normalisePlan({
+        summary: '漢'.repeat(1500),
+        steps: many(30, (i) => ({ id: `S${i}`, title: '漢'.repeat(150), detail: '漢'.repeat(2500) })),
+        checks: [{ id: 'C1', text: '漢'.repeat(800) }],
+    });
+
+    assert.ok(Buffer.byteLength(renderPlan(result.plan)) <= 50000);
 });

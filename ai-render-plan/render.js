@@ -53,11 +53,20 @@ function read(input, previousPlan) {
     }
 }
 
-const raw = readJson(env.INPUT_PLAN_FILE, () => warn(`The agent wrote no ${env.INPUT_PLAN_FILE}`))
-    ?? fromMessage(env.INPUT_FALLBACK_FILE);
 const previous = read(readJson(env.INPUT_PREVIOUS_FILE)).plan;
 
-const { plan, problems } = raw ? read(raw, previous) : { plan: null, problems: [] };
+// The file first. When it gives no usable plan - missing, not JSON, or JSON that is not a plan -
+// the final message is tried as the plan, since that is where the agent is told to put it when
+// writing is refused.
+const fromFile = readJson(env.INPUT_PLAN_FILE, () => warn(`The agent wrote no ${env.INPUT_PLAN_FILE}`));
+let { plan, problems } = fromFile ? read(fromFile, previous) : { plan: null, problems: [] };
+if (!plan) {
+    const fromFinal = fromMessage(env.INPUT_FALLBACK_FILE);
+    if (fromFinal) {
+        problems.forEach(warn);
+        ({ plan, problems } = read(fromFinal, previous));
+    }
+}
 problems.forEach(warn);
 
 const file = path.join(out, 'plan.md');
