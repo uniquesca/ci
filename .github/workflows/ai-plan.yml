@@ -905,12 +905,16 @@ jobs:
             final message instead.
 
             ${{ steps.style.outputs.text }}
+          # Writing is allowed for the plan file and nothing else. `Edit` stays off the deny list: a
+          # denial beats any allowance, and `Edit` rules cover every tool that writes a file, so
+          # denying it would refuse the one write the planner is allowed. Nothing it could edit
+          # elsewhere leaves the runner - this job reads the repository and never pushes.
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
             --allowedTools "Write(.ai-plan/new-plan.json),Edit(.ai-plan/new-plan.json)"
-            --disallowedTools "Edit,Replace,NotebookEdit,Bash,Task,Agent"
+            --disallowedTools "Replace,NotebookEdit,Bash,Task,Agent"
             ${{ inputs.debug && '--debug' || '' }}
 
       # Reads the agent's execution log: prints what it said and what it touched, and hands
