@@ -3295,7 +3295,6 @@ jobs:
           # actually cut from - the default branch unless the command asked for another
           BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
-          ISSUE_URL: ${{ github.server_url }}/${{ github.repository }}/issues/${{ steps.event.outputs.issue }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
           # The agent's rendered report, carrying the held-back workflow patch where the step
           # that held it back appended one
@@ -3344,12 +3343,11 @@ jobs:
             # Written to RUNNER_TEMP rather than the checkout - this workflow commits its
             # working tree, so nothing scratch belongs in it.
             #
-            # A link to the issue rather than `Closes #N` on purpose. Review here is the point,
-            # and auto-closing the issue on the first merge cuts that short - as does merging a
-            # partial implementation.
+            # `Closes #N` is what closes the issue when this merges. Github only acts on it for a
+            # pull request into the default branch; one into any other base leaves it open.
             {
               [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
-              printf '[Issue #%s](%s)' "$ISSUE" "$ISSUE_URL"
+              printf 'Closes #%s' "$ISSUE"
               [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
               printf '\n\n'
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then

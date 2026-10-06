@@ -74,6 +74,14 @@ the run failed. Each run leaves the AI about 5 minutes less than the whole run, 
 **Plan:** move the clean-up into a small separate job that runs after the main one, however the main
 one ended, in all three workflows.
 
+### Close the issue when its pull request merges
+
+AI pull requests say `Closes #N`, so the issue closes when the pull request merges into the default
+branch. Still left open: issues whose pull request went into another branch, and pull requests
+opened before this change.
+
+**Plan, if this happens often:** a small job on merge that closes the issue for any branch.
+
 ## For v12
 
 These are breaking changes, so they wait for the next major version.
