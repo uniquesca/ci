@@ -1,0 +1,12 @@
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      # actionlint's own list of this action's inputs predates its workload identity federation
+      # inputs, which the action does declare
+      - 'input "anthropic_[a-z_]+" is not defined in action "anthropics/claude-code-action@v1"'
+  # These build markdown comments and prompts in single quotes, so backticks are meant literally.
+  # A disable directive cannot cover a whole script here - actionlint puts its own first line in
+  # front of it - and one per command would be dozens.
+  .github/workflows/ai-*.yml:
+    ignore:
+      - 'SC2016:'

@@ -153,15 +153,15 @@ jobs:
         run: |
           if [ -f "composer.json" ]; then
             echo "composer.json file exists — will inject version."
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check if we have PHPUnit
         run: |
           if [[ -f "phpunit.xml" ]] || [[ -f "phpunit.xml.dist" ]]; then
-            echo "phpunit=1" >> $GITHUB_ENV
+            echo "phpunit=1" >> "$GITHUB_ENV"
           else
             echo "No PHPUnit configuration file found, skipping tests."
           fi
@@ -243,7 +243,6 @@ jobs:
 
       - name: Set Composer version in composer.json
         if: ${{ steps.check-composer.outputs.exists == 'true' }}
-        working-directory: ${{ inputs.working_directory }}
         run: |
           composer_version="${{ inputs.version }}"
           echo "Setting version in composer.json to $composer_version"

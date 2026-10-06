@@ -1,14 +1,14 @@
-name: Tests
+name: QA Checks
 
 on:
   push:
     branches:
-      - develop
+      - 'develop'
       - 'release/**'
       - 'hotfix/**'
   pull_request:
     branches:
-      - develop
+      - 'develop'
 
 defaults:
   run:
@@ -27,6 +27,20 @@ jobs:
         run: |
           chmod +x bin/pin-ci-version.sh 
           bin/pin-ci-version.sh --check
+
+      # Also runs shellcheck on every `run:` block - the runner image has it installed. What it
+      # deliberately lets through is in .github/actionlint.yaml
+      - name: Lint the workflows
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/${archive}"
+          echo "$SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --quiet
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
 
       # Node 24 matches the runtime the actions in this repository declare in their action.yml
       - name: Set up Node

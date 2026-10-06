@@ -16,7 +16,7 @@ jobs:
       contents: write
     steps:
       - id: get_version
-        run: echo "version=$(echo ${GITHUB_REF#refs/tags/})" >> "$GITHUB_OUTPUT"
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - uses: uniquesca/ci/github-release@main # pin-ci-version: skip
         with:

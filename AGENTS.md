@@ -8,13 +8,33 @@ release makes. **Your commit message is the changelog entry.** Prefix it `BREAKI
 `Fix:`, `New:`, `Update:` or `QA:` and the release picks it up; anything else is left out. This
 holds for every Uniques repository, not only this one.
 
+## Keep `ROADMAP.md` up to date
+
+`ROADMAP.md` is the list of what is planned and what is done. Mark an item done in the pull request
+that finishes it, and add what you find that still needs doing. Write it in plain, simple English.
+
+## Checking a change before the pull request
+
+Read what you wrote as if somebody else wrote it, and go through this on every change:
+
+- **Waits and handoffs.** Anything that waits on another run, or hands work to one: what happens if
+  the other side is slow, still queued, or never starts? Follow it across both files.
+- **Commands the user is told to type.** "Comment `/ai-do` to try again" must give back the same
+  request, arguments included.
+- **Names that changed.** For any input, output, label or behaviour you changed, grep `docs/` and
+  the other workflows for its name.
+- **Comments are claims.** A comment saying something is safe is what you are checking, not proof.
+
+Then have it reviewed by an agent that did not write it (`/code-review high` in Claude Code) before
+the pull request goes up. The author shares their own blind spots.
+
 ## Moving to the next major version
 
 The workflows and actions reference each other at the active version branch, so a caller on it
 stays inside its code. `bin/pin-ci-version.sh v12` moves the repository: it rewrites every
 reference and `VERSION_BRANCH` in `update-current-version.yml`, and lists the versions in prose for
-you to judge by hand. Create the `v12` branch off `main` in the same change. `self-tests.yml` fails
-on a reference left behind, so a new action added at `@main` does not get past a pull request.
+you to judge by hand. Create the `v12` branch off `main` in the same change. `self-qa-checks.yml`
+fails on a reference left behind, so a new action added at `@main` does not get past a pull request.
 A reference that belongs off the branch carries `# pin-ci-version: skip` and a comment saying why.
 
 ## Changing the default model
@@ -93,6 +113,9 @@ table that has quietly fallen behind the YAML is worse than no table.
 `.github/workflows/ai-*.yml` explain themselves in comments, and those comments carry the
 reasoning rather than restating the YAML. Match that when editing them, and update the comment
 when the code under it changes.
+
+Run `actionlint` before pushing a workflow change. `self-qa-checks.yml` runs it on every pull
+request, and `.github/actionlint.yaml` lists what it lets through, each with the reason.
 
 Every workflow sets `defaults: run: shell: bash`. Naming the shell is what turns `pipefail` on -
 a `run:` step that leaves it unnamed gets errexit without it, so a failure anywhere upstream of a

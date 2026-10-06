@@ -121,10 +121,20 @@ on:
         required: false
         default: true
         type: boolean
-      review_check_patterns:
-        description: 'Case-insensitive regular expression matching the reviewing agent own check runs. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Deliberately separate from `ignore_check_patterns`, which hides those same check runs from the feedback - the gate has to see what the feedback must not'
+      review_label:
+        description: 'Label the reviewing agent keeps on the pull request while it works - its `progress_label`. Put on here when a review is dispatched, so it covers a review still queued. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Empty means it never waits for the reviewer'
         required: false
-        default: 'ai.review'
+        default: 'ai:reviewing'
+        type: string
+      review_label_minutes:
+        description: 'How long the reviewer''s label counts as a review still coming. A label older than this was left by a review that never ran - nothing subscribed to the dispatch, say - so a round takes it off, warns, and goes ahead. Keep it above the reviewing workflow''s `timeout_minutes` plus the time a review can sit queued'
+        required: false
+        default: 60
+        type: number
+      review_check_patterns:
+        description: 'Deprecated, and does nothing - the wait recognises the reviewer by `review_label`. Accepted so a caller still passing it keeps working, with a warning. Will be removed in v12'
+        required: false
+        default: ''
         type: string
       provision_checks:
         description: 'Set the runner up before the agent starts - bring this repository''s application up in Docker with its config templates rendered, install its dependencies - and tell it the exact commands CI will check its work with, so that it finds a broken linter itself instead of on the next round. Detected from the repository rather than configured: what is there decides what is done. The master switch for all of it: turn it off and nothing is prepared, and the agent works out what it can run for itself'
@@ -186,6 +196,12 @@ jobs:
     # one round. A `commented` review still reaches the agent - the next round to run for any
     # reason stages it out of the feedback like anything else.
     #
+    # The reviewing agent's own review is the exception, whatever its state. QA that finished
+    # first stood down to wait for it, so it is the last thing left to start a round for the
+    # checks. That round acts only on what is asking for a change, the same as one QA starts -
+    # an approval over green checks stands down in seconds. The marker is a literal here
+    # because a job-level `if` cannot read the job's `env`.
+    #
     # Both of those broad triggers are narrowed to branches this workflow could have pushed,
     # because both fire on pull requests that have nothing to do with it - every review in the
     # repository, and every QA run on every branch. This is a job-level `if`, so a run that does
@@ -203,7 +219,8 @@ jobs:
            && startsWith(github.event.comment.body, inputs.command))
           || (github.event_name == 'pull_request_review'
               && github.event.action == 'submitted'
-              && github.event.review.state == 'changes_requested'
+              && (github.event.review.state == 'changes_requested'
+                  || startsWith(github.event.review.body, '<!-- ai-review -->'))
               && github.event.pull_request.head.repo.full_name == github.repository
               && startsWith(github.event.pull_request.head.ref, inputs.branch_prefix))
           || (github.event_name == 'workflow_run'
@@ -228,17 +245,17 @@ jobs:
     # tokens are spent either way. A queued duplicate is cheap, because the first round's push
     # moves the head SHA and the gate below then stands the duplicate down in seconds.
     #
-    # Keyed on whatever the event can say about the work, which is not the same thing in each
-    # of them, and no expression here can look anything up. A `workflow_run` carries only the
-    # branch. A comment on an *issue* carries only the issue number - and a round can start from
-    # one, so it is keyed on the branch that issue builds rather than on the number, which is
-    # what puts it in the same group as the QA-triggered rounds already running on that branch.
+    # Keyed on the branch wherever the event names it, and no expression here can look anything
+    # up. A `workflow_run` and a review both carry the branch, which is what keeps the round QA
+    # starts and the round the reviewer starts from running side by side when the two finish
+    # together. A comment on an *issue* carries only the issue number - and a round can start
+    # from one, so it is keyed on the branch that issue builds rather than on the number.
     #
-    # A comment on a pull request, and a review, carry only the number: neither payload says
-    # which branch it is about, so those two share a group with each other and cannot be made to
-    # share one with the other two without a separate job to resolve the branch first. What that
-    # leaves is two people acting on the same work in the same minute - and the loser of that
-    # race has its push refused as non-fast-forward rather than pushing over anything.
+    # A comment on a pull request carries only the number: its payload does not say which branch
+    # it is about, so it cannot share a group with the others without a separate job to resolve
+    # the branch first. What that leaves is a person typing the command in the same minute a
+    # round starts - and the loser of that race has its push refused as non-fast-forward rather
+    # than pushing over anything.
     concurrency:
       group: >-
         ai-implement-${{ github.repository }}-${{
@@ -246,7 +263,7 @@ jobs:
             && github.event.issue.number
             && format('{0}issue-{1}', inputs.branch_prefix, github.event.issue.number)
           || github.event.issue.number
-          || github.event.pull_request.number
+          || github.event.pull_request.head.ref
           || github.event.workflow_run.head_branch }}
       cancel-in-progress: false
     permissions:
@@ -421,6 +438,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           directory: ${{ runner.temp }}/existing-plan-check
 
+      - name: Warn about deprecated inputs
+        if: ${{ inputs.review_check_patterns != '' }}
+        run: echo "::warning title=Deprecated input::review_check_patterns does nothing and will be removed in v12 - take it out of the caller. The wait recognises the reviewer by review_label"
+
       # Two event shapes carry the same work, and nothing below should have to care which one
       # it got. Everything after this reads these outputs rather than `github.event`, which is
       # also where the next trigger - a reviewing agent, a red suite - will slot in.
@@ -444,6 +465,7 @@ jobs:
           # Untrusted text, read here and never interpolated into a script. Only its first line
           # is ever looked at, and only to compare against a marker.
           REVIEW_BODY: ${{ github.event.review.body }}
+          REVIEW_STATE: ${{ github.event.review.state }}
           RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
           RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
           RUN_ACTOR_TYPE: ${{ github.event.workflow_run.actor.type }}
@@ -555,11 +577,20 @@ jobs:
           [[ "$actor_type" == 'Bot' ]] && attended='false'
 
           # A review the reviewing agent wrote is a machine's, whichever account submitted it.
-          # Anyone can paste this marker into a review of their own, and all that does is make
-          # their own round count against the cap - it can only ever stop the loop sooner,
-          # never let it run longer.
+          # Anyone can paste this marker into a review of their own. All that does is make their
+          # own round count against the cap, or let an approval start a round that acts only on
+          # what is already asking for a change - it can never let the loop run longer.
           if [[ "$trigger" == 'review' && "$REVIEW_BODY" == "$REVIEW_MARKER"* ]]; then
             attended='false'
+          fi
+
+          # Whether whatever started this round asked for a change. Checks only report, and a
+          # review that approved or commented asks for nothing - such a round goes ahead only for
+          # something else that is asking.
+          asked='true'
+          if [[ "$trigger" == 'checks' ]] \
+             || [[ "$trigger" == 'review' && "${REVIEW_STATE,,}" != 'changes_requested' ]]; then
+            asked='false'
           fi
 
           # A round that a finished QA workflow started is never attended, whoever pushed the
@@ -589,6 +620,7 @@ jobs:
             printf 'actor=%s\n' "$actor"
             printf 'actor_type=%s\n' "$actor_type"
             printf 'attended=%s\n' "$attended"
+            printf 'asked=%s\n' "$asked"
             printf 'target=%s\n' "$target"
             printf 'answer_to=%s\n' "$answer_to"
             printf 'base_given=%s\n' "$base_given"
@@ -1010,10 +1042,15 @@ jobs:
       # what a failure costs is depth in one description rather than the round.
       - name: Stage the CI framework catalogue
         if: ${{ success() && env.PROCEED == 'true' }}
-        env:
-          WORKFLOW_REF: ${{ github.job_workflow_ref }}
-          WORKFLOW_SHA: ${{ github.job_workflow_sha }}
         run: |
+          # `github.job_workflow_ref` and `job_workflow_sha` are empty inside a reusable workflow's
+          # steps. The job's OIDC token carries both as claims.
+          claims=$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" \
+            | jq -r '.value | split(".")[1] | gsub("-"; "+") | gsub("_"; "/")
+                     | . + ("=" * ((4 - length % 4) % 4)) | @base64d') || claims='{}'
+          WORKFLOW_REF=$(jq -r '.job_workflow_ref // empty' <<< "$claims")
+          WORKFLOW_SHA=$(jq -r '.job_workflow_sha // empty' <<< "$claims")
+
           repository=$(cut -d/ -f1,2 <<< "$WORKFLOW_REF")
 
           if [[ -z "$WORKFLOW_SHA" || "$repository" != */* ]]; then
@@ -1092,7 +1129,7 @@ jobs:
       # round with both sources already in the feedback.
       #
       # There is no handshake between the two. Both questions are answered by Github's own state
-      # on this commit, so neither has to know the other exists, and a lost or duplicated
+      # on this pull request, so neither has to know the other exists, and a lost or duplicated
       # trigger cannot deadlock it.
       #
       # Only unattended rounds wait. Somebody who typed the command wants a round now, not
@@ -1104,24 +1141,57 @@ jobs:
           && steps.event.outputs.attended == 'false' }}
         env:
           HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          PR: ${{ steps.event.outputs.pull_request }}
           CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
-          REVIEW_PATTERNS: ${{ inputs.review_check_patterns }}
+          REVIEW_LABEL: ${{ inputs.review_label }}
+          LABEL_MINUTES: ${{ inputs.review_label_minutes }}
         run: |
-          # The reviewer's own check run is hidden from the staged feedback by
-          # `ignore_check_patterns`, so it has to be counted separately here. Asking whether it
-          # is still working - rather than whether a review has arrived - is what stops this
-          # waiting forever for a reviewer that was never turned on, or that died: neither has
-          # a check run in progress.
-          review_pending=$(gh api --paginate --slurp \
-            "repos/$GH_REPO/commits/$HEAD_SHA/check-runs" 2> /dev/null \
-            | jq --arg re "$REVIEW_PATTERNS" '
-                [ (map(.check_runs) | flatten)[]
-                  | select(.status != "completed")
-                  | select(.name | test($re; "i")) ] | length' 2> /dev/null || echo '')
+          # The reviewer's label is on the pull request from the dispatch until the review ends.
+          # A dispatched review runs on the default branch, so it has no check run on this
+          # commit to look for. Asking whether it is still working - rather than whether a review
+          # has arrived - is what stops this waiting forever for a reviewer that was never turned
+          # on: nothing is dispatched for it, so nothing adds the label.
+          review_pending=0
+          if [[ -n "$REVIEW_LABEL" ]]; then
+            review_pending=$(gh api "repos/$GH_REPO/issues/$PR/labels" 2> /dev/null \
+              | jq --arg name "$REVIEW_LABEL" 'map(select(.name == $name)) | length' 2> /dev/null || echo '')
+          fi
 
           # An unreadable answer must not hold the round back for ever - carry on and let the
           # feedback be whatever has landed so far
           [[ -z "$review_pending" ]] && review_pending=0
+
+          # The label comes off only after the review is submitted, so a round that review
+          # started - or checks that finish in the seconds between - still finds it on. A review
+          # of this commit already posted is the reviewer finished, whatever the label says. Of
+          # this commit and no other: a review of an earlier push says nothing about one still
+          # queued for this one.
+          if [[ "$review_pending" -gt 0 ]] \
+             && reviews=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/reviews?per_page=100" 2> /dev/null); then
+            reviewed=$(jq -s --arg sha "$HEAD_SHA" --arg marker "$REVIEW_MARKER" \
+              'add // [] | map(select(.commit_id == $sha and ((.body // "") | startswith($marker)))) | length' \
+              <<< "$reviews" 2> /dev/null || echo 0)
+            [[ "${reviewed:-0}" -gt 0 ]] && review_pending=0
+          fi
+
+          # A dispatch Github accepted but no workflow picked up leaves the label on with nothing
+          # coming to take it off, and every round after would stand down for it. Past its time
+          # it is taken as that. An age that cannot be read keeps the label in force - a late
+          # review is the likelier story than a lost one - and so does a partial read, which
+          # could hold an older dispatch's event and not this one's.
+          if [[ "$review_pending" -gt 0 ]] \
+             && events=$(gh api --paginate "repos/$GH_REPO/issues/$PR/events?per_page=100" 2> /dev/null); then
+            labelled_at=$(jq -rs --arg name "$REVIEW_LABEL" \
+              'add // [] | map(select(.event == "labeled" and .label.name == $name)) | last | .created_at // empty' \
+              <<< "$events" 2> /dev/null || echo '')
+            if [[ -n "$labelled_at" ]] \
+               && (( $(date +%s) - $(date -d "$labelled_at" +%s) > ${LABEL_MINUTES%.*} * 60 )); then
+              echo "::warning title=Stale review label::'$REVIEW_LABEL' has been on #$PR since $labelled_at with no review finishing - taken off, and the round goes ahead without one"
+              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
+              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null 2>&1 || true
+              review_pending=0
+            fi
+          fi
 
           qa_pending="${CHECKS_PENDING:-0}"
           echo "On $HEAD_SHA: $qa_pending QA check(s) pending, $review_pending reviewer run(s) pending"
@@ -1213,9 +1283,10 @@ jobs:
 
           echo "#$PR is on $HEAD_SHA, and everything since $LAST_ROUND_SHA is an automatic style fix"
 
-      # A round nobody asked for, on a commit where nothing is asking for a change. Stands down
-      # silently: this fires on every green pull request, and a comment each time would be noise.
-      # A review that only commented is not a change being asked for - it waits for the command.
+      # A round nothing asked for - checks, or the reviewing agent approving or commenting - on a
+      # commit where nothing is asking for a change. Stands down silently: this fires on every
+      # green pull request, and a comment each time would be noise. A review that only commented
+      # is not a change being asked for - it waits for the command.
       #
       # A revised plan does not hold this open, though it does hold the asked-for gate below:
       # nobody has asked for the rework, and the specification is still moving.
@@ -1223,7 +1294,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger == 'checks'
+          && steps.event.outputs.asked == 'false'
           && steps.stage_pr.outputs.has_actionable != 'true' }}
         run: |
           echo "PROCEED=false" >> "$GITHUB_ENV"
@@ -1245,7 +1316,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger != 'checks'
+          && steps.event.outputs.asked == 'true'
           && steps.stage_pr.outputs.has_feedback != 'true'
           && steps.revision.outputs.revised != 'true' }}
         env:
@@ -3506,6 +3577,12 @@ jobs:
       #
       # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
       # produces the same review, and the loop would turn without moving.
+      #
+      # The reviewer's label goes on here, before the dispatch. The QA checks on this push can
+      # finish while the review is still queued, and the wait in the next round only sees a
+      # reviewer that has its label on - so the reviewer labelling itself would leave a gap in
+      # which that round runs without the review, and the review then starts a second one. The
+      # reviewing workflow takes the label off however a dispatched run ends.
       - name: Ask for a review
         id: dispatch
         if: >-
@@ -3515,10 +3592,22 @@ jobs:
         env:
           PR: ${{ steps.event.outputs.pull_request || steps.pr.outputs.number }}
           DISPATCH_TYPE: ${{ inputs.review_dispatch_type }}
+          REVIEW_LABEL: ${{ inputs.review_label }}
         run: |
           if [[ -z "$PR" ]]; then
             echo "::warning title=No pull request to review::Nothing was dispatched"
             exit 0
+          fi
+
+          labelled='false'
+          if [[ -n "$REVIEW_LABEL" ]]; then
+            gh label create "$REVIEW_LABEL" --color 'fbca04' --description 'An AI workflow is working on this' \
+              2> /dev/null || true
+            if gh api "repos/$GH_REPO/issues/$PR/labels" --method POST -f "labels[]=$REVIEW_LABEL" > /dev/null; then
+              labelled='true'
+            else
+              echo "::warning title=Could not label #$PR::'$REVIEW_LABEL' was not added, so the next round may not wait for this review"
+            fi
           fi
 
           jq -n --arg type "$DISPATCH_TYPE" --argjson pr "$PR" \
@@ -3531,6 +3620,13 @@ jobs:
             echo "Asked for a '$DISPATCH_TYPE' review of #$PR"
           else
             echo "::warning title=Could not ask for a review::The $DISPATCH_TYPE dispatch for #$PR failed - review it yourself, or comment on it to start another round"
+
+            # Nothing is coming to take it off, and left on it holds every unattended round back
+            if [[ "$labelled" == 'true' ]]; then
+              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
+              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \
+                || echo "::warning title=Could not unlabel #$PR::'$REVIEW_LABEL' is still on it with no review coming - take it off by hand"
+            fi
           fi
 
       # A failed run is otherwise invisible from the issue or the pull request - whoever asked
@@ -3557,7 +3653,15 @@ jobs:
         env:
           TARGET: ${{ steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
+          ACTOR_TYPE: ${{ steps.event.outputs.actor_type }}
           MODE: ${{ steps.event.outputs.mode }}
+          COMMAND: ${{ inputs.command }}
+          # An initial run has no work branch yet, so a retry without the base the person asked
+          # for falls back to the plan's base or the default branch
+          RETRY_BASE: >-
+            ${{ steps.event.outputs.mode == 'initial'
+            && steps.event.outputs.base_given == 'true'
+            && steps.event.outputs.requested_base || '' }}
           # Why the agent stopped, where it recorded one. It turns "the run went red" into
           # something actionable - an exhausted credit balance and a genuine bug look
           # identical otherwise.
@@ -3572,19 +3676,32 @@ jobs:
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # A round a check started was started by a bot, and mentioning it notifies nobody. Each
+          # round asks the person who started it for a review, so that is who is waiting.
+          mention="@$ACTOR "
+          if [[ "$ACTOR_TYPE" != 'User' ]]; then
+            mention=$(gh api "repos/$GH_REPO/pulls/$TARGET/requested_reviewers" \
+              --jq '[.users[] | select(.type == "User") | "@" + .login] | join(" ")' 2> /dev/null || echo '')
+            [[ -n "$mention" ]] && mention="$mention "
+          fi
+
+          if [[ "$MODE" == 'initial' ]]; then
+            opening='the implementation did not finish, so there is no pull request for this issue.'
+          else
+            opening='this round did not finish, so the feedback on this pull request has not been acted on.'
+          fi
+          [[ -n "$mention" ]] || opening=${opening^}
+
           {
-            if [[ "$MODE" == 'initial' ]]; then
-              printf '@%s the implementation did not finish, so there is no pull request for this issue.\n\n' "$ACTOR"
-            else
-              printf '@%s this round did not finish, so the feedback on this pull request has not been acted on.\n\n' "$ACTOR"
-            fi
+            printf '%s%s\n\n' "$mention" "$opening"
             if [[ -n "$PUSH_REASON" ]]; then
               printf 'The work was written but could not be pushed: %s\n\n' "$PUSH_REASON"
             fi
             if [[ -n "$REASON" ]]; then
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
-            printf 'The run log has the detail: %s\n' "$RUN_URL"
+            printf 'The run log has the detail: %s\n\n' "$RUN_URL"
+            printf 'Comment `%s` here to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}"
             if [[ -n "$USAGE" ]]; then
               printf '\n%s.\n' "$USAGE"
             fi
