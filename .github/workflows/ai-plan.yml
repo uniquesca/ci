@@ -826,12 +826,21 @@ jobs:
             - `qa` - for a tester who does not read code. `where` is the path through the
               interface ("Company Settings -> Business Hours"), with every place and kind of user
               it reaches; `do` is what they do; `expect` what they should see; `covers` the steps
-              it tests; anything that needs the repository is a check instead. One for each thing
-              the change is meant to change for users. Code users run - a refactor included - gets
-              one per flow through it, saying what should still happen ("Create a company: it
-              gets its default case statuses"). A change no user can reach - style, types,
-              comments, docs, CI - gets none: say why in `qa_none`. "It works as before" on its
-              own is not a criterion.
+              it tests. Anything that needs the repository, or that a tester cannot trigger such
+              as a scheduled job, is a check instead. Write QA for what a user could see break,
+              as much as the risk warrants:
+              - New or changed behaviour: test it, in every place and for every kind of user it
+                reaches. A bug fix: repeat the steps from the report.
+              - Code users run that is not meant to change - a refactor, real type changes such
+                as return types, casts or null checks, a dependency upgrade, a migration, a build
+                change: one per flow through it, saying what should still happen ("Create a
+                company: it gets its default case statuses").
+              - Permissions: as each role, allowed and refused. A feature flag: on and off.
+              - Nothing a user can reach - formatting, comments, docblock or psalm annotations,
+                docs, CI: none.
+              Leave out a flow an end-to-end test in this repository already covers, and make
+              running that test a check; unit tests do not count. With no `qa` at all, say why in
+              `qa_none`. "It works as before" on its own is not a criterion.
             - `checks` - what proves the work is done: a command, a test, a linter.
             - `retired` - ids of the previous plan you dropped, with why in a few words.
 
