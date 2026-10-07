@@ -162,7 +162,7 @@ jq -R 'split("\t") | {repo: .[0], issue: (.[1] | tonumber), created: .[2], title
         (.turns // ""), ((.duration_ms // 0) / 60000 | . * 10 | round / 10),
         (.input_tokens // ""), (.output_tokens // ""),
         (.cache_read_tokens // ""), (.cache_write_tokens // ""),
-        (.model // ""), (.completed // ""), (.actor // ""),
+        (.model // ""), (.completed | if . == null then "" else . end), (.actor // ""),
         (if .run_id then "https://github.com/\(.repo)/actions/runs/\(.run_id)" else "" end)
     ] | @csv' "$work/runs.json"
 } > "$out_dir/ai-costs-runs.csv"
