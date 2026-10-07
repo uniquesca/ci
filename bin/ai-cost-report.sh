@@ -154,7 +154,7 @@ jq -R 'split("\t") | {repo: .[0], issue: (.[1] | tonumber), created: .[2], title
 
 # Every run, for when a number looks wrong and somebody has to see which run made it
 {
-    printf 'repo,issue,pull request,kind,round,at (UTC),cost usd,turns,minutes,input tokens,output tokens,cache read tokens,cache write tokens,model,completed,actor,run url\n'
+    printf 'repo,issue,pull request,kind,round,at (UTC),cost usd,turns,minutes,input tokens,output tokens,cache read tokens,cache write tokens,model,completed,actor,posted chars,from json,check problems,run url\n'
     jq -r '.[] | [
         .repo, (.issue // ""), (.pull_request // ""), (.kind // ""), (.round // ""),
         (.at // "" | sub("T"; " ") | sub("Z"; "")),
@@ -162,7 +162,9 @@ jq -R 'split("\t") | {repo: .[0], issue: (.[1] | tonumber), created: .[2], title
         (.turns // ""), ((.duration_ms // 0) / 60000 | . * 10 | round / 10),
         (.input_tokens // ""), (.output_tokens // ""),
         (.cache_read_tokens // ""), (.cache_write_tokens // ""),
-        (.model // ""), (.completed // ""), (.actor // ""),
+        (.model // ""), (.completed | if . == null then "" else . end), (.actor // ""),
+        (.text_chars // ""), (.structured | if . == null then "" else . end),
+        (.text_problems // {} | to_entries | map("\(.key) \(.value)") | join(" ")),
         (if .run_id then "https://github.com/\(.repo)/actions/runs/\(.run_id)" else "" end)
     ] | @csv' "$work/runs.json"
 } > "$out_dir/ai-costs-runs.csv"

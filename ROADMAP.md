@@ -88,6 +88,7 @@ These are breaking changes, so they wait for the next major version.
 
 - Remove `review_check_patterns` from AI Implement. It already does nothing, and warns when it is
   set.
+- Remove `verb` from AI run report. It already does nothing, and warns when it is set.
 
 ## Done
 
@@ -139,8 +140,8 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
   🟠 medium, 🟡 low - and the findings from high to low, each linked to its inline comment. Only a
   high finding asks for changes.
 - **The report after each round:** notes for the reviewer, what was not done, and the questions for
-  a person come first, then the QA steps. What was done and how it was checked are folded away. A
-  status block at the top of the pull request is rewritten every round.
+  a person come first, then the QA steps. What was done and how it was checked are folded away. From
+  round 2 on, an "Update on round N" section under the links is rewritten every round.
 - **The plan:** a short summary, the risks, the steps with a line each on what they touch, and the
   QA steps. The whole plan, with each step's detail and the checks, is folded underneath as JSON for
   the agents. Every item has an id that stays the same when the plan is revised.
@@ -150,18 +151,24 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
 Watch the first real runs for: whether the planner can write its one file, how long the visible
 part of a plan really is, and how often the plain answer is used instead of the data.
 
-## Next
-
 ### Step 3d: Tidy up the AI's writing
 
-After a few real runs with step 3:
+- What the AI wrote is checked before it is posted: length limits, phrases the style guide rules
+  out, and references to plan ids that do not exist, which are dropped.
+- The planner decides how much QA a change needs from what a user could see break: none for
+  formatting or annotations, regression checks for refactors, real type changes and upgrades, and
+  none for a flow an end-to-end test already covers.
+- The cost line records how long the posted text was, whether the plain answer was used instead of
+  the data, and what the checks found. The runs CSV of the cost report shows them.
+- The prompts are about half as long: instructions only.
 
-- Check what the AI wrote before posting: length limits, banned phrases, ids that exist.
-- Plans for changes users do not see, such as code style, should have no QA steps. If plans still
-  get them, make the planner say first what users will see, and reject QA steps when that is empty.
-- Record how long the text was and what the check found in the cost line.
-- Cut the prompts to about half: instructions only, with the reasoning kept in the workflow
-  comments.
+Still open from step 3d:
+
+- If plans still get QA wrong, make the planner name the user flows the change runs through first,
+  and check its QA steps against that list.
+- Check on real plans that the planner finds a repository's end-to-end tests.
+
+## Next
 
 ### Step 4: Spend less
 

@@ -15,6 +15,10 @@ inputs:
     description: 'What to post instead when the plan is missing or unusable - the final message the agent ended on'
     required: false
     default: ''
+  cost_line:
+    description: 'The `cost_line` output of `ai-run-report`, to add what was posted to'
+    required: false
+    default: ''
 
 outputs:
   rendered:
@@ -26,6 +30,9 @@ outputs:
   has_qa:
     description: 'Whether the plan has QA acceptance criteria - "true" or "false"'
     value: ${{ steps.render.outputs.has_qa }}
+  cost_line:
+    description: 'The `cost_line` input with the length of the visible plan, whether it was laid out from JSON, and what the checks found. Empty when the input was'
+    value: ${{ steps.render.outputs.cost_line }}
 
 runs:
   using: composite
@@ -36,4 +43,5 @@ runs:
         INPUT_PLAN_FILE: ${{ inputs.plan_file }}
         INPUT_PREVIOUS_FILE: ${{ inputs.previous_file }}
         INPUT_FALLBACK_FILE: ${{ inputs.fallback_file }}
+        INPUT_COST_LINE: ${{ inputs.cost_line }}
       run: node "$GITHUB_ACTION_PATH/render.js"

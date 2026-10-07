@@ -132,8 +132,8 @@ An **approved** or plain **commented** review from a person deliberately does no
 decision; a passing remark is not.
 
 Each round ends with the agent pushing to the same branch, **replying to every thread it was
-given**, posting one round comment, and rewriting the status at the top of the pull request - where
-it stands, and what is waiting on a decision. It replies even to the comments it decided against -
+given**, posting one round comment, and rewriting the "Update on round N" section of the pull request
+description - where it stands, and what is waiting on a decision. It replies even to the comments it decided against -
 "I did not do this, because X" is where you find out you disagree.
 
 ### What to do with a reply

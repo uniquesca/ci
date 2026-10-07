@@ -4,6 +4,8 @@
 // the pull request copies. The whole plan is folded underneath as JSON - the one copy the agents
 // work from, and what the next revision starts from.
 
+import { phraseProblems } from './ai-text.js';
+
 const PREFIX = { risks: /^[RU]\d{1,4}$/, steps: /^S\d{1,4}$/, qa: /^QA\d{1,4}$/, checks: /^C\d{1,4}$/ };
 
 // Where the plan's JSON starts in the comment. Safe as a marker because the agent's text cannot
@@ -202,6 +204,7 @@ export function normalisePlan(raw, previous = null) {
     if (!plan.summary) {
         problems.push('no summary');
     }
+    problems.push(...phraseProblems(plan));
 
     const size = () => Buffer.byteLength(renderPlan(plan));
     for (const [name, fields, max, what] of SHORTER) {
@@ -222,23 +225,29 @@ export function normalisePlan(raw, previous = null) {
     return { plan, problems };
 }
 
+// The part of a rendered plan a person reads, above the folded JSON
+export function visiblePart(rendered) {
+    const end = rendered.indexOf(JSON_MARKER);
+    return (end === -1 ? rendered : rendered.slice(0, end)).trimEnd();
+}
+
 export function renderPlan(plan) {
     const parts = [plan.revision ? `**Revised:** ${plan.revision}\n\n${plan.summary}` : plan.summary];
 
     if (plan.risks.length) {
-        parts.push('## Risks, unknowns and assumptions\n\n' + plan.risks
+        parts.push('### Risks, unknowns and assumptions\n\n' + plan.risks
             .map((r) => `- **${r.id}** ${r.text}${r.ask ? ` **Needs your decision:** ${r.ask}` : ''}`)
             .join('\n'));
     }
 
     // The scope goes on a line of its own under the title, inside the same list item
-    parts.push('## Steps\n\n' + plan.steps
+    parts.push('### Steps\n\n' + plan.steps
         .map((s) => `- [ ] **${s.id}** ${s.title}${s.scope ? `\n  ${s.scope}` : ''}`)
         .join('\n'));
 
     // A plan with nothing for a tester says why in its JSON, and shows no section at all
     if (plan.qa.length) {
-        parts.push('## QA acceptance criteria\n\n' + plan.qa.map((q) => {
+        parts.push('### QA acceptance criteria\n\n' + plan.qa.map((q) => {
             const where = q.where ? `In ${q.where}: ` : '';
             return `- **${q.id}**${idsText(q.covers)} ${where}${q.do} **Expect:** ${q.expect}`;
         }).join('\n'));

@@ -3,13 +3,14 @@
 // the agent ended on, which the caller checks the way it always has.
 import fs from 'node:fs';
 import path from 'node:path';
-import { normalisePlan, renderPlan } from '../src/ai-plan.js';
+import { normalisePlan, renderPlan, visiblePart } from '../src/ai-plan.js';
+import { withTextStats } from '../src/ai-text.js';
 
 const env = process.env;
 const out = path.join(env.RUNNER_TEMP, 'ai-render-plan');
 fs.mkdirSync(out, { recursive: true });
 
-const outputs = { rendered: 'false', plan_file: '', has_qa: 'false' };
+const outputs = { rendered: 'false', plan_file: '', has_qa: 'false', cost_line: '' };
 
 function warn(message) {
     console.log(`::warning title=Plan problem::${message}`);
@@ -71,15 +72,20 @@ problems.forEach(warn);
 
 const file = path.join(out, 'plan.md');
 
+let chars = 0;
 if (plan) {
-    fs.writeFileSync(file, renderPlan(plan) + '\n');
+    const rendered = renderPlan(plan);
+    fs.writeFileSync(file, rendered + '\n');
     Object.assign(outputs, { rendered: 'true', plan_file: file, has_qa: String(plan.qa.length > 0) });
+    chars = visiblePart(rendered).length;
 } else if (env.INPUT_FALLBACK_FILE && fs.existsSync(env.INPUT_FALLBACK_FILE)) {
     warn('Posting the final message the agent ended on instead');
     const text = fs.readFileSync(env.INPUT_FALLBACK_FILE, 'utf8');
     fs.writeFileSync(file, text);
     outputs.plan_file = file;
-    outputs.has_qa = String(/^## QA acceptance criteria\s*\n\s*(?!None\b)\S/m.test(text));
+    outputs.has_qa = String(/^###? QA acceptance criteria\s*\n\s*(?!None\b)\S/m.test(text));
+    chars = text.length;
 }
+outputs.cost_line = withTextStats(env.INPUT_COST_LINE, { chars, structured: Boolean(plan), problems });
 
 fs.appendFileSync(env.GITHUB_OUTPUT, Object.entries(outputs).map(([key, value]) => `${key}=${value}\n`).join(''));

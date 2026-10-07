@@ -1,6 +1,8 @@
 // Turns the report.json an implementing agent wrote into what is posted: the body of the pull
-// request on the first run, the round comment after that, and the status block at the top of the
-// pull request that every run rewrites. The agent decides what to say; the layout is decided here.
+// request on the first run, the round comment after that, and the status block in the pull
+// request description that every run rewrites. The agent decides what to say; the layout is decided here.
+
+import { knownIds, phraseProblems, planIds } from './ai-text.js';
 
 export const STATUS_START = '<!-- ai-status -->';
 export const STATUS_END = '<!-- /ai-status -->';
@@ -59,9 +61,12 @@ function list(leftOut, raw, problems, name, pick) {
 }
 
 // The agent read text anybody able to comment wrote, so its output is untrusted input. Anything
-// malformed is dropped or normalised and reported, never allowed to fail the run.
-export function normaliseReport(raw) {
+// malformed is dropped or normalised and reported, never allowed to fail the run. With the plan
+// the work was built from, a reference to an id it does not have is dropped too.
+export function normaliseReport(raw, { plan = null } = {}) {
     const problems = [];
+    const known = planIds(plan);
+    const cite = (item, text) => knownIds(refs(item), known, problems, `"${clip(text, 40)}"`);
     const report = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
     if (!report) {
         return { report: null, problems: ['report.json is not a JSON object'] };
@@ -76,17 +81,17 @@ export function normaliseReport(raw) {
     const leftOut = { count: 0 };
     const done = list(leftOut, report.done, problems, 'done', (item) => {
         const what = clip(item?.what, 300);
-        return what && { what, refs: refs(item) };
+        return what && { what, refs: cite(item, what) };
     });
 
     const notes = list(leftOut, report.notes, problems, 'notes', (item) => {
         const note = clip(item?.note, 400);
-        return note && { note, refs: refs(item) };
+        return note && { note, refs: cite(item, note) };
     });
 
     const notDone = list(leftOut, report.not_done, problems, 'not_done', (item) => {
         const what = clip(item?.what, 300);
-        return what && { what, why: clip(item.why, 400), refs: refs(item) };
+        return what && { what, why: clip(item.why, 400), refs: cite(item, what) };
     });
 
     const verification = list(leftOut, report.verification, problems, 'verification', (item) => {
@@ -106,7 +111,7 @@ export function normaliseReport(raw) {
 
     const decisions = list(leftOut, report.decisions, problems, 'decisions', (item) => {
         const ask = clip(item?.ask, 400);
-        return ask && { ask, refs: refs(item) };
+        return ask && { ask, refs: cite(item, ask) };
     });
 
     const result = { headline, summary, done, notes, not_done: notDone, verification, decisions, left_out: leftOut.count };
@@ -121,6 +126,7 @@ export function normaliseReport(raw) {
     if (result.left_out > leftOut.count) {
         problems.push(`the report was over ${REPORT_MAX} bytes, so ${result.left_out - leftOut.count} item(s) were left out`);
     }
+    problems.push(...phraseProblems(result));
 
     return { report: result, problems };
 }
@@ -129,9 +135,13 @@ function folded(summary, content) {
     return `<details>\n<summary>${summary}</summary>\n\n${content}\n\n</details>`;
 }
 
+function decisionsSection(report) {
+    return '### Needs a decision\n\n' + report.decisions.map((d) => `- ${d.ask}${refsText(d.refs)}`).join('\n');
+}
+
 // In two parts: `body` is what a reviewer reads first, and `details` is folded away, since the diff
 // and the checks say it too. The caller puts the QA criteria between them. Under the status block,
-// the headline and the open decisions are already said above it.
+// which carries the open decisions, the headline stands in for a missing summary.
 export function renderReport(report, { underStatus = false } = {}) {
     const parts = [];
 
@@ -139,23 +149,23 @@ export function renderReport(report, { underStatus = false } = {}) {
         parts.push(`**${report.headline}**`);
     }
 
-    // Optional: a report without one starts at its first section
-    if (report.summary) {
-        parts.push(report.summary);
+    const overview = report.summary || (underStatus ? report.headline : '');
+    if (overview) {
+        parts.push(`### Overview\n\n${overview}`);
     }
 
     if (report.notes.length) {
-        parts.push('## For the reviewer\n\n' + report.notes.map((n) => `- ${n.note}${refsText(n.refs)}`).join('\n'));
+        parts.push('### For the reviewer\n\n' + report.notes.map((n) => `- ${n.note}${refsText(n.refs)}`).join('\n'));
     }
 
     if (report.not_done.length) {
-        parts.push('## Not done\n\n' + report.not_done
+        parts.push('### Not done\n\n' + report.not_done
             .map((n) => `- ${n.what}${refsText(n.refs)}${n.why ? ` - ${n.why}` : ''}`)
             .join('\n'));
     }
 
     if (!underStatus && report.decisions.length) {
-        parts.push('## Needs a decision\n\n' + report.decisions.map((d) => `- ${d.ask}${refsText(d.refs)}`).join('\n'));
+        parts.push(decisionsSection(report));
     }
 
     const details = [];
@@ -182,20 +192,24 @@ export function renderReport(report, { underStatus = false } = {}) {
     return { body: parts.join('\n\n'), details: details.join('\n\n') };
 }
 
-// The block at the top of the pull request. It carries the report itself as hidden data, so the
-// next round and the reviewer are handed what this run said without parsing prose back.
-export function renderStatus(report, label) {
-    const lines = [STATUS_START, `> **${label}:** ${report.headline || 'no headline given.'}`];
+// The block under the links in the pull request description, rewritten by every run: the latest
+// round's headline under `label`, and the decisions still open. A first run has no label, and
+// shows only its decisions. It carries the report itself as hidden data, so the next round and
+// the reviewer are handed what this run said without parsing prose back.
+export function renderStatus(report, label = '') {
+    const parts = [STATUS_START];
 
+    if (label) {
+        parts.push(`### ${label}\n\n${report.headline || 'No headline given.'}`);
+    }
     if (report.decisions.length) {
-        lines.push('>', '> Needs a decision:');
-        lines.push(...report.decisions.map((d) => `> - ${d.ask}${refsText(d.refs)}`));
+        parts.push(decisionsSection(report));
     }
 
     const data = Buffer.from(JSON.stringify(report)).toString('base64');
-    lines.push(`<!-- ai-report:${data} -->`, STATUS_END);
+    parts.push(`<!-- ai-report:${data} -->\n${STATUS_END}`);
 
-    return lines.join('\n');
+    return parts.join('\n\n');
 }
 
 export function readStatus(body) {

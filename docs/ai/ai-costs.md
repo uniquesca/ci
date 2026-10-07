@@ -51,7 +51,10 @@ missing.
 `ai-run-report` builds it and the caller puts it on the last line of whatever it posts:
 `<!-- ai-cost {"v":1,"kind":"plan","repo":"uniquesca/officio","issue":1113,"cost_usd":1.97,...} -->`,
 carrying the cost, the four token counters separately, turns, duration, the model, and the run
-that produced it. The token counters stay separate because cache reads are most of the volume and
+that produced it. A run that posted what the agent wrote adds `text_chars` - its length, the
+visible part only for a plan - `structured`, false when the agent's plain final message was posted
+instead of its JSON, and `text_problems`, what the checks found, counted by kind: `length`, `id`,
+`phrase` and `shape`. The runs CSV has all three. The token counters stay separate because cache reads are most of the volume and
 a fraction of the price, so a month that costs more than the one before it cannot be explained
 without knowing which of the two grew.
 

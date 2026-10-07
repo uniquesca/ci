@@ -87,7 +87,7 @@ precisely without quoting a paragraph back:
 | `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong, in one sentence. **Needs your decision:** follows when only you can settle it |
 | `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
 | `S1`, `S2` | Steps | The work, in the order it should be done. The title and a line on what it touches are shown, the detail is folded |
-| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. No section at all when the change is not meant to change anything for users |
+| `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. As much as the risk warrants: for code users run that is not meant to change - a refactor, real type changes, an upgrade - the flows to check still work. A flow an end-to-end test covers is a check instead. No section at all when no user can reach the change - formatting, type annotations, CI |
 | `C1`, `C2` | The folded plan | A check that proves the work is done. The [implementing agent](ai-implement.md) runs these itself |
 
 **Ids are stable across revisions.** An item that survives keeps its number even if it was
@@ -182,7 +182,7 @@ out over the limit, which happens because the limit is not enforced on a long ru
 is posted with a warning on the run instead. A run genuinely cut off part-way reports
 `error_max_turns`, and that one fails with nothing posted.
 
-**A plan without `## Steps` or any `C` check is not posted.** The model sometimes ends its turn on the
+**A plan without `### Steps` or any `C` check is not posted.** The model sometimes ends its turn on the
 opening paragraph alone. The run fails with `Incomplete plan`; request the plan again.
 
 The `Show what the agent did` step is printed on every run, failed ones included, and the run

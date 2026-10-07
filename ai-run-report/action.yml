@@ -8,9 +8,9 @@ inputs:
     required: false
     default: ''
   verb:
-    description: 'Past-tense verb the summary opens with, for example `Planned` or `Implemented`'
+    description: 'Deprecated, does nothing, and will be removed in v12'
     required: false
-    default: 'Ran'
+    default: ''
   kind:
     description: 'What the run was doing - `plan`, `implement` or `review`. Recorded in `cost_line`, where it is what tells one kind of spend from another'
     required: false
@@ -36,7 +36,7 @@ outputs:
     description: 'Path to a file holding the agent final message, empty when there is none. A file rather than a string, because a plan can run to tens of kilobytes'
     value: ${{ steps.report.outputs.result_file }}
   summary:
-    description: 'What the run cost, for example `Planned in 6m 44s, 18 turns, 1250000 tokens, ~$3.41`. Empty when the log recorded none of it'
+    description: 'What the run cost, for example `6m 44s · 18 turns · 1250000 tokens · ~$3.41`. Empty when the log recorded none of it'
     value: ${{ steps.report.outputs.summary }}
   reason:
     description: 'Why the run stopped, truncated to 200 characters, for a failure comment'
@@ -98,6 +98,8 @@ runs:
         PULL_REQUEST: ${{ inputs.pull_request }}
         ROUND: ${{ inputs.round }}
       run: |
+        [[ -z "$VERB" ]] || echo "::warning title=Deprecated input::verb does nothing and will be removed in v12 - take it out of the caller"
+
         # Outside the checkout on purpose: a workflow that commits its working tree must
         # not be able to sweep the agent's own output into the commit
         out="$RUNNER_TEMP/ai-run-report"
@@ -208,16 +210,16 @@ runs:
           if [[ -n "$duration" && "$duration" != null ]]; then
             secs=$(( duration / 1000 ))
             if (( secs >= 60 )); then
-              summary="$VERB in $(( secs / 60 ))m $(( secs % 60 ))s"
+              summary="$(( secs / 60 ))m $(( secs % 60 ))s"
             else
-              summary="$VERB in ${secs}s"
+              summary="${secs}s"
             fi
           fi
-          [[ -n "$turns" && "$turns" != null ]] && summary="${summary:+$summary, }${turns} turns"
-          [[ -n "$tokens" && "$tokens" != null ]] && summary="${summary:+$summary, }${tokens} tokens"
+          [[ -n "$turns" && "$turns" != null ]] && summary="${summary:+$summary · }${turns} turns"
+          [[ -n "$tokens" && "$tokens" != null ]] && summary="${summary:+$summary · }${tokens} tokens"
           if [[ -n "$cost" && "$cost" != null ]]; then
             # The agent's own estimate from its token counts, not a billed figure
-            summary="${summary:+$summary, }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
+            summary="${summary:+$summary · }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
             cost_usd="$cost"
           fi
 

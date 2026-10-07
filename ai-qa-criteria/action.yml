@@ -17,7 +17,7 @@ inputs:
     required: false
     default: '.ai-plan/plan.md'
   section:
-    description: 'Heading of the plan section to copy, without the `##`. Everything under it up to the next `##` goes into the pull request'
+    description: 'Heading of the plan section to copy, without the `###`. Everything under it up to the next heading goes into the pull request'
     required: false
     default: 'QA acceptance criteria'
   marker:
@@ -94,8 +94,8 @@ runs:
         rm -rf "$tmp"
         mkdir -p "$tmp"
 
-        # Everything under the heading, up to the next one. `^## ` needs the space, so a `###`
-        # subheading inside the section survives rather than ending it.
+        # Everything under the heading, up to the next one. A plan's headings are `###`, and an
+        # older plan's `##`; text laid out from a plan's JSON cannot start a line with `#`.
         #
         # A horizontal rule ends it too. The criteria are the last section with a heading, so
         # there is none after them - what follows is the plan's own footer, and copying that
@@ -110,10 +110,10 @@ runs:
         # it is bookkeeping between two versions of the plan - a tester reading this list should
         # see what they have to test and nothing else, and the plan on the issue still has it.
         awk -v section="$SECTION" '
-          /^## / {
+          /^###? / {
             if (found) { exit }
             heading = $0
-            sub(/^##[[:space:]]+/, "", heading)
+            sub(/^#+[[:space:]]+/, "", heading)
             sub(/[[:space:]]+$/, "", heading)
             if (heading == section) { found = 1 }
             next
@@ -148,7 +148,7 @@ runs:
         else
           {
             printf '%s\n\n' "$MARKER"
-            printf '## %s\n\n' "$SECTION"
+            printf '### %s\n\n' "$SECTION"
             cat "$tmp/section.md"
             printf '\n%s\n' "$END_MARKER"
           } > "$tmp/block.md"

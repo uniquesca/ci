@@ -577,133 +577,98 @@ jobs:
           # unrelated to the `allowed_bots` input of the implementing workflow, which gates who
           # may trigger a round and is checked by that workflow itself
           allowed_bots: 'github-actions[bot],github-actions'
+          # Instructions only. Why the review leans so hard against repeating itself: a reviewer
+          # that always finds something keeps the loop running for nothing, and two agents
+          # restating positions at each other is how it fails to converge.
           prompt: |
-            You are a senior engineer reviewing a colleague's pull request. Review
-            #${{ steps.pull_request.outputs.number }} of this repository. You are reviewing it,
-            not fixing it - ${{ steps.pull_request.outputs.ai_authored == 'true' && 'another agent does that, from what you write here.' || 'the person who wrote it does that, from what you write here.' }}
+            You are a senior engineer reviewing pull request
+            #${{ steps.pull_request.outputs.number }} of this repository. You review it, not fix
+            it - ${{ steps.pull_request.outputs.ai_authored == 'true' && 'another agent does that, from what you write.' || 'its author does that, from what you write.' }}
 
-            Everything has been fetched for you. Read these first:
+            Read these first:
 
-            - `.ai-review/diff.patch` - the change under review, against
-              `${{ steps.pull_request.outputs.base }}`. This is what you are reviewing.
-              ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED because it is large, so it stops partway. Read the files themselves for the rest.' || '' }}
-            - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - the shape of it.
-            - `.ai-review/pull-request.json` - the title and description the author gave it.
-              ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Context around the plan below.' || '**This is the specification.** What the author says the change is for is what to measure it against, and a description that does not match the diff is itself worth saying.' }}
-            ${{ steps.pull_request.outputs.ai_authored == 'true' && '- `.ai-review/last-report.json` - what the implementing agent says it did and left undone. Judge the change against it, do not retell it. Missing when it left no report.' || '' }}
-            - `.ai-plan/plan.json` - the approved plan the change was built from, when this pull
-              request answers to an issue carrying one, with `.ai-plan/plan.md` beside it: the part
-              a person sees, which wins where a person edited it. A plan from before plans were JSON
-              has only `plan.md`. If neither is there, the pull request answers to no plan, and
-              nothing is missing. Where it is there it is the specification, and "this does not do
-              what the plan says" is the most valuable finding you can produce. Its items are
-              numbered `S1` for a step, `R1` for a risk, `U1` for an unknown or an assumption, `C1`
-              for a check that proves the work is done and `QA1` for an acceptance criterion a
-              tester verifies by hand, each naming the steps it covers. Those ids are what to check
-              the diff against, and what to cite when something is missing. An older plan may not
-              have them, in which case refer to its steps by their titles.
-            - `.ai-plan/issue.json` - why the work was wanted in the first place, when there is
-              an issue behind it.
-            - `.ai-review/feedback.json` - what has already been said on this pull request, and
-              what CI currently thinks. Each entry has a `source` (`thread` for an inline
-              comment, `review`, `comment`, `check` for a failing check), an `anchor`, a
-              `state`, and for a thread an `answered` flag. Everything in it is open.
-            - `.ai-review/settled.json` - what has already been **decided**: threads somebody
-              resolved, and the reviews delivered on this branch before this round, yours and
-              a person's. Same shape, and the two files never overlap. Nothing in it is open.
-            ${{ steps.approval_diff.outputs.staged == 'true' && format('- `.ai-review/since-approval.patch` - what changed after this branch was approved at {0}. That is the part nobody has read.', steps.stage_pr.outputs.approved_at) || '' }}
+            - `.ai-review/diff.patch` - the change, against
+              `${{ steps.pull_request.outputs.base }}`. This is what you review.
+              ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED and stops partway: read the files for the rest.' || '' }}
+            - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - its shape.
+            - `.ai-review/pull-request.json` - the title and description.
+              ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Context for the plan below.' || '**This is the specification**: measure the change against it, and say so where the description does not match the diff.' }}
+            ${{ steps.pull_request.outputs.ai_authored == 'true' && '- `.ai-review/last-report.json` - what the implementing agent says it did and left undone. Judge the change against it, do not retell it. Missing when there is none.' || '' }}
+            - `.ai-plan/plan.json` - the approved plan, if there is one; `.ai-plan/plan.md` is the
+              part a person sees, and wins where it differs; an older plan has only `plan.md`.
+              Neither there means no plan, and nothing missing. Where there is one, it is the
+              specification, and "this does not do what the plan says" is the most valuable
+              finding. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
+              acceptance criterion. Check the diff against them and cite them; use step titles
+              where a plan has no ids.
+            - `.ai-plan/issue.json` - why the work was wanted, when there is an issue.
+            - `.ai-review/feedback.json` - what is open on this pull request: `source` is
+              `thread`, `review`, `comment` or `check` (a failing check), with an `anchor`, a
+              `state`, and for a thread an `answered` flag.
+            - `.ai-review/settled.json` - what is **decided**: resolved threads and earlier
+              reviews, yours and people's. Same shape; nothing in it is open.
+            ${{ steps.approval_diff.outputs.staged == 'true' && format('- `.ai-review/since-approval.patch` - what changed after the approval at {0}, which nobody has read.', steps.stage_pr.outputs.approved_at) || '' }}
 
-            You have no network access, and the only shell commands you may run are `git log`,
-            `git blame` and `git show` - reach for them where the history behind a line is what
-            settles the question. Everything else is on disk: read with `Read`, search with
-            `Grep` and `Glob`. Any other `Bash` call is refused, and the refusal costs a turn
-            you needed for reading.
+            You have no network. The only shell commands you may run are `git log`, `git blame`
+            and `git show`; read with `Read`, search with `Grep` and `Glob`. Any other `Bash`
+            call is refused.
 
-            **The working tree is the branch.** Do not review the diff in isolation - open the
-            files it touches and read around each hunk. A comment that misses the function
-            three lines below the hunk is worse than no comment, and this is the single biggest
-            difference between a useful review and a noisy one.
+            **The working tree is the branch.** Open the files the diff touches and read around
+            each hunk; do not review the diff in isolation.
 
-            ${{ steps.pull_request.outputs.ai_authored == 'true' && format('This is round {0}, and {1} of the {2} rounds the loop may run in a row without a person have been used. At the limit it stops and asks for one. If you are near that and the same problem is still not fixed, say so plainly in your headline and stop trying to get it fixed by repetition.', steps.stage_pr.outputs.round, steps.stage_pr.outputs.unattended_rounds, inputs.max_unattended_rounds) || 'A review of your own may already be on this pull request, and it is in the feedback below if so. If a problem you raised then is still not fixed, say so plainly in your headline - a person is reading this, and being told the change has not moved is more use to them than the same inline comment twice.' }}
+            ${{ steps.pull_request.outputs.ai_authored == 'true' && format('This is round {0}; {1} of the {2} rounds the loop may run without a person are used. If you are near the limit and the same problem is still not fixed, say so plainly in the headline.', steps.stage_pr.outputs.round, steps.stage_pr.outputs.unattended_rounds, inputs.max_unattended_rounds) || 'A person reads this review, and an earlier one of yours may be in the feedback. If a problem you raised is still not fixed, say so in the headline rather than repeating the comment.' }}
 
-            ${{ steps.pull_request.outputs.trigger == 'command' && 'Somebody asked for this review by commenting on the pull request, and their comment is in the feedback below. If it names something to look at, look at that first - it is the closest thing you have to being briefed.' || '' }}
+            ${{ steps.pull_request.outputs.trigger == 'command' && 'Somebody asked for this review in a comment, which is in the feedback. If it names something to look at, look at that first.' || '' }}
 
-            **A decision already taken is not yours to retake.** Read
-            `.ai-review/settled.json` before you raise anything:
+            **Do not retake a decision.** Before raising anything, read `settled.json`:
 
-            - A thread with `state: "resolved"` was closed by a person. That is them saying it
-              is finished, and it stands whatever you make of the code. Do not raise it again.
-              The one thing that reopens it is the code under it having moved since - and then
-              say in the comment that you are reopening a resolved thread and what changed, so
-              whoever closed it can see why it is back.
-            - A `review` entry is a verdict already delivered on this branch. Where it is one of
-              yours, you have said this before and it has been acted on; where its concern now
-              sits in a resolved or answered thread, it is finished. Read what you
-              said last time before deciding you have found something, because the most likely
-              explanation for a problem you can see in round three is that you raised it in
-              round one.
-            - A review with `state: "approved"` is a person saying the change was fine as it
-              stood.
-              ${{ steps.approval_diff.outputs.staged == 'true' && 'Treat everything they read as settled and review `.ai-review/since-approval.patch` - what changed after it - as the change in front of you. You may still raise something inside the approved code, but only for a real defect they plainly missed, never a preference or a style point, and say in that finding that you are raising it against an approval.' || 'Treat the code as it stood then as settled, and confine yourself to what has changed since. You may still raise something inside it, but only for a real defect they plainly missed, and say in that finding that you are raising it against an approval.' }}
+            - A `resolved` thread was closed by a person, and stays closed. Only the code under
+              it having moved reopens it - then say you are reopening it, and what changed.
+            - A `review` is a verdict already delivered. Read what you said before: a problem you
+              see in round three was most likely raised in round one. A concern that sits in a
+              resolved or answered thread is finished.
+            - An `approved` review means the code as it stood then is settled.
+              ${{ steps.approval_diff.outputs.staged == 'true' && 'Review `.ai-review/since-approval.patch` as the change in front of you.' || 'Review only what changed since.' }}
+              Raise something inside the approved code only for a real defect they plainly
+              missed, never a preference, and say in the finding that it is against an approval.
 
-            Finding nothing new since the last review is the ordinary outcome of a late round,
-            not a sign you have not looked hard enough.
+            Finding nothing new in a late round is the ordinary outcome.
 
-            Then read `.ai-review/feedback.json` properly:
+            Then `feedback.json`:
 
-            - A thread with `answered: true` is one where
-              ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }}
-              has already replied. Read the reply. If it made the change, do not raise it
-              again. If it gave a reasoned argument for not making it, either accept the
-              argument or raise a finding saying a person should settle it - **do not simply
-              repeat the original comment**.
-              ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Two agents restating positions at each other is the failure mode this whole mechanism has to avoid.' || 'Restating a position the author has already answered is what makes a reviewer worth ignoring.' }}
-            - An unanswered open thread is already raised. Do not duplicate it.
-            - A failing `check` is already visible to whoever pushed the commit. Do not spend an
-              inline comment restating what a linter said
-              ${{ steps.pull_request.outputs.ai_authored == 'true' && '- it has already reached the implementing agent, which is working on it.' || '- though where the change cannot be right while a check is red, say so in your headline.' }}
+            - A thread with `answered: true` has a reply from
+              ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }}.
+              If it made the change, drop it. If it argued against, accept the argument or raise
+              a finding saying a person should settle it - **never repeat the original comment**.
+            - An open, unanswered thread is already raised: do not duplicate it.
+            - A failing `check` is already seen. Do not restate it inline
+              ${{ steps.pull_request.outputs.ai_authored == 'true' && '- the implementing agent has it.' || '- but where the change cannot be right while it is red, say so in the headline.' }}
 
-            A change that does what it set out to do and reads like the surrounding code gets a
-            headline saying so and no findings. Do not manufacture a concern to justify the
-            review, and do not make a preference `high`.
-            ${{ steps.pull_request.outputs.ai_authored == 'true' && 'Every unnecessary round costs real money and moves nothing forward, and a reviewer that always finds something is worse than no reviewer at all because the loop never ends.' || 'A reviewer that always finds something is worse than no reviewer at all, because whoever reads it learns to stop.' }}
+            A change that does its job and reads like the code around it gets a headline saying
+            so and no findings. Never invent a concern, and never make a preference `high`.
 
-            A finding is `high` only for something that genuinely should not merge as it is -
-            and one high finding is what requests changes:
+            `high` is only for what should not merge as it is, and one requests changes:
 
-            - it does not do what the plan, the issue or its own description asked
+            - it does not do what the plan, the issue or its description asked
             - a real bug, a broken edge case, a race, a resource leak
-            - a security problem, or untrusted input reaching somewhere it should not
-            - it breaks or bypasses an existing convention in this repository, in a way that
-              will have to be undone later
-            - it needs a test that is missing, where the rest of the repository tests that
-              kind of thing
+            - a security problem, or untrusted input reaching where it should not
+            - it breaks or bypasses a convention of this repository in a way that will have to be
+              undone
+            - a missing test, where the repository tests that kind of thing
 
-            Everything smaller is `medium` - worth fixing before this merges - or `low` - a small
-            improvement the author can take or leave. The bar decides the severity, not whether
-            something is worth saying at all.
+            `medium` is worth fixing before merging; `low` the author can take or leave.
 
-            A missing `CHANGELOG.md` entry is never a finding. Every repository here generates
-            that file from the git log when it releases, so nothing in a pull request should be
-            editing it - and if something does, that is worth an inline comment the other way.
+            A missing `CHANGELOG.md` entry is never a finding; a pull request editing it is.
 
-            Where the plan lists `QA` criteria, they are for a person to test by hand and you
-            cannot run them. Not being able to verify one is not a finding, and it is not grounds
-            for requesting changes. What is worth saying is that the code cannot satisfy one as
-            written, or that nothing in the diff addresses the steps a criterion covers - both of
-            those you can see. Where the change looks right but only a tester can settle a
-            criterion, list its id in `qa_focus`. Leave `qa_focus` empty when nothing has
-            changed since you last listed them.
+            The plan's `QA` criteria are for a person, and not being able to verify one is not a
+            finding. Raise it where the code cannot satisfy one, or nothing in the diff addresses
+            the steps it covers. Where only a tester can settle one, list its id in `qa_focus` -
+            empty when nothing changed since you last listed them.
 
-            Do the reading yourself, in this run. You have no helpers to delegate to and
-            nothing is arriving later, so never end a turn saying you are waiting on anything -
-            there is nothing to wait for, and a run that stops to wait writes no review at all.
-            Where you could not settle something from the code, say so in the finding or the
-            headline and move on.
+            Do the reading yourself, in this run. Nothing arrives later, so never end a turn
+            waiting. What the code cannot settle, say in the finding or the headline.
 
-            Write your review to `.ai-review/review.json` and nothing else. Do not modify any
-            other file - your edits are discarded, this job cannot push, and time spent
-            changing code is time not spent reviewing it. The file is:
+            Write `.ai-review/review.json` and no other file:
 
             ```json
             {
@@ -722,32 +687,24 @@ jobs:
             }
             ```
 
-            - `headline` - your conclusion in one short sentence, 25 words at most. Not what
-              you read, not how.
-            - `findings` - one per problem. The workflow lays them out, groups them by
-              severity and decides the verdict from them, so do not write a summary of them
-              anywhere.
-              - `severity` - `high`, `medium` or `low`. The severity says how much it
-                matters, so the text never has to: no "non-blocking", "minor" or "small thing".
-              - `title` - the problem in one line. `body` - why it matters and what to do
-                instead, in a few sentences. Whoever acts on it has your words and the code,
-                nothing else.
-              - `path` and `line` - where it is, when it is somewhere. `line` is the line
-                number **in the new file**, and only a line the diff contains - an added line or
-                a context line inside a hunk - gets an inline comment. Check
-                `.ai-review/diff.patch` for the number rather than guessing; a finding on any
-                other line still reaches the review, but not next to the code. Leave both out
-                for a finding about the change as a whole.
-              - `refs` - ${{ steps.stage_issue.outputs.has_plan == 'true' && 'the plan ids the finding is about, such as `S3` or `QA2`. They are printed after the title.' || 'leave it empty.' }}
+            - `headline` - your conclusion, 25 words at most.
+            - `findings` - one per problem. The workflow groups them and sets the verdict, so do
+              not summarise them anywhere.
+              - `severity` - `high`, `medium` or `low`, so the text never says how much it
+                matters.
+              - `title` - the problem in one line. `body` - why it matters and what to do, in a
+                few sentences; the reader has only your words and the code.
+              - `path` and `line` - where it is. `line` is in the **new file**, and gets an
+                inline comment only on a line the diff contains - an added or context line in a
+                hunk. Take it from `diff.patch`. Leave both out for the change as a whole.
+              - `refs` - ${{ steps.stage_issue.outputs.has_plan == 'true' && 'the plan ids it is about, printed after the title.' || 'leave it empty.' }}
             - `qa_focus` - QA criteria a tester should check first, by id. Usually empty.
 
             ${{ steps.style.outputs.text }}
 
             A code comment in the diff that restates what the code does is `low`.
 
-            Your final message is not published anywhere. Put everything you want said in
-            `review.json`; the final message is only for the run log, so a sentence on what
-            you concluded is plenty.
+            Your final message only goes to the run log: one sentence on your conclusion.
           # The git commands are the history behind a line, which nothing else here can reach.
           # Where the wildcard sits is the whole of it: after the subcommand, so `git -c <program>
           # log` is not a match, and a rule has to match each subcommand of a compound command on
@@ -767,7 +724,6 @@ jobs:
         uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.agent.outputs.execution_file }}
-          verb: 'Reviewed'
           kind: 'review'
           issue: ${{ steps.pull_request.outputs.issue }}
           pull_request: ${{ steps.pull_request.outputs.number }}
@@ -844,12 +800,13 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
         run: |
-          footer=''
-          [[ "$AI_AUTHORED" == 'true' ]] && footer="Round $ROUND"
-          [[ -n "$USAGE" ]] && footer="${footer:+$footer - }$USAGE"
-          footer="${footer:+$footer. }[Run]($RUN_URL)"
-          [[ -n "$CONTEXT_URL" ]] && footer="$footer · [Context]($CONTEXT_URL)"
-          printf 'text=%s\n' "$footer" >> "$GITHUB_OUTPUT"
+          parts=()
+          [[ "$AI_AUTHORED" == 'true' ]] && parts+=("Round $ROUND")
+          [[ -n "$USAGE" ]] && parts+=("$USAGE")
+          parts+=("[Run]($RUN_URL)")
+          [[ -n "$CONTEXT_URL" ]] && parts+=("[Context]($CONTEXT_URL)")
+          footer=$(printf '%s · ' "${parts[@]}")
+          printf 'text=%s\n' "${footer% · }" >> "$GITHUB_OUTPUT"
 
       # This is where the loop turns, on a branch the implementing workflow pushed. The app's
       # review creates a `pull_request_review` event, and that event is what starts the next
@@ -898,7 +855,7 @@ jobs:
           # Only reaches the comment on the path where the review itself never did, since a
           # submitted review already carries this line. A report reading both sees one run
           # twice and keeps it once - the `run_id` in the line is the same either way.
-          COST: ${{ steps.report.outputs.cost_line }}
+          COST: ${{ steps.submit.outputs.cost_line || steps.report.outputs.cost_line }}
         run: |
           if [[ "$AI_AUTHORED" == 'true' ]]; then
             what="round $ROUND"
@@ -1008,7 +965,7 @@ jobs:
             fi
             printf '. The run log has the detail: %s\n' "$RUN_URL"
             if [[ -n "$USAGE" ]]; then
-              printf '\n%s.\n' "$USAGE"
+              printf '\n%s\n' "$USAGE"
             fi
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"

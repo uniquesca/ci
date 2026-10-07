@@ -2,6 +2,8 @@
 // agent decides what to say; the shape of the review - its order, its headings, its length - is
 // decided here, so it is the same on every run.
 
+import { knownIds, phraseProblems, planIds } from './ai-text.js';
+
 // Highest first. A `high` finding is what requests changes.
 export const SEVERITIES = ['high', 'medium', 'low'];
 
@@ -51,8 +53,10 @@ function refsSuffix(refs) {
 
 // The agent read text that anybody able to comment wrote, so its output is untrusted input.
 // Anything malformed is dropped or normalised and reported, never allowed to fail the review.
-export function normaliseReview(raw) {
+// With the plan the change was built from, a reference to an id it does not have is dropped too.
+export function normaliseReview(raw, { plan = null } = {}) {
     const problems = [];
+    const known = planIds(plan);
     const review = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
 
     if (review !== raw) {
@@ -90,13 +94,14 @@ export function normaliseReview(raw) {
             body: text(item.body).trim(),
             path: typeof item.path === 'string' && item.path ? item.path : null,
             line: Number.isInteger(item.line) ? item.line : null,
-            refs: idList(item.refs, problems, `"${title}"`),
+            refs: knownIds(idList(item.refs, problems, `"${title}"`), known, problems, `"${title}"`),
         });
     }
 
     findings.sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
 
-    const qaFocus = idList(review.qa_focus, problems, 'qa_focus');
+    const qaFocus = knownIds(idList(review.qa_focus, problems, 'qa_focus'), known, problems, 'qa_focus');
+    problems.push(...phraseProblems({ headline, findings }));
 
     return { headline, findings, qaFocus, problems };
 }
@@ -105,8 +110,8 @@ export function normaliseReview(raw) {
 // inline is listed in the body by its title and tracked as a thread; one that cannot be placed
 // keeps its text in the body instead. `links` holds the address of each inline comment, in the
 // order of `comments` - known only once the review is posted, so the body is rendered again then.
-export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX, links = [] } = {}) {
-    const { headline, findings, qaFocus, problems } = normaliseReview(raw);
+export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX, links = [], plan = null } = {}) {
+    const { headline, findings, qaFocus, problems } = normaliseReview(raw, { plan });
 
     const verdict = findings.some((f) => f.severity === 'high') ? 'changes_requested' : 'comment';
 

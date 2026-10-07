@@ -23,6 +23,10 @@ inputs:
     description: 'The unified diff the agent reviewed. Every inline comment is checked against it, because Github rejects the whole review if one comment lands on a line the diff does not contain'
     required: false
     default: '.ai-review/diff.patch'
+  plan_file:
+    description: 'The plan the change was built from, as `ai-stage-issue` staged it. A reference to an id it does not have is dropped. Missing leaves the references unchecked'
+    required: false
+    default: '.ai-plan/plan.json'
   marker:
     description: 'Hidden first line of the review body. The implementing workflow reads it to tell a review an agent wrote from one a person wrote, which is what keeps the unattended round cap honest - identity cannot answer that on its own, since which login the reviewer arrives as is the caller''s to configure'
     required: false
@@ -32,7 +36,7 @@ inputs:
     required: false
     default: ''
   cost:
-    description: 'Hidden last line of the review body, the `cost_line` output of `ai-run-report`. It records what the run cost where the review is, for a cost report to read back, and renders as nothing at all'
+    description: 'Hidden last line of the review body, the `cost_line` output of `ai-run-report`. It records what the run cost where the review is, for a cost report to read back, and renders as nothing at all. The length of the review and what the checks found are added to it'
     required: false
     default: ''
   max_comments:
@@ -63,6 +67,9 @@ outputs:
   body_file:
     description: 'The rendered review body, for a caller to post as a comment when the review could not be submitted. Empty when nothing was rendered'
     value: ${{ steps.review.outputs.body_file }}
+  cost_line:
+    description: 'The `cost` input with the length of the review and what the checks found, for a caller that posts the review as a comment. The input unchanged when nothing was rendered'
+    value: ${{ steps.review.outputs.cost_line }}
 
 runs:
   using: composite
@@ -80,6 +87,7 @@ runs:
         HEAD_SHA: ${{ inputs.head_sha }}
         REVIEW_FILE: ${{ inputs.review_file }}
         DIFF_FILE: ${{ inputs.diff_file }}
+        PLAN_FILE: ${{ inputs.plan_file }}
         MARKER: ${{ inputs.marker }}
         FOOTER: ${{ inputs.footer }}
         COST: ${{ inputs.cost }}
@@ -101,6 +109,7 @@ runs:
             printf 'comments_posted=%s\n' "$comments_posted"
             printf 'comments_dropped=%s\n' "$comments_dropped"
             printf 'body_file=%s\n' "$body_file"
+            printf 'cost_line=%s\n' "$COST"
           } >> "$GITHUB_OUTPUT"
           exit 0
         }
@@ -186,6 +195,7 @@ runs:
         verdict=$(jq -r '.verdict' <<< "$outcome")
         comments_posted=$(jq -r '.comments' <<< "$outcome")
         comments_dropped=$(jq -r '.unplaced' <<< "$outcome")
+        COST=$(jq -r '.cost_line' <<< "$outcome")
         jq -r '.problems[] | "::warning title=Review file problem::\(.)"' <<< "$outcome"
 
         case "$verdict" in

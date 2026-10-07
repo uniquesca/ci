@@ -195,3 +195,16 @@ test('references and QA focus are short ids, so a giant one cannot push a review
     assert.ok(result.body.length < 1000);
     assert.equal(result.problems.length, 2);
 });
+
+test('with the plan, references and QA focus on ids it does not have are dropped', () => {
+    const plan = { steps: [{ id: 'S1' }], qa: [{ id: 'QA1' }] };
+    const { body, problems } = renderReview({
+        headline: 'One fix needed.',
+        findings: [{ severity: 'medium', title: 'Off by one', refs: ['S1', 'S7'] }],
+        qa_focus: ['QA1', 'QA4'],
+    }, { plan });
+
+    assert.match(body, /Off by one \(S1\)/);
+    assert.match(body, /For a tester to check first: QA1\./);
+    assert.deepEqual(problems, ['"Off by one" cites S7, not in the plan - dropped', 'qa_focus cites QA4, not in the plan - dropped']);
+});

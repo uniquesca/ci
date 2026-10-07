@@ -25,9 +25,10 @@ Used by [`ai-review`](../ai/ai-review.md).
 | `head_sha` | yes | | Commit the review is submitted against |
 | `review_file` | no | `.ai-review/review.json` | File the agent wrote: an object with `headline`, `findings` and `qa_focus` - see below |
 | `diff_file` | no | `.ai-review/diff.patch` | The unified diff the agent reviewed. Every inline comment is checked against it |
+| `plan_file` | no | `.ai-plan/plan.json` | The plan the change was built from. A reference to an id it does not have is dropped |
 | `marker` | no | `<!-- ai-review -->` | Hidden first line of the review body |
 | `footer` | no | | Markdown added under a rule at the end of the review body |
-| `cost` | no | | Hidden last line of the review body, the `cost_line` output of [`ai-run-report`](ai-run-report.md) - what the run cost, where a cost report can read it back |
+| `cost` | no | | Hidden last line of the review body, the `cost_line` output of [`ai-run-report`](ai-run-report.md) - what the run cost, where a cost report can read it back. [What was posted](../ai/ai-costs.md#what-the-hidden-line-holds) is added to it |
 | `max_comments` | no | `30` | How many findings one review may place inline |
 | `max_length` | no | `1500` | Longest finding body, in characters. Anything over is truncated rather than dropped |
 
@@ -41,6 +42,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 | `comments_posted` | How many inline comments the submitted review carries |
 | `comments_dropped` | How many findings named a line but went into the body instead - off the diff, or over the cap |
 | `body_file` | The rendered review body, for a caller to post when the review could not be submitted |
+| `cost_line` | The `cost` input as the review carries it, for a caller posting `body_file` |
 
 ## Dig deeper
 
@@ -69,7 +71,8 @@ person's decision. `src/ai-review.js` lays the body out: a verdict line, the hea
 severity, then every finding from high to low - by its title where it is an inline comment, in full
 where it is not - and `qa_focus` as one line. Once the review is posted, the list is linked to its
 inline comments. Anything malformed is normalised or dropped with a warning, never allowed to fail
-the review.
+the review - including a reference to an id `plan_file` does not have. A phrase the style guide
+rules out is reported as a warning.
 
 ### Inline comments, and why some are not
 

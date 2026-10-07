@@ -16,7 +16,7 @@ Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) a
   id: report
   with:
     execution_file: ${{ steps.agent.outputs.execution_file }}
-    verb: Planned
+    kind: plan
 ```
 
 ## Inputs
@@ -24,7 +24,7 @@ Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) a
 | Input | Required | Default | Description |
 |---|---|---|---|
 | `execution_file` | no | `''` | Path to the agent execution log, the `execution_file` output of `claude-code-action` |
-| `verb` | no | `Ran` | Past-tense verb the summary opens with, for example `Planned` or `Implemented` |
+| `verb` | no | | Deprecated, does nothing, and will be removed in v12 |
 | `kind` | no | | What the run was doing - `plan`, `implement` or `review`. Recorded in `cost_line` |
 | `issue` | no | | Issue the run belongs to. Recorded in `cost_line`, and what a cost report groups by |
 | `pull_request` | no | | Pull request the run belongs to, where there is one |
@@ -36,7 +36,7 @@ Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) a
 |---|---|
 | `has_result` | Whether the agent produced a final message - `true` or `false` |
 | `result_file` | Path to a file holding the agent's final message, empty when there is none |
-| `summary` | What the run cost, for example `Planned in 6m 44s, 18 turns, 1250000 tokens, ~$3.41`. Empty when the log recorded none of it |
+| `summary` | What the run cost, for example `6m 44s · 18 turns · 1250000 tokens · ~$3.41`. Empty when the log recorded none of it |
 | `reason` | Why the run stopped, truncated to 200 characters, for a failure comment |
 | `completed` | Whether the agent finished of its own accord - `true` or `false` |
 | `turns` | How many turns the run took. Empty when the log recorded none |
