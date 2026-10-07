@@ -20,7 +20,7 @@ test('what a reviewer reads first comes in a fixed order, and what changed and t
     const { body, details } = renderReport(report);
 
     assert.deepEqual(problems, []);
-    const order = ['**S1-S4', 'Retries now back off', '## For the reviewer', '## Not done', '## Needs a decision'].map((s) => body.indexOf(s));
+    const order = ['**S1-S4', '### Overview\n\nRetries now back off', '### For the reviewer', '### Not done', '### Needs a decision'].map((s) => body.indexOf(s));
     assert.ok(order.every((pos) => pos >= 0));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
     assert.match(body, /- The fixer and the hand edits are in one commit \(S4\)/);
@@ -36,7 +36,7 @@ test('empty sections are left out', () => {
     const { report } = normaliseReport({ headline: 'Nothing to change.', done: [] });
 
     assert.deepEqual(renderReport(report), { body: '**Nothing to change.**', details: '' });
-    assert.deepEqual(renderReport(report, { underStatus: true }), { body: '', details: '' });
+    assert.deepEqual(renderReport(report, { underStatus: true }), { body: '### Overview\n\nNothing to change.', details: '' });
 });
 
 test('an unknown result is shown as not run and reported', () => {
@@ -58,25 +58,34 @@ test('malformed input never throws', () => {
 
 test('the status block carries the report, and reads back', () => {
     const { report } = normaliseReport(full);
-    const status = renderStatus(report, 'After round 2');
+    const status = renderStatus(report, 'Update on round 2');
 
     assert.ok(status.startsWith(STATUS_START) && status.endsWith(STATUS_END));
-    assert.match(status, /> \*\*After round 2:\*\* S1-S4 done/);
-    assert.match(status, /> - Keep the old endpoint for one release\? \(U2\)/);
+    assert.match(status, /^### Update on round 2\n\nS1-S4 done/m);
+    assert.match(status, /^### Needs a decision\n\n- Keep the old endpoint for one release\? \(U2\)/m);
+    assert.doesNotMatch(status, /^>/m);
     assert.deepEqual(readStatus(`Intro\n\n${status}\n\nRest`), report);
+});
+
+test('on the first run the status block shows only the open decisions', () => {
+    const { report } = normaliseReport(full);
+
+    assert.doesNotMatch(renderStatus(report), /S1-S4 done|Update on/);
+    assert.match(renderStatus(report), /### Needs a decision/);
+    assert.doesNotMatch(renderStatus({ ...report, decisions: [] }), /###/);
 });
 
 test('the status block is replaced in place, or put at the top', () => {
     const { report } = normaliseReport(full);
-    const first = renderStatus(report, 'After the first run');
-    const second = renderStatus({ ...report, headline: 'All done.', decisions: [] }, 'After round 1');
+    const first = renderStatus(report);
+    const second = renderStatus({ ...report, headline: 'All done.', decisions: [] }, 'Update on round 1');
 
     const body = replaceStatus('Implements #4.', first);
     assert.ok(body.startsWith(first));
 
     const updated = replaceStatus(`${body}\n\nMore`, second);
     assert.ok(updated.includes('All done.'));
-    assert.ok(!updated.includes('S1-S4 done'));
+    assert.ok(!updated.includes('Keep the old endpoint'));
     assert.equal(updated.split(STATUS_START).length, 2);
     assert.ok(updated.endsWith('Implements #4.\n\nMore'));
 });
@@ -86,14 +95,14 @@ test('a body without a report reads back as null', () => {
     assert.equal(readStatus('<!-- ai-report:!!! -->'), null);
 });
 
-test('under the status block, the headline and the decisions are left to it', () => {
+test('under the status block, the decisions are left to it, and the headline only stands in for a summary', () => {
     const { report } = normaliseReport(full);
     const { body } = renderReport(report, { underStatus: true });
 
     assert.ok(!body.includes('S1-S4 done'));
     assert.ok(!body.includes('Needs a decision'));
-    assert.ok(body.startsWith('Retries now back off in the client.'));
-    assert.match(body, /## For the reviewer/);
+    assert.ok(body.startsWith('### Overview\n\nRetries now back off in the client.'));
+    assert.match(body, /### For the reviewer/);
 });
 
 test('a value that is not text where text belongs reads as missing, and never throws', () => {
@@ -187,7 +196,7 @@ test('the largest report leaves room in the description for 20,000 characters of
         decisions: many(() => ({ ask: wide(400), refs: ['S1'] })),
     });
     const { body, details } = renderReport(report);
-    const description = [renderStatus(report, 'After the first run'), body, details].join('\n\n');
+    const description = [renderStatus(report, 'Update on round 1'), body, details].join('\n\n');
 
     assert.ok(description.length + 20000 + 2000 <= 65536, `${description.length} characters`);
 });

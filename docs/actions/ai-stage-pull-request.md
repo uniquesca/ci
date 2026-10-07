@@ -63,7 +63,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `pull-request.json` | Number, title, state, draft, body, head and base branch, url and size |
 | `feedback.json` | Every item asking for changes, one shape, oldest first |
 | `settled.json` | Every settled item, same shape, oldest first. Only with `settled_record` |
-| `last-report.json` | What the last implementing run reported, read out of the status block at the top of the body. Only once a run has written one |
+| `last-report.json` | What the last implementing run reported, read out of the status block in the body. Only once a run has written one |
 
 A feedback item is `{id, source, author, is_bot, created_at, url, anchor, state, answered,
 reply_target, text}`, where `source` is `thread`, `review`, `comment` or `check`. A `thread` carries

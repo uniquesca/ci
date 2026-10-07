@@ -182,7 +182,7 @@ out over the limit, which happens because the limit is not enforced on a long ru
 is posted with a warning on the run instead. A run genuinely cut off part-way reports
 `error_max_turns`, and that one fails with nothing posted.
 
-**A plan without `## Steps` or any `C` check is not posted.** The model sometimes ends its turn on the
+**A plan without `### Steps` or any `C` check is not posted.** The model sometimes ends its turn on the
 opening paragraph alone. The run fails with `Incomplete plan`; request the plan again.
 
 The `Show what the agent did` step is printed on every run, failed ones included, and the run

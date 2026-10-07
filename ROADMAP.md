@@ -88,6 +88,7 @@ These are breaking changes, so they wait for the next major version.
 
 - Remove `review_check_patterns` from AI Implement. It already does nothing, and warns when it is
   set.
+- Remove `verb` from AI run report. It already does nothing, and warns when it is set.
 
 ## Done
 
@@ -139,8 +140,8 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
   🟠 medium, 🟡 low - and the findings from high to low, each linked to its inline comment. Only a
   high finding asks for changes.
 - **The report after each round:** notes for the reviewer, what was not done, and the questions for
-  a person come first, then the QA steps. What was done and how it was checked are folded away. A
-  status block at the top of the pull request is rewritten every round.
+  a person come first, then the QA steps. What was done and how it was checked are folded away. From
+  round 2 on, an "Update on round N" section under the links is rewritten every round.
 - **The plan:** a short summary, the risks, the steps with a line each on what they touch, and the
   QA steps. The whole plan, with each step's detail and the checks, is folded underneath as JSON for
   the agents. Every item has an id that stays the same when the plan is revised.

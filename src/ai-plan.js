@@ -235,19 +235,19 @@ export function renderPlan(plan) {
     const parts = [plan.revision ? `**Revised:** ${plan.revision}\n\n${plan.summary}` : plan.summary];
 
     if (plan.risks.length) {
-        parts.push('## Risks, unknowns and assumptions\n\n' + plan.risks
+        parts.push('### Risks, unknowns and assumptions\n\n' + plan.risks
             .map((r) => `- **${r.id}** ${r.text}${r.ask ? ` **Needs your decision:** ${r.ask}` : ''}`)
             .join('\n'));
     }
 
     // The scope goes on a line of its own under the title, inside the same list item
-    parts.push('## Steps\n\n' + plan.steps
+    parts.push('### Steps\n\n' + plan.steps
         .map((s) => `- [ ] **${s.id}** ${s.title}${s.scope ? `\n  ${s.scope}` : ''}`)
         .join('\n'));
 
     // A plan with nothing for a tester says why in its JSON, and shows no section at all
     if (plan.qa.length) {
-        parts.push('## QA acceptance criteria\n\n' + plan.qa.map((q) => {
+        parts.push('### QA acceptance criteria\n\n' + plan.qa.map((q) => {
             const where = q.where ? `In ${q.where}: ` : '';
             return `- **${q.id}**${idsText(q.covers)} ${where}${q.do} **Expect:** ${q.expect}`;
         }).join('\n'));

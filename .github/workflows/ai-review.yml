@@ -724,7 +724,6 @@ jobs:
         uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.agent.outputs.execution_file }}
-          verb: 'Reviewed'
           kind: 'review'
           issue: ${{ steps.pull_request.outputs.issue }}
           pull_request: ${{ steps.pull_request.outputs.number }}
@@ -801,12 +800,13 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
         run: |
-          footer=''
-          [[ "$AI_AUTHORED" == 'true' ]] && footer="Round $ROUND"
-          [[ -n "$USAGE" ]] && footer="${footer:+$footer - }$USAGE"
-          footer="${footer:+$footer. }[Run]($RUN_URL)"
-          [[ -n "$CONTEXT_URL" ]] && footer="$footer · [Context]($CONTEXT_URL)"
-          printf 'text=%s\n' "$footer" >> "$GITHUB_OUTPUT"
+          parts=()
+          [[ "$AI_AUTHORED" == 'true' ]] && parts+=("Round $ROUND")
+          [[ -n "$USAGE" ]] && parts+=("$USAGE")
+          parts+=("[Run]($RUN_URL)")
+          [[ -n "$CONTEXT_URL" ]] && parts+=("[Context]($CONTEXT_URL)")
+          footer=$(printf '%s · ' "${parts[@]}")
+          printf 'text=%s\n' "${footer% · }" >> "$GITHUB_OUTPUT"
 
       # This is where the loop turns, on a branch the implementing workflow pushed. The app's
       # review creates a `pull_request_review` event, and that event is what starts the next
@@ -965,7 +965,7 @@ jobs:
             fi
             printf '. The run log has the detail: %s\n' "$RUN_URL"
             if [[ -n "$USAGE" ]]; then
-              printf '\n%s.\n' "$USAGE"
+              printf '\n%s\n' "$USAGE"
             fi
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"

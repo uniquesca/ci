@@ -876,7 +876,6 @@ jobs:
         uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.plan.outputs.execution_file }}
-          verb: 'Planned'
           kind: 'plan'
           issue: ${{ github.event.issue.number }}
 
@@ -971,7 +970,7 @@ jobs:
           # plan has both. A plan laid out from its JSON was refused without them already, so this
           # is about the final message posted in its place.
           if [[ "$RENDERED" != 'true' ]] \
-             && { ! grep -q '^## Steps' "$PLAN_FILE" || ! grep -Eq '\*\*C[0-9]+\*\*' "$PLAN_FILE"; }; then
+             && { ! grep -Eq '^###? Steps' "$PLAN_FILE" || ! grep -Eq '\*\*C[0-9]+\*\*' "$PLAN_FILE"; }; then
             echo "::error title=Incomplete plan::The agent's final message is missing its steps or checks, so it was not posted - run the request again"
             exit 1
           fi
@@ -995,13 +994,13 @@ jobs:
             if [[ "$HAS_QA" == 'true' ]]; then
               printf 'The QA acceptance criteria are copied into the pull request body when the work starts.\n\n'
             fi
-            printf 'Requested by @%s.' "$COMMENTER"
+            printf 'Requested by @%s' "$COMMENTER"
             # Said out loud, not only in the metadata line above, because a plan can inherit
             # its branch from the one before it without anybody naming it on this run - and a
             # decision nobody can see is one nobody can correct
-            printf ' Written against `%s`.' "$BASE"
-            [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
-            printf ' [Run](%s)' "$RUN_URL"
+            printf ' · Written against `%s`' "$BASE"
+            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
+            printf ' · [Run](%s)' "$RUN_URL"
             [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, so it stays out of the way of anything reading a fixed line of this
@@ -1150,7 +1149,7 @@ jobs:
             printf 'The run log has the detail: %s\n\n' "$RUN_URL"
             printf 'Comment `%s` here to try again.\n' "$COMMAND${BASE:+ base=$BASE}"
             if [[ -n "$USAGE" ]]; then
-              printf '\n%s.\n' "$USAGE"
+              printf '\n%s\n' "$USAGE"
             fi
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"

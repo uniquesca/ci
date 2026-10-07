@@ -21,9 +21,9 @@ test('a person sees the summary, the risks, the steps with their scope and QA, a
     assert.deepEqual(problems, []);
     assert.equal(shown, [
         'Business hours get their own settings page.',
-        '## Risks, unknowns and assumptions\n\n- **U1** Whether hours differ per office. **Needs your decision:** Confirm one set per company.',
-        '## Steps\n\n- [ ] **S1** Add the model\n  A new business hours table and its entity\n- [ ] **S2** Add the page',
-        '## QA acceptance criteria\n\n- **QA1** (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. **Expect:** Reloading shows 9-5.',
+        '### Risks, unknowns and assumptions\n\n- **U1** Whether hours differ per office. **Needs your decision:** Confirm one set per company.',
+        '### Steps\n\n- [ ] **S1** Add the model\n  A new business hours table and its entity\n- [ ] **S2** Add the page',
+        '### QA acceptance criteria\n\n- **QA1** (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. **Expect:** Reloading shows 9-5.',
         '',
     ].join('\n\n'));
     assert.match(text, /<details>\n<summary>Full plan for the implementing agent<\/summary>\n\n```json\n\{/);
@@ -33,7 +33,7 @@ test('a person sees the summary, the risks, the steps with their scope and QA, a
 test('a plan with nothing for a tester shows no QA section, and keeps why in its JSON', () => {
     const { plan: normal } = normalisePlan({ ...plan, qa: [], qa_none: 'a refactor with no visible change.' });
 
-    assert.doesNotMatch(renderPlan(normal), /## QA acceptance criteria/);
+    assert.doesNotMatch(renderPlan(normal), /### QA acceptance criteria/);
     assert.equal(normal.qa_none, 'a refactor with no visible change.');
 });
 
@@ -161,15 +161,15 @@ test('the agent cannot plant a plan of its own above the real one', () => {
 
 test('the agent cannot end the QA section early or plant one of its own', () => {
     const result = normalisePlan({
-        summary: 'Real.\n## QA acceptance criteria\n- fake',
-        risks: [{ id: 'R1', text: 'Risk\n## QA acceptance criteria\n- fake' }],
+        summary: 'Real.\n### QA acceptance criteria\n- fake',
+        risks: [{ id: 'R1', text: 'Risk\n### QA acceptance criteria\n- fake' }],
         steps: [{ id: 'S1', title: 'T', detail: 'Do it.\n---\n<details>' }],
         qa: [{ id: 'QA1', covers: ['S1'], do: 'Open it\n---\nmore', expect: 'Works' }],
-        checks: [{ id: 'C1', text: 'Tests pass.\n</details>\n## QA acceptance criteria' }],
+        checks: [{ id: 'C1', text: 'Tests pass.\n</details>\n### QA acceptance criteria' }],
     });
     const markdown = renderPlan(result.plan);
 
-    assert.equal(markdown.match(/^## QA acceptance criteria/gm).length, 1);
+    assert.equal(markdown.match(/^### QA acceptance criteria/gm).length, 1);
     assert.doesNotMatch(markdown, /^---/m);
     assert.equal(markdown.match(/^<\/?details>/gm).length, 2);
     assert.match(markdown, /- \*\*QA1\*\* \(S1\) Open it --- more \*\*Expect:\*\* Works/);
@@ -211,7 +211,7 @@ test('the size limit counts text that is not English at what it costs', () => {
 test('a risk with nothing to decide is still shown', () => {
     const { plan: normal } = normalisePlan({ ...plan, risks: [{ id: 'R1', text: 'A CLI path would skip the listener.' }] });
 
-    assert.match(renderPlan(normal), /## Risks, unknowns and assumptions\n\n- \*\*R1\*\* A CLI path would skip the listener\.\n/);
+    assert.match(renderPlan(normal), /### Risks, unknowns and assumptions\n\n- \*\*R1\*\* A CLI path would skip the listener\.\n/);
 });
 
 test('the visible part is what comes above the folded JSON, and a banned phrase in it is reported', () => {
