@@ -1123,12 +1123,10 @@ jobs:
           {
             printf 'instruction<<AI_IMPLEMENT_REVISION\n'
             printf '%s\n' \
-              '**The plan was revised after the last round, so the branch you are in was not built to the plan you are reading.**' \
-              'Reconcile the whole branch against `.ai-plan/plan.json`, not only the feedback items.' \
-              'Work the plan now asks for that the branch does not have is yours to add, and work it no longer asks for is yours to take back out - a dropped step whose code stayed behind is exactly what a revision is meant to correct.' \
-              'Read the plan end to end before you start, and report what you changed for the revision and what you deliberately left alone.' \
-              "A revised plan opens by saying what moved in those ids - which steps were dropped, which are new - so that sentence is the shortest route to what this round owes. Ids are stable across a revision, so an item that kept its number is the same item, and a dropped one is listed as retired rather than renumbered." \
-              'Where the revision and the feedback disagree, the feedback still wins on anything about code somebody has read.'
+              '**The plan was revised after the last round, so this branch was built to an older plan.**' \
+              'Reconcile the whole branch against `.ai-plan/plan.json`, not only the feedback: add what the plan now asks for, and take out the code of steps it dropped.' \
+              'Its `revision` note says which ids moved. Report what you changed for the revision and what you left alone.' \
+              'Where the revision and the feedback disagree about code somebody has read, the feedback wins.'
             printf 'AI_IMPLEMENT_REVISION\n'
           } >> "$GITHUB_OUTPUT"
 
@@ -2221,48 +2219,29 @@ jobs:
             echo 'instructions<<PROMPT'
 
             if [[ ${#installed[@]} -gt 0 ]]; then
-              echo "This project's dependencies are installed for you, under $(printf '%s and ' "${installed[@]}" | sed 's/ and $//')."
+              echo "This project's dependencies are installed, under $(printf '%s and ' "${installed[@]}" | sed 's/ and $//')."
 
-              # Worth its own sentence, because the binaries are not on the `PATH` a shell starts
-              # with and an agent that does not know they are there reaches for a global install.
-              # Unplaced deliberately: `./node_modules/.bin` is a container install's binaries
-              # named on the machine that cannot execute them.
+              # The binaries are not on the `PATH` a shell starts with. Unplaced deliberately:
+              # `./node_modules/.bin` is a container install's binaries named on the machine that
+              # cannot execute them.
               if [[ -d "$node_modules" ]]; then
-                echo
-                echo "This project's own JavaScript tooling is among them: its type checker, its"
-                echo 'framework CLI and its test runner are binaries it unpacked, and running one'
-                echo 'of those is what runs the version this project pins.'
+                echo 'Its own type checker, framework CLI and test runner are binaries among them:'
+                echo 'run those, at the version this project pins.'
               fi
 
               if [[ ${#commands[@]} -gt 0 ]]; then
                 echo
-                echo 'These commands are what CI runs on whatever you push - whether or not the'
-                echo 'plan mentions them:'
+                echo 'CI runs these on whatever you push, whether or not the plan mentions them:'
                 echo
                 printf -- '- `%s`\n' "${commands[@]}"
                 echo
-                echo 'Where a fixer and a reporter are both listed, run the fixer first: it settles'
-                echo 'what nobody should have to review, and what survives it is what CI reports.'
-                echo
-                echo 'Having these clean is the floor rather than the whole of it: they are what CI'
-                echo 'will say about your work, not everything that has to be true of it.'
+                echo 'Run a fixer before a reporter. Passing these is the minimum, not the whole job.'
               fi
             elif [[ "$PHP" == 'true' || "$NODE" == 'true' ]]; then
-              echo 'This project declares dependencies, and the install for them did not work on'
-              echo 'this runner - so there is no `vendor/` or `node_modules` here, and none of the'
-              echo 'test runners, linters or static analysis they carry is available to you.'
-              echo
-              echo 'Leave it that way. Installing them again fails the same way, and building'
-              echo 'something to stand in for them - a substitute tree somewhere else, stubs for the'
-              echo 'packages that will not resolve, a linter of your own under `/tmp` - is a whole'
-              echo 'run spent on an environment that is thrown away at the end of it. Those turns'
-              echo "are worth more spent on the plan, so treat every one of the plan's checks as"
-              echo 'something that cannot be run here.'
-              echo
-              echo 'Verify by reading instead, and report the checks that went unrun as `not_run`,'
-              echo 'with why. CI runs them against what is pushed and reports back'
-              echo 'on the pull request, so what you leave unproven is picked up there and can be'
-              echo 'acted on in a later round.'
+              echo "This project's dependencies could not be installed here, so no test runner,"
+              echo 'linter or static analysis is available. Do not install them again or build a'
+              echo 'substitute. Verify by reading, and report the checks you could not run as'
+              echo '`not_run`, with why - CI runs them on the pull request.'
             fi
 
             echo 'PROMPT'
@@ -2334,44 +2313,34 @@ jobs:
 
           {
             echo 'instructions<<PROMPT'
-            echo "This project's application is running in Docker on this runner, brought up before"
-            echo 'you started. Its containers are where this project actually runs, so a command'
-            echo 'that needs the application, its database or its dependencies belongs in one -'
-            echo 'running it on the runner instead is what produces a failure that is about the'
-            echo 'runner rather than about your work.'
+            echo "This project's application runs in Docker on this runner. Run anything that needs"
+            echo 'the application, its database or its dependencies in its containers, not on the'
+            echo 'runner.'
 
             if [[ ${#commands[@]} -gt 0 ]]; then
               echo
-              echo 'These commands are what CI runs on whatever you push - whether or not the plan'
-              echo 'mentions them - and each one executes inside the container for you:'
+              echo 'CI runs these on whatever you push, whether or not the plan mentions them. Each'
+              echo 'runs inside the container:'
               echo
               printf -- '- %s\n' "${commands[@]}"
 
-              # Only where the standalone fixer is one of them. A repository offering just
-              # `code-quality` has the ordering inside that one call already, and a list with no
-              # fixer in it at all gets told to run something it was not given.
+              # Only where the standalone fixer is one of them: `code-quality` orders it already
               if [[ "$fixer" == 'true' ]]; then
                 echo
-                echo 'Run the fixer before the reporters: it settles what nobody should have to'
-                echo 'review, and what survives it is what CI reports.'
+                echo 'Run the fixer before the reporters.'
               fi
 
-              # Only worth the tokens where there is a `test` task to spend them on. The point is
-              # not that reruns are forbidden - it is that the second answer is not evidence, and
-              # an agent that does not know it will chase a contaminated database as a defect.
+              # A second run reads state the first left in the shared database, and an agent that
+              # does not know it chases that as a defect
               if [[ "$tests" == 'true' ]]; then
                 echo
-                echo 'The unit tests share one database with the rest of the container and leave'
-                echo 'state behind in it, so treat `./task.sh test` as one run per job: run it'
-                echo 'once, when the change is otherwise finished, rather than as you go. What a'
-                echo 'second run reports says as much about what the first one left behind as'
-                echo 'about your code, so do not read a failure that only appears there as a'
-                echo 'defect you introduced.'
+                echo 'The unit tests leave state in a shared database: run `./task.sh test` once,'
+                echo 'when the change is otherwise finished. A failure only a second run shows is'
+                echo 'not proof of a defect.'
               fi
 
               echo
-              echo 'Having these clean is the floor rather than the whole of it: they are what CI'
-              echo 'will say about your work, not everything that has to be true of it.'
+              echo 'Passing these is the minimum, not the whole job.'
             fi
 
             echo 'PROMPT'
@@ -2413,27 +2382,19 @@ jobs:
         run: |
           {
             echo 'instructions<<PROMPT'
-            echo '- Do not write Github workflow YAML out of what you remember of it. The files'
-            echo '  under `.github/workflows/` here are the pattern to follow: how a job is laid'
-            echo '  out, how a step is named, and which actions are in use at which versions.'
-            echo '  Take every `uses:` version from a file you can read in this repository - a'
-            echo '  version you recall is a version that was current once.'
+            echo '- Do not write Github workflow YAML from memory. Follow the files under'
+            echo '  `.github/workflows/` here, and take every `uses:` version from one of them.'
 
             if [[ -s .ai-plan/ci-framework.md ]]; then
-              echo '  `.ai-plan/ci-framework.md` lists every reusable workflow and action this'
-              echo '  organisation shares. Call one rather than writing out the steps it already'
-              echo '  does, at the version the workflows here reference.'
+              echo '  `.ai-plan/ci-framework.md` lists the shared workflows and actions: call one'
+              echo '  rather than writing out its steps, at the version the workflows here use.'
             fi
 
             if [[ "$ALLOW_WORKFLOW_CHANGES" != 'true' ]]; then
-              echo '- Do not change any file under `.github/workflows/`. Github refuses a push'
-              echo '  touching one from the identity this work is pushed with, so the edit cannot'
-              echo '  reach the branch. Where the work needs one - including where the plan or'
-              echo '  the feedback asks for it - do the rest around it, and in your report'"'"'s'
-              echo '  `not_done` say which file, what it should say and what it is for, so that'
-              echo '  somebody can apply it by hand.'
-              echo '  Anything you do edit there is taken back out before the commit and reported'
-              echo '  as a patch, so do not describe it as something you changed.'
+              echo '- Do not change any file under `.github/workflows/`: the push cannot carry it.'
+              echo '  Where the work needs one, even when asked, do the rest and say in `not_done`'
+              echo '  which file, what it should say and why, for somebody to apply by hand. An'
+              echo '  edit there is taken out and reported as a patch, so do not report it as made.'
             fi
 
             echo 'PROMPT'
@@ -2474,109 +2435,64 @@ jobs:
           # Without this the action quits before it reads anything whenever a bot triggered
           # the run - see where this is built, in the permission check
           allowed_bots: ${{ steps.permissions.outputs.bots_csv }}
+          # Instructions only. A run that ends its turn waiting on anything posts nothing: the
+          # run ends with the turn, and nothing wakes it.
           prompt: |
             You are a senior software engineer. Implement the approved plan for issue
-            #${{ steps.event.outputs.issue }} of this repository, in the working tree you
-            are already in.
+            #${{ steps.event.outputs.issue }} of this repository, in the working tree you are in.
 
-            This branch is cut from `${{ steps.branch.outputs.base }}` and the pull request
-            will be merged back into it, so that is the state your change has to fit - not
-            the default branch, if the two are different. Something the plan asks for may
-            already be here.
+            This branch is cut from `${{ steps.branch.outputs.base }}` and merges back into it,
+            so that is the code your change has to fit. Some of the plan may already be done.
 
-            Everything you need has been fetched for you. Read these first:
+            Read these first:
 
-            - `.ai-plan/plan.json` - the approved plan. This is the specification. Implement
-              it. `.ai-plan/plan.md` beside it is the part a person sees, and wins where a
-              person edited it; a plan from before plans were JSON has only `plan.md`. Its
-              items are numbered `S1` for a step, `R1` for a risk, `U1` for an
-              unknown or an assumption, `C1` for a check that proves the work is done and
-              `QA1` for an acceptance criterion a tester will verify by hand. Use those ids
-              when you refer to it, as described below. An older plan may not have them, in
-              which case refer to its steps by their titles.
-            - `.ai-plan/issue.json` - the issue number, title and body, for context on why
-              the work is wanted.
-            - `.ai-plan/comments.json` - every comment on the issue, oldest first, each
-              with its author and an `is_bot` flag. Anything said after the plan was
-              posted is feedback on it, and it takes precedence over the plan where the two
-              disagree.
+            - `.ai-plan/plan.json` - the approved plan, and the specification. `.ai-plan/plan.md`
+              is the part a person sees, and wins where it differs; an older plan has only
+              `plan.md`. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
+              acceptance criterion. Cite them as described below, or step titles where a plan
+              has no ids.
+            - `.ai-plan/issue.json` - the issue, for why the work is wanted.
+            - `.ai-plan/comments.json` - every comment, oldest first, with its author and an
+              `is_bot` flag. A comment after the plan is feedback on it, and wins over it.
 
-            If neither `.ai-plan/plan.json` nor `.ai-plan/plan.md` is there, stop straight away
-            and say exactly that as your final message. Do not go looking for another route to
-            the issue - there isn't one, and hunting for it burns the whole run.
+            If there is neither `plan.json` nor `plan.md`, stop and say so as your final message.
 
-            Before you write anything, read the code the plan touches and learn the
-            conventions actually in use - how modules are structured, how errors are
-            handled, how things are tested. Match them. A change that works but reads
-            like it came from somewhere else is a change that gets rewritten.
+            Read the code the plan touches first, and match its conventions - structure, error
+            handling, tests. The plan is the scope: where you think it is wrong, do it as written
+            and say so in your report. Nothing under `node_modules`, `vendor`, `dist` or `build`
+            is yours to change or worth searching unless the plan is about it; reading a
+            dependency or running its binaries is fine.
 
-            The plan is the scope. Where you think it is wrong or has missed something, do
-            the work as written and say so in your report - deciding for yourself what the
-            task should have been leaves a pull request nobody agreed to.
-
-            This repository may commit its dependencies. Nothing under `node_modules`,
-            `vendor`, `dist` or `build` is yours to change, and none of it is worth
-            searching, unless the plan is specifically about one of them. Reading a
-            dependency to see what it actually does is another matter, and so is running
-            the binaries it installed.
-
-            You have a shell. The plan's `C` checks are yours to execute, not to list. If
-            you cannot get one passing, report it as failing rather than leaving it quietly
-            broken.
+            Run the plan's `C` checks yourself. One you cannot get passing is reported as failing.
 
             ${{ steps.verify_prompt.outputs.instructions }}
 
             ${{ steps.container.outputs.instructions }}
 
-            The `QA` criteria are not yours. They are for a person testing this after it
-            merges, and you have no way to discharge them - so never report one as met.
-            What you can do is make them possible: if the change cannot satisfy one as
-            written, that is worth saying.
+            The `QA` criteria are for a person after the merge: never report one as met, but say
+            if the change cannot satisfy one as written.
 
-            Do the work yourself, in this run. You have no subagents and no `Task` tool:
-            the tools listed for you are all you have, and handing work to another agent
-            is not among them. Saying you have dispatched agents, or that drafts are
-            being written in parallel and will report back, describes something that did
-            not happen - nothing was started and nothing is arriving later. Never end a
-            turn waiting on it, because a run that stops to wait opens no pull request
-            at all.
+            Do the work yourself, in this run. You have no subagents, no `Task` tool and no
+            memory; nothing runs in parallel and nothing arrives later, so never end a turn
+            waiting. Run every command in the foreground and wait for it.
 
-            You have no persistent memory. Recording one is not among your tools, so the
-            attempt is refused at the cost of a turn, and this runner is thrown away when
-            the run ends - nothing written there would be read again. Do not mention having
-            tried in your report.
+            Where the plan is many small pieces, work through them one after another and name
+            the ones you did not reach in your report - fifteen of forty done is a good run,
+            stopping because forty looked like too many is not. Where something is unresolved,
+            finish everything that does not depend on it.
 
-            Where the plan is many small pieces of the same work, work through them one
-            after another. Fifteen of forty written, with the twenty-five you did not
-            reach named in your report, is a good run - the branch has fifteen of
-            them on it that it did not have before, and the next round starts there.
-            Stopping early because forty looked like too many for one run is not, and it
-            is how a run ends up delivering one file out of forty. Where something is
-            unresolved, finish everything that does not depend on it and report what you
-            left and why.
+            Do not:
 
-            What you must not do:
-
-            - Do not commit, push, create a branch, open a pull request, or comment
-              anywhere. The workflow does all of that after you finish, and doing it
-              yourself makes a mess of what it pushes.
-            - Do not modify anything under `.ai-plan/`. It is the input, and it is not
-              part of the change.
-            - Do not touch `CHANGELOG.md`. Every repository here generates it from the git
-              log when it releases, so an entry written by hand is overwritten or left
-              conflicting. This holds even where the plan asks for one - note that you left
-              it out and why.
+            - commit, push, create a branch, open a pull request or comment anywhere - the
+              workflow does that with what you leave as uncommitted changes;
+            - modify anything under `.ai-plan/`;
+            - touch `CHANGELOG.md`, even where the plan asks - say you left it out.
             ${{ steps.workflow_files.outputs.instructions }}
 
-            Leave your work in the working tree as uncommitted changes. That is what gets
-            committed for you.
-
-            Run every command in the foreground and wait for it, however long it takes. This
-            run ends when your turn does: nothing wakes you when a background command finishes,
-            so its result is never read and the report below never gets written.
+            Keep the change easy to review: no unrelated tidying mixed in.
 
             When you are done, write `.ai-review/report.json`. The workflow lays it out as the
-            pull request description, so your final message is only for the run log:
+            pull request description; your final message only goes to the run log.
 
             ```json
             {
@@ -2590,28 +2506,20 @@ jobs:
             }
             ```
 
-            - `headline` - where the work stands, in one sentence.
-            - `summary` - what you did, in two or three sentences of simple English that
-              somebody who has not read the code can follow.
-            - `done` - what changed, one short line per change a reviewer would recognise, ten
-              at most. Not every file, and not the plan retold - the reviewer reads the diff.
-            - `notes` - what a reviewer needs to know before reading the diff and cannot see in
-              it, such as where to look closely. Not what changed.
-            - `not_done` - anything in the plan you did not do, did differently or left
-              unfinished, and why.
-            - `verification` - every check you ran, with `result` `pass`, `fail` or
-              `not_run`.
+            - `summary` - simple English somebody who has not read the code can follow.
+            - `done` - one short line per change a reviewer would recognise, ten at most. Not
+              every file, and not the plan retold.
+            - `notes` - what a reviewer needs before reading the diff and cannot see in it.
+            - `not_done` - what in the plan you did not do, did differently or left unfinished,
+              and why.
+            - `verification` - every check you ran: `result` is `pass`, `fail` or `not_run`.
             - `decisions` - only what a person has to decide.
-            - `refs` - the plan ids an item is about. They are printed after it, so the text
-              does not repeat them.
+            - `refs` - the plan ids an item is about, printed after it, so the text does not
+              repeat them.
 
             Leave a list empty rather than filling it.
 
             ${{ steps.style.outputs.text }}
-
-            Once this is open as a pull request, the review happens there and you will be
-            asked for changes on the lines themselves. Make that easy: small commits of
-            related work, and no unrelated tidying mixed in.
           # The prompt above names what this list leaves out - a tool the agent reaches for
           # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
@@ -2641,139 +2549,94 @@ jobs:
           # This is the step a reviewing agent hands work back to, so the actor here is a bot
           # on every round - without this the action quits before it reads anything
           allowed_bots: ${{ steps.permissions.outputs.bots_csv }}
+          # As above. A round also pushes back on settled or wrong feedback rather than comply:
+          # repeating settled work is how the loop stops converging.
           prompt: |
             You are a senior software engineer. Changes have been asked for on pull request
-            #${{ steps.event.outputs.pull_request }} of this repository. Act on them, in the
-            working tree you are already in - it is that pull request's branch, with the work
-            from every earlier round already on it.
+            #${{ steps.event.outputs.pull_request }} of this repository. Act on them in the
+            working tree you are in: that pull request's branch, with every earlier round on it.
 
             This is round ${{ steps.stage_pr.outputs.round }}. Read these first:
 
             - `.ai-review/feedback.json` - everything asking for a change. This is the work.
               Each entry has:
-              - `source` - `thread` is an inline review comment, `review` a reviewer's
-                summary, `comment` something said in the pull request conversation, `check`
-                a failing CI check.
-              - `anchor` - the file and line an inline comment is attached to, and the diff
-                hunk it was written against. Null when the feedback is not about one place.
-              - `state` - for a thread, `unresolved` or `outdated`. `outdated` means the code
-                under the comment has moved since it was written, so work out whether it
-                still applies before acting on it. For a review, the review's state. For a
-                check, its conclusion.
+              - `source` - `thread` an inline review comment, `review` a reviewer's summary,
+                `comment` the pull request conversation, `check` a failing CI check.
+              - `anchor` - the file, line and diff hunk an inline comment is on, or null.
+              - `state` - for a thread, `unresolved` or `outdated`: the code has moved since, so
+                check it still applies. For a review, its state; for a check, its conclusion.
               - `reply_target` - the identifier you answer that thread on, or null.
-              - `is_bot` - whether a machine wrote it. Weigh it on its merits either way.
-            - `.ai-review/settled.json` - what has already been decided on this pull request,
-              in the same shape: threads somebody resolved, threads you have already answered,
-              and the reviews delivered before this round. **It is a record, not a task list.**
-              Nothing in it is work, and finding something in it is never a reason to act.
-            - `.ai-review/pull-request.json` - the pull request itself.
-            - `.ai-plan/plan.json` - the approved plan this branch implements, if the issue
-              still has one. It is the specification, and it may have been revised since the
-              last round - the workflow says so below when it has been. `.ai-plan/plan.md`
-              beside it is the part a person sees, and wins where a person edited it; a plan
-              from before plans were JSON has only `plan.md`. Where it and the
-              feedback disagree, the feedback wins: it is newer, and somebody wrote it after
-              seeing the code. Its items are numbered `S1` for a step, `R1` for a risk, `U1`
-              for an unknown or an assumption, `C1` for a check that proves the work is done
-              and `QA1` for an acceptance criterion a tester verifies by hand. Feedback often
-              cites them - "S3 was not done", "C1 still fails" - so read the item it points
-              at before you act. The ids survive a revision, so one quoted in an older
-              comment still means the same item; an older plan may have no ids at all, in
-              which case its steps go by their titles.
+              - `is_bot` - whether a machine wrote it. Judge it on its merits either way.
+            - `.ai-review/settled.json` - what is already decided: resolved threads, threads you
+              answered, and earlier reviews. **A record, not a task list** - nothing in it is
+              work.
+            - `.ai-review/pull-request.json` - the pull request.
+            - `.ai-plan/plan.json` - the approved plan, if the issue still has one. It may have
+              been revised since the last round; the workflow says so below when it has.
+              `.ai-plan/plan.md` is the part a person sees, and wins where it differs; an older
+              plan has only `plan.md`. Feedback wins over the plan. Ids: `S` step, `R` risk, `U`
+              unknown or assumption, `C` check, `QA` acceptance criterion. Feedback cites them
+              ("C1 still fails"), so read the item first; an id in an older comment still means
+              the same item.
             - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
             - `.ai-review/last-report.json` - what the previous run reported, in the shape you
-              write below. Start from it rather than working out again where things stand. It
-              is missing when the previous run left no report.
-            - `.ai-reports/` - what the checks on this commit printed, one directory per CI
-              job and only for the checks that failed. A failing `check` in the feedback almost
-              certainly has its output in here, and reading it beats inferring what the check
-              meant from its name. A long report has its middle cut out, with a line saying so
-              where the cut is. It is empty when nothing failed, when the checks have not
-              finished, when the reports have expired, or when this repository does not upload
-              any - in which case say what you could not see rather than guessing.
+              write below. Start from it. Missing when there was none.
+            - `.ai-reports/` - the output of the failing checks on this commit, one directory per
+              CI job, with the middle of a long one cut out. Read it for a failing `check`. Empty
+              when nothing failed, the checks are still running, the reports expired or the
+              repository uploads none - then say what you could not see.
 
-            If `.ai-review/feedback.json` is missing or unreadable, stop straight away and say
-            exactly that as your final message.
+            If `.ai-review/feedback.json` is missing or unreadable, stop and say so as your final
+            message.
 
-            ${{ steps.stage_pr.outputs.checks_pending }} check(s) had not finished when this
-            round started, so the branch is not known to be green - only not known to be red.
-            A check that is red and not in the feedback was filtered out as one of the AI
-            workflows' own.
+            ${{ steps.stage_pr.outputs.checks_pending }} check(s) had not finished when this round
+            started, so the branch is not known to be green. A red check missing from the
+            feedback is one of the AI workflows' own, and filtered out.
 
             Work through every item in `.ai-review/feedback.json`, and nothing outside it. For
-            each one, either make the change or decide it should not be made. Both are
-            legitimate. A round that does what it was told against its own better judgement is
-            worse than one that pushes back with a reason - you have read the code and the
-            reviewer may not have. Where an item asks again for something
-            `.ai-review/settled.json` shows was already settled, that is the clearest case for
-            pushing back: do not do the work a second time - reply on the thread saying it was
-            settled and name where. A reviewer repeating a resolved concern is the reviewer being wrong, and
-            a round that quietly complies is how the loop stops converging.
+            each, make the change or decide against it with a reason - you have read the code and
+            the reviewer may not have. An item asking again for something `settled.json` shows
+            was settled is not done again: reply that it was settled, and where.
 
             ${{ steps.revision.outputs.instruction }}
 
-            Then answer the review. Write `.ai-review/replies.json`: a JSON array of
-            `{"reply_target": <number>, "body": "<markdown>"}`, with one entry for every
-            feedback item that has a non-null `reply_target`, including the ones you decided
-            against. Say what you changed, or why you did not. A few sentences each, and where
-            a plan item is what the reply is about, cite its id after the point rather than in
-            place of it - "the guard now covers the empty case (S5)". Use only
-            `reply_target` values that appear in the feedback - invented ones are discarded.
-            Items whose `reply_target` is null have no thread to answer; cover those in your
-            report instead.
+            Write `.ai-review/replies.json`: a JSON array of `{"reply_target": <number>, "body":
+            "<markdown>"}`, one for every feedback item with a `reply_target`, including those you
+            decided against. Say what you changed or why not, in a few sentences, citing a plan id
+            after the point: "the guard now covers the empty case (S5)". Use only `reply_target`
+            values from the feedback. Items without one go in your report.
 
-            You have a shell. Use it: read the code around a comment before you change it,
-            run this project's tests and linters, and fix what you break. A failing check in
-            the feedback is yours to make pass, not to explain.
+            Read the code around a comment before you change it, run the tests and linters, and
+            fix what you break. A failing check in the feedback is yours to make pass.
 
             ${{ steps.verify_prompt.outputs.instructions }}
 
             ${{ steps.container.outputs.instructions }}
 
-            Where a failing check in the feedback is one of those commands, run it rather than
-            working out what it meant from `.ai-reports/` - the report is what it printed an
-            hour ago, and the command is what it says now.
+            Where a failing check is one of those commands, run it rather than reading its old
+            output in `.ai-reports/`.
 
-            Do the work yourself, in this round. You have no subagents and no `Task` tool:
-            the tools listed for you are all you have, and handing work to another agent is
-            not among them. Saying you have dispatched agents, or that work is running in
-            parallel and will report back, describes something that did not happen - nothing
-            was started and nothing is arriving later. Never end a turn waiting on it,
-            because a round that stops to wait pushes nothing and answers nobody.
+            Do the work yourself, in this round. You have no subagents, no `Task` tool and no
+            memory; nothing runs in parallel and nothing arrives later, so never end a turn
+            waiting. Run every command in the foreground and wait for it.
 
-            You have no persistent memory. Recording one is not among your tools, so the
-            attempt is refused at the cost of a turn, and this runner is thrown away when
-            the run ends - nothing written there would be read again. Do not mention having
-            tried in your report or your replies.
+            Where the feedback is many small pieces, work through them one after another and
+            name the ones you did not reach in your report - fifteen of forty is a good round. A
+            round that changes no file stops the pull request where it is. Where something is
+            unresolved, finish the rest.
 
-            Where the feedback asks for many small pieces of the same work, work through them
-            one after another. Fifteen of forty done, with the twenty-five you did not reach
-            named in your report, is a good round - the next round starts from your
-            fifteen and the reviewer can see the count moving. A round that changes no file
-            at all is the worst outcome available to you: it pushes nothing, so nothing
-            re-triggers, and the pull request simply stops where it is. Where something is
-            unresolved, finish the rest and say what you left and why.
+            Do not:
 
-            What you must not do:
-
-            - Do not commit, push, or comment anywhere. The workflow does all of that after
-              you finish, including posting your replies.
-            - Do not modify anything under `.ai-plan/`, and do not modify anything under
-              `.ai-review/` other than by creating `replies.json` and `report.json`.
-            - Do not touch `CHANGELOG.md`. Every repository here generates it from the git log
-              when it releases, so an entry written by hand is overwritten or left conflicting.
-              This holds even where the feedback asks for one - reply saying so.
+            - commit, push or comment anywhere - the workflow does that, replies included, with
+              what you leave as uncommitted changes;
+            - modify anything under `.ai-plan/`, or under `.ai-review/` beyond writing
+              `replies.json` and `report.json`;
+            - touch `CHANGELOG.md`, even where the feedback asks - reply saying so.
             ${{ steps.workflow_files.outputs.instructions }}
 
-            Leave your work in the working tree as uncommitted changes.
-
-            Run every command in the foreground and wait for it, however long it takes. This
-            run ends when your turn does: nothing wakes you when a background command finishes,
-            so its result is never read and the report below never gets written.
-
-            When you are done, write `.ai-review/report.json`. The workflow lays it out as the
-            round comment and keeps the summary at the top of the pull request from it, so your
-            final message is only for the run log:
+            When you are done, write `.ai-review/report.json`. The workflow posts it as the round
+            comment and the status at the top of the pull request; your final message only goes
+            to the run log.
 
             ```json
             {
@@ -2787,21 +2650,19 @@ jobs:
             }
             ```
 
-            - `headline` - where the pull request stands after this round, in one sentence.
-            - `summary` - what this round did, in two or three sentences of simple English
-              that somebody who has not read the code can follow.
-            - `done` - what you changed this round, one short line each, ten at most. Not
-              earlier rounds.
-            - `notes` - what a reviewer needs to know before reading this round's diff and cannot
-              see in it. Not what changed.
-            - `not_done` - feedback you declined or could not finish, and why. An item whose
-              thread you answered in `replies.json` is covered there; do not repeat it here.
-            - `verification` - every check you ran this round, with `result` `pass`, `fail` or
+            - `headline` - where the pull request stands after this round.
+            - `summary` - simple English somebody who has not read the code can follow.
+            - `done` - what you changed this round, one short line each, ten at most.
+            - `notes` - what a reviewer needs before reading this round's diff and cannot see in
+              it.
+            - `not_done` - feedback you declined or could not finish, and why, unless a reply in
+              `replies.json` already says it.
+            - `verification` - every check you ran this round: `result` is `pass`, `fail` or
               `not_run`.
-            - `decisions` - every decision still open, including ones carried over from
-              `.ai-review/last-report.json` that nobody has settled.
-            - `refs` - the plan ids an item is about. They are printed after it, so the text
-              does not repeat them.
+            - `decisions` - every decision still open, including unsettled ones from
+              `last-report.json`.
+            - `refs` - the plan ids an item is about, printed after it, so the text does not
+              repeat them.
 
             Leave a list empty rather than filling it.
 
