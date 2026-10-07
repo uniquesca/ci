@@ -191,3 +191,17 @@ test('the largest report leaves room in the description for 20,000 characters of
 
     assert.ok(description.length + 20000 + 2000 <= 65536, `${description.length} characters`);
 });
+
+test('with the plan, a reference to an id it does not have is dropped', () => {
+    const plan = { steps: [{ id: 'S3' }, { id: 'S4' }, { id: 'S5' }], risks: [{ id: 'U2' }] };
+    const { report, problems } = normaliseReport({ ...full, notes: [{ note: 'See the old step', refs: ['S4', 'S9'] }] }, { plan });
+
+    assert.deepEqual(report.notes[0].refs, ['S4']);
+    assert.deepEqual(problems, ['"See the old step" cites S9, not in the plan - dropped']);
+});
+
+test('a phrase the style guide rules out is reported', () => {
+    const { problems } = normaliseReport({ headline: 'Let me summarise: done.' });
+
+    assert.deepEqual(problems, ['uses "Let me", which the style guide rules out']);
+});

@@ -898,7 +898,7 @@ jobs:
           # Only reaches the comment on the path where the review itself never did, since a
           # submitted review already carries this line. A report reading both sees one run
           # twice and keeps it once - the `run_id` in the line is the same either way.
-          COST: ${{ steps.report.outputs.cost_line }}
+          COST: ${{ steps.submit.outputs.cost_line || steps.report.outputs.cost_line }}
         run: |
           if [[ "$AI_AUTHORED" == 'true' ]]; then
             what="round $ROUND"

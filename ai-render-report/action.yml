@@ -11,6 +11,14 @@ inputs:
     description: 'What to post instead when the report is missing or unusable - the final message the agent ended on'
     required: false
     default: ''
+  plan_file:
+    description: 'The plan the work was built from, as `ai-stage-issue` staged it. A reference to an id it does not have is dropped. Missing leaves the references unchecked'
+    required: false
+    default: '.ai-plan/plan.json'
+  cost_line:
+    description: 'The `cost_line` output of `ai-run-report`, to add what was posted to'
+    required: false
+    default: ''
   label:
     description: 'What the status block calls this run, e.g. `After round 3`'
     required: true
@@ -43,6 +51,9 @@ outputs:
   headline:
     description: 'The headline the agent gave'
     value: ${{ steps.render.outputs.headline }}
+  cost_line:
+    description: 'The `cost_line` input with the length of the rendered report, whether it was laid out from JSON, and what the checks found. Empty when the input was'
+    value: ${{ steps.render.outputs.cost_line }}
 
 runs:
   using: composite
@@ -52,6 +63,8 @@ runs:
       env:
         INPUT_REPORT_FILE: ${{ inputs.report_file }}
         INPUT_FALLBACK_FILE: ${{ inputs.fallback_file }}
+        INPUT_PLAN_FILE: ${{ inputs.plan_file }}
+        INPUT_COST_LINE: ${{ inputs.cost_line }}
         INPUT_LABEL: ${{ inputs.label }}
         INPUT_UNDER_STATUS: ${{ inputs.under_status }}
         INPUT_PULL_REQUEST: ${{ inputs.pull_request }}

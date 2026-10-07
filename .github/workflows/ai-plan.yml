@@ -1009,6 +1009,7 @@ jobs:
         uses: uniquesca/ci/ai-render-plan@v11
         with:
           fallback_file: ${{ steps.report.outputs.result_file }}
+          cost_line: ${{ steps.report.outputs.cost_line }}
 
       - name: Post the plan
         id: post
@@ -1022,7 +1023,7 @@ jobs:
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the run cost, as one hidden line for a report to read back. The prose in the
           # footer is for whoever opens the issue; this is the only copy a machine can add up.
-          COST: ${{ steps.report.outputs.cost_line }}
+          COST: ${{ steps.render.outputs.cost_line || steps.report.outputs.cost_line }}
           # The branch this plan was written against, recorded so the implementing workflow can
           # build on the same one without being told again. Resolved rather than passed through
           # empty: a plan that says which branch it read is useful even when that is the default

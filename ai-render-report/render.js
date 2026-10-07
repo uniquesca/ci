@@ -4,12 +4,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { normaliseReport, renderReport, renderStatus, replaceStatus } from '../src/ai-report.js';
+import { withTextStats } from '../src/ai-text.js';
 
 const env = process.env;
 const out = path.join(env.RUNNER_TEMP, 'ai-render-report');
 fs.mkdirSync(out, { recursive: true });
 
-const outputs = { rendered: 'false', body_file: '', details_file: '', status_file: '', headline: '' };
+const outputs = { rendered: 'false', body_file: '', details_file: '', status_file: '', headline: '', cost_line: '' };
 
 function warn(message) {
     console.log(`::warning title=Report problem::${message}`);
@@ -26,11 +27,20 @@ if (fs.existsSync(env.INPUT_REPORT_FILE)) {
     warn(`The agent wrote no ${env.INPUT_REPORT_FILE}`);
 }
 
+let plan = null;
+if (env.INPUT_PLAN_FILE && fs.existsSync(env.INPUT_PLAN_FILE)) {
+    try {
+        plan = JSON.parse(fs.readFileSync(env.INPUT_PLAN_FILE, 'utf8'));
+    } catch {
+        // Not worth a warning: the report is what is being checked
+    }
+}
+
 // Anything that still goes wrong reading the report falls back to the agent's final message, the
 // same as a report it cannot use
 function read(input) {
     try {
-        return normaliseReport(input);
+        return normaliseReport(input, { plan });
     } catch (error) {
         warn(`The report could not be read: ${error.message}`);
         return { report: null, problems: [] };
@@ -40,8 +50,10 @@ function read(input) {
 const { report, problems } = raw ? read(raw) : { report: null, problems: [] };
 problems.forEach(warn);
 
+let chars = 0;
 if (report) {
     const rendered = renderReport(report, { underStatus: env.INPUT_UNDER_STATUS === 'true' });
+    chars = rendered.body.length + rendered.details.length;
     const body = path.join(out, 'body.md');
     fs.writeFileSync(body, rendered.body + '\n');
     if (rendered.details) {
@@ -58,8 +70,11 @@ if (report) {
     const body = path.join(out, 'body.md');
     fs.copyFileSync(env.INPUT_FALLBACK_FILE, body);
     outputs.body_file = body;
+    chars = fs.readFileSync(body, 'utf8').length;
     warn('Posting the final message the agent ended on instead');
 }
+
+outputs.cost_line = withTextStats(env.INPUT_COST_LINE, { chars, structured: Boolean(report), problems });
 
 if (report && env.INPUT_PULL_REQUEST) {
     const api = `${env.GITHUB_API_URL}/repos/${env.GITHUB_REPOSITORY}/pulls/${env.INPUT_PULL_REQUEST}`;

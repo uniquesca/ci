@@ -2908,6 +2908,7 @@ jobs:
         uses: uniquesca/ci/ai-render-report@v11
         with:
           fallback_file: ${{ steps.report.outputs.result_file }}
+          cost_line: ${{ steps.report.outputs.cost_line }}
           label: ${{ steps.event.outputs.mode == 'initial' && 'After the first run' || format('After round {0}', steps.stage_pr.outputs.round) }}
           # The first run's body goes under the status block that opens the pull request
           under_status: ${{ steps.event.outputs.mode == 'initial' }}
@@ -3441,7 +3442,7 @@ jobs:
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the run cost, as one hidden line for a report to read back. The prose in the
           # footer is for whoever opens the issue; this is the only copy a machine can add up.
-          COST: ${{ steps.report.outputs.cost_line }}
+          COST: ${{ steps.render.outputs.cost_line || steps.report.outputs.cost_line }}
           COMMAND: ${{ inputs.command }}
         run: |
           {
@@ -3481,7 +3482,7 @@ jobs:
           # A run that produced no pull request was billed for everything it did on the way to
           # finding that out, and this comment is the only place left to record it
           USAGE: ${{ steps.report.outputs.summary }}
-          COST: ${{ steps.report.outputs.cost_line }}
+          COST: ${{ steps.render.outputs.cost_line || steps.report.outputs.cost_line }}
         run: |
           # The report rather than a summary of it, where there is one: it holds whatever the
           # agent said about the run as well as the patch, and this comment is the only place
@@ -3549,7 +3550,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           # What the round cost, as one hidden line for a report to read back
-          COST: ${{ steps.report.outputs.cost_line }}
+          COST: ${{ steps.render.outputs.cost_line || steps.report.outputs.cost_line }}
           REVISED: ${{ steps.revision.outputs.revised }}
           PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
         run: |

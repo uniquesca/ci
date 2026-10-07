@@ -20,6 +20,8 @@ Used by [`ai-implement`](../ai/ai-implement.md).
 |---|---|---|---|
 | `report_file` | no | `.ai-review/report.json` | File the agent wrote |
 | `fallback_file` | no | | What to post when the report is missing or unusable - the agent's final message |
+| `plan_file` | no | `.ai-plan/plan.json` | The plan the work was built from. A reference to an id it does not have is dropped |
+| `cost_line` | no | | The `cost_line` output of [`ai-run-report`](ai-run-report.md) |
 | `label` | yes | | What the status block calls this run, e.g. `After round 3` |
 | `under_status` | no | `false` | Whether the body goes under the status block, which already gives the headline and the open decisions |
 | `pull_request` | no | | Pull request whose status block to replace. Empty leaves every pull request alone |
@@ -34,6 +36,7 @@ Used by [`ai-implement`](../ai/ai-implement.md).
 | `details_file` | What changed and the checks the agent ran, folded, to go after `body_file` and the QA criteria. Empty when there is none |
 | `status_file` | The status block, markers included. Empty when the report was not usable |
 | `headline` | The headline the agent gave |
+| `cost_line` | The `cost_line` input with [what was posted](../ai/ai-costs.md#what-the-hidden-line-holds) added. Empty when the input was |
 
 ## Dig deeper
 
@@ -47,4 +50,5 @@ itself base64-encoded in a hidden comment, which is where
 [`ai-stage-pull-request`](ai-stage-pull-request.md) reads it back as `last-report.json` for the next
 round and the reviewer. A report over 12,000 bytes is cut to fit Github's size limit next to the
 held-back workflow changes, leaving out check results first and the questions for a person last,
-with a line saying how many items were left out.
+with a line saying how many items were left out. A reference to an id `plan_file` does not have is
+dropped with a warning, and a phrase the style guide rules out is reported as one.

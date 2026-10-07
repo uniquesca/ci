@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalisePlan, renderPlan, readPlanData, JSON_MARKER } from '../src/ai-plan.js';
+import { normalisePlan, renderPlan, readPlanData, visiblePart, JSON_MARKER } from '../src/ai-plan.js';
 
 const plan = {
     summary: 'Business hours get their own settings page.',
@@ -212,4 +212,12 @@ test('a risk with nothing to decide is still shown', () => {
     const { plan: normal } = normalisePlan({ ...plan, risks: [{ id: 'R1', text: 'A CLI path would skip the listener.' }] });
 
     assert.match(renderPlan(normal), /## Risks, unknowns and assumptions\n\n- \*\*R1\*\* A CLI path would skip the listener\.\n/);
+});
+
+test('the visible part is what comes above the folded JSON, and a banned phrase in it is reported', () => {
+    const { plan: normal, problems } = normalisePlan({ ...plan, summary: 'I looked at the hours. Business hours get their own page.' });
+    const text = renderPlan(normal);
+
+    assert.deepEqual(problems, ['uses "I looked at", which the style guide rules out']);
+    assert.equal(visiblePart(text), text.slice(0, text.indexOf(JSON_MARKER)).trimEnd());
 });

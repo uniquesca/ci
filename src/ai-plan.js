@@ -4,6 +4,8 @@
 // the pull request copies. The whole plan is folded underneath as JSON - the one copy the agents
 // work from, and what the next revision starts from.
 
+import { phraseProblems } from './ai-text.js';
+
 const PREFIX = { risks: /^[RU]\d{1,4}$/, steps: /^S\d{1,4}$/, qa: /^QA\d{1,4}$/, checks: /^C\d{1,4}$/ };
 
 // Where the plan's JSON starts in the comment. Safe as a marker because the agent's text cannot
@@ -202,6 +204,7 @@ export function normalisePlan(raw, previous = null) {
     if (!plan.summary) {
         problems.push('no summary');
     }
+    problems.push(...phraseProblems(plan));
 
     const size = () => Buffer.byteLength(renderPlan(plan));
     for (const [name, fields, max, what] of SHORTER) {
@@ -220,6 +223,12 @@ export function normalisePlan(raw, previous = null) {
     }
 
     return { plan, problems };
+}
+
+// The part of a rendered plan a person reads, above the folded JSON
+export function visiblePart(rendered) {
+    const end = rendered.indexOf(JSON_MARKER);
+    return (end === -1 ? rendered : rendered.slice(0, end)).trimEnd();
 }
 
 export function renderPlan(plan) {
