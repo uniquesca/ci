@@ -150,19 +150,24 @@ time. If the data is missing or broken, the AI's plain answer is used instead.
 Watch the first real runs for: whether the planner can write its one file, how long the visible
 part of a plan really is, and how often the plain answer is used instead of the data.
 
-## Next
-
 ### Step 3d: Tidy up the AI's writing
 
-After a few real runs with step 3:
+- What the AI wrote is checked before it is posted: length limits, phrases the style guide rules
+  out, and references to plan ids that do not exist, which are dropped.
+- The planner decides how much QA a change needs from what a user could see break: none for
+  formatting or annotations, regression checks for refactors, real type changes and upgrades, and
+  none for a flow an end-to-end test already covers.
+- The cost line records how long the posted text was, whether the plain answer was used instead of
+  the data, and what the checks found. The runs CSV of the cost report shows them.
+- The prompts are about half as long: instructions only.
 
-- Check what the AI wrote before posting: length limits, banned phrases, ids that exist.
-- Plans for changes no user can reach, such as code style, should have no QA steps, and a refactor
-  of code users run should have regression ones. If plans still get this wrong, make the planner
-  name the user flows the change runs through first, and check its QA steps against that list.
-- Record how long the text was and what the check found in the cost line.
-- Cut the prompts to about half: instructions only, with the reasoning kept in the workflow
-  comments.
+Still open from step 3d:
+
+- If plans still get QA wrong, make the planner name the user flows the change runs through first,
+  and check its QA steps against that list.
+- Check on real plans that the planner finds a repository's end-to-end tests.
+
+## Next
 
 ### Step 4: Spend less
 
