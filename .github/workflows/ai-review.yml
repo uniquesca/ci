@@ -805,8 +805,8 @@ jobs:
           [[ -n "$USAGE" ]] && parts+=("$USAGE")
           parts+=("[Run]($RUN_URL)")
           [[ -n "$CONTEXT_URL" ]] && parts+=("[Context]($CONTEXT_URL)")
-          footer=$(printf '%s · ' "${parts[@]}")
-          printf 'text=%s\n' "${footer% · }" >> "$GITHUB_OUTPUT"
+          footer=$(printf '%s &nbsp;·&nbsp; ' "${parts[@]}")
+          printf 'text=%s\n' "${footer% &nbsp;·&nbsp; }" >> "$GITHUB_OUTPUT"
 
       # This is where the loop turns, on a branch the implementing workflow pushed. The app's
       # review creates a `pull_request_review` event, and that event is what starts the next

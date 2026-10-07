@@ -998,10 +998,10 @@ jobs:
             # Said out loud, not only in the metadata line above, because a plan can inherit
             # its branch from the one before it without anybody naming it on this run - and a
             # decision nobody can see is one nobody can correct
-            printf ' · Written against `%s`' "$BASE"
-            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-            printf ' · [Run](%s)' "$RUN_URL"
-            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+            printf ' &nbsp;·&nbsp; Written against `%s`' "$BASE"
+            [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+            printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, so it stays out of the way of anything reading a fixed line of this
             # comment - the metadata line above is the second line and has to stay there

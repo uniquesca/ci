@@ -3233,9 +3233,9 @@ jobs:
               printf '`%s` here runs a round too, for when you would rather say what you want in prose than in review comments.\n\n' "$COMMAND"
               printf -- '---\n\n'
               printf 'Requested by @%s' "$ACTOR"
-              [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-              printf ' · [Run](%s)' "$RUN_URL"
-              [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+              [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+              printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+              [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
               printf '\n'
             } > "$RUNNER_TEMP/pr-body.md"
 
@@ -3322,9 +3322,9 @@ jobs:
             printf 'This issue keeps the plan. Run `/ai-plan` here if the approach itself needs revising, and the next round will pick it up.\n\n'
             printf -- '---\n\n'
             printf 'Requested by @%s' "$ACTOR"
-            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-            printf ' · [Run](%s)' "$RUN_URL"
-            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+            [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+            printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"
@@ -3397,6 +3397,10 @@ jobs:
         id: close
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
         env:
+          # Posted as AI Implement, like the pull request it answers for. An app's comment starts
+          # the callers' `issue_comment` runs, which `GITHUB_TOKEN`'s does not - they are skipped
+          # at the job `if`, as the comment does not start with a command.
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           PR: ${{ steps.event.outputs.pull_request }}
           ACTOR: ${{ steps.event.outputs.actor }}
           TRIGGER: ${{ steps.event.outputs.trigger }}
@@ -3471,23 +3475,23 @@ jobs:
 
             printf '\n\n'
             printf -- '---\n\n'
-            printf 'Round %s · %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
+            printf 'Round %s &nbsp;·&nbsp; %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
             [[ "$CHECK_COUNT" != '0' ]] && printf ', %s failing check(s)' "$CHECK_COUNT"
             # The revised plan is not a feedback item, so the count above does not account for it.
             # Said once here for the record - the reader was already told at the top.
-            [[ "$REVISED" == 'true' ]] && printf ' · Worked to a revised plan'
+            [[ "$REVISED" == 'true' ]] && printf ' &nbsp;·&nbsp; Worked to a revised plan'
             if [[ "$TRIGGER" == 'review' ]]; then
-              printf ' · Started by @%s requesting changes' "$ACTOR"
+              printf ' &nbsp;·&nbsp; Started by @%s requesting changes' "$ACTOR"
             elif [[ "$TRIGGER" == 'checks' ]]; then
-              printf ' · Started by `%s` finishing' "$CHECKS_WORKFLOW"
+              printf ' &nbsp;·&nbsp; Started by `%s` finishing' "$CHECKS_WORKFLOW"
             else
-              printf ' · Requested by @%s' "$ACTOR"
+              printf ' &nbsp;·&nbsp; Requested by @%s' "$ACTOR"
             fi
-            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' · Answered %s review thread(s)' "$POSTED"
-            [[ "$PUSHED" != 'true' ]] && printf ' · **No file changed this round**'
-            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-            printf ' · [Run](%s)' "$RUN_URL"
-            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' &nbsp;·&nbsp; Answered %s review thread(s)' "$POSTED"
+            [[ "$PUSHED" != 'true' ]] && printf ' &nbsp;·&nbsp; **No file changed this round**'
+            [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+            printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, and never second: the round metadata above is read by line number, so a
             # line added anywhere but the end would take `ai-stage-pull-request` with it
