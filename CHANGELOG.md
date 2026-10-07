@@ -1443,3 +1443,14 @@
 ## v11.21.5
 
 * Fix: AI pull requests close their issue when merged (5a88985 by George Shestayev)
+
+## v11.22.0
+
+* Fix: the AI cost report shows unfinished runs as false, not blank (f84138f by George Shestayev)
+* New: AI output is checked for banned phrases and unknown plan ids, and the cost line records what was posted (d3067d4 by George Shestayev)
+* Update: AI footers are one line separated by · (3f8a22d by George Shestayev)
+* Update: AI plans use ### headings (336490f by George Shestayev)
+* Update: AI pull requests show round updates under the links, use ### headings and carry the run footer (708cfdf by George Shestayev)
+* Update: AI plans judge how much QA a change needs from what a user could see break (fd7850b by George Shestayev)
+* Update: AI prompts are about half as long, instructions only (ea585fc by George Shestayev)
+* Update: AI plans add regression QA for refactors of code users run (512de93 by George Shestayev)
