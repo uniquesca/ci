@@ -40,7 +40,7 @@ Used by [`ai-plan`](../ai/ai-plan.md).
 dropped, and so are references to steps that do not exist - each with a warning. An id the previous
 plan had that this one neither uses nor retires is retired as "dropped", and retired ids keep their
 reason from one revision to the next and are never used again. A plan without steps or checks is
-refused. The `## QA acceptance criteria` section stays in the part a person sees, where
+refused. The `### QA acceptance criteria` section stays in the part a person sees, where
 [`ai-qa-criteria`](ai-qa-criteria.md) copies it from. A plan over 60,000 bytes keeps every item but
 has its text cut, risks and QA steps before step details, until it fits Github's comment limit. The
 agent's text cannot end or fake a section: a one-line field loses its line breaks, and a line that

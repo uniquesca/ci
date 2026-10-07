@@ -27,7 +27,7 @@ plan changes is the whole update. Nothing here fails the run.
 | `repository` | yes | | Repository the pull request belongs to, in `owner/name` form |
 | `token` | yes | | Github token the body is edited with. Needs `pull-requests: write` |
 | `plan_file` | no | `.ai-plan/plan.md` | The plan to read the criteria out of |
-| `section` | no | `QA acceptance criteria` | Heading to copy, without the `##` |
+| `section` | no | `QA acceptance criteria` | Heading to copy, without the `###` |
 | `marker` | no | `<!-- ai-qa-criteria -->` | Hidden line that opens the block |
 | `end_marker` | no | `<!-- /ai-qa-criteria -->` | Hidden line that closes it |
 
@@ -42,8 +42,8 @@ plan changes is the whole update. Nothing here fails the run.
 
 ### What gets copied
 
-Everything under `## <section>` up to the next `##` heading, verbatim. A `###` subheading inside the
-section is part of it and does not end it.
+Everything under `### <section>`, or `## <section>` in an older plan, up to the next heading,
+verbatim.
 
 The one thing dropped is the `Retired:` line, where a revised plan records the
 [ids](../ai/ai-plan.md#how-the-plan-is-numbered) it no longer asks for. That is bookkeeping between

@@ -83,7 +83,7 @@ if (plan) {
     const text = fs.readFileSync(env.INPUT_FALLBACK_FILE, 'utf8');
     fs.writeFileSync(file, text);
     outputs.plan_file = file;
-    outputs.has_qa = String(/^## QA acceptance criteria\s*\n\s*(?!None\b)\S/m.test(text));
+    outputs.has_qa = String(/^###? QA acceptance criteria\s*\n\s*(?!None\b)\S/m.test(text));
     chars = text.length;
 }
 outputs.cost_line = withTextStats(env.INPUT_COST_LINE, { chars, structured: Boolean(plan), problems });
