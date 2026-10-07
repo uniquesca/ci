@@ -88,6 +88,7 @@ These are breaking changes, so they wait for the next major version.
 
 - Remove `review_check_patterns` from AI Implement. It already does nothing, and warns when it is
   set.
+- Remove `verb` from AI run report. It already does nothing, and warns when it is set.
 
 ## Done
 

@@ -2688,7 +2688,6 @@ jobs:
         uses: uniquesca/ci/ai-run-report@v11
         with:
           execution_file: ${{ steps.implement_initial.outputs.execution_file || steps.implement_round.outputs.execution_file }}
-          verb: ${{ steps.event.outputs.mode == 'initial' && 'Implemented' || 'Revised' }}
           kind: 'implement'
           # A round is triggered on the pull request and learns its issue from the branch, so
           # the resolved number comes first and the typed-on issue is the fallback
@@ -3233,9 +3232,9 @@ jobs:
               # workflow announces here without naming a command it does not own.
               printf '`%s` here runs a round too, for when you would rather say what you want in prose than in review comments.\n\n' "$COMMAND"
               printf -- '---\n\n'
-              printf 'Requested by @%s.' "$ACTOR"
-              [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
-              printf ' [Run](%s)' "$RUN_URL"
+              printf 'Requested by @%s' "$ACTOR"
+              [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
+              printf ' · [Run](%s)' "$RUN_URL"
               [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
               printf '\n'
             } > "$RUNNER_TEMP/pr-body.md"
@@ -3322,9 +3321,9 @@ jobs:
             printf 'The work continues there, not here. Comment on the lines you want changed and submit the review as **Request changes** - another round starts by itself. `%s` works in the pull request too.\n\n' "$COMMAND"
             printf 'This issue keeps the plan. Run `/ai-plan` here if the approach itself needs revising, and the next round will pick it up.\n\n'
             printf -- '---\n\n'
-            printf 'Requested by @%s.' "$ACTOR"
-            [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
-            printf ' [Run](%s)' "$RUN_URL"
+            printf 'Requested by @%s' "$ACTOR"
+            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
+            printf ' · [Run](%s)' "$RUN_URL"
             [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             if [[ -n "$COST" ]]; then
@@ -3367,7 +3366,7 @@ jobs:
               printf '\nThe run log has the rest of what it did: %s\n' "$RUN_URL"
             fi
             if [[ -n "$USAGE" ]]; then
-              printf '\n%s.\n' "$USAGE"
+              printf '\n%s\n' "$USAGE"
             fi
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"
@@ -3472,23 +3471,22 @@ jobs:
 
             printf '\n\n'
             printf -- '---\n\n'
-            printf 'Round %s, on %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
-            [[ "$CHECK_COUNT" != '0' ]] && printf ' including %s failing check(s)' "$CHECK_COUNT"
-            printf '.'
+            printf 'Round %s · %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
+            [[ "$CHECK_COUNT" != '0' ]] && printf ', %s failing check(s)' "$CHECK_COUNT"
             # The revised plan is not a feedback item, so the count above does not account for it.
             # Said once here for the record - the reader was already told at the top.
-            [[ "$REVISED" == 'true' ]] && printf ' Worked to a revised plan.'
+            [[ "$REVISED" == 'true' ]] && printf ' · Worked to a revised plan'
             if [[ "$TRIGGER" == 'review' ]]; then
-              printf ' Started by @%s requesting changes.' "$ACTOR"
+              printf ' · Started by @%s requesting changes' "$ACTOR"
             elif [[ "$TRIGGER" == 'checks' ]]; then
-              printf ' Started by `%s` finishing.' "$CHECKS_WORKFLOW"
+              printf ' · Started by `%s` finishing' "$CHECKS_WORKFLOW"
             else
-              printf ' Requested by @%s.' "$ACTOR"
+              printf ' · Requested by @%s' "$ACTOR"
             fi
-            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' Answered %s review thread(s).' "$POSTED"
-            [[ "$PUSHED" != 'true' ]] && printf ' **No file changed this round.**'
-            [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
-            printf ' [Run](%s)' "$RUN_URL"
+            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' · Answered %s review thread(s)' "$POSTED"
+            [[ "$PUSHED" != 'true' ]] && printf ' · **No file changed this round**'
+            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
+            printf ' · [Run](%s)' "$RUN_URL"
             [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, and never second: the round metadata above is read by line number, so a
@@ -3693,7 +3691,7 @@ jobs:
             printf 'The run log has the detail: %s\n\n' "$RUN_URL"
             printf 'Comment `%s` here to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}"
             if [[ -n "$USAGE" ]]; then
-              printf '\n%s.\n' "$USAGE"
+              printf '\n%s\n' "$USAGE"
             fi
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"
