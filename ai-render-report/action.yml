@@ -1,6 +1,6 @@
 name: AI render report
 
-description: Render the report.json an implementing agent wrote into the pull request body or round comment, and keep the status block at the top of the pull request current. Never fails the job
+description: Render the report.json an implementing agent wrote into the pull request body or round comment, and keep the status block in the pull request description current. Never fails the job
 
 inputs:
   report_file:
@@ -20,10 +20,11 @@ inputs:
     required: false
     default: ''
   label:
-    description: 'What the status block calls this run, e.g. `After round 3`'
-    required: true
+    description: 'Heading of the status block, e.g. `Update on round 3`. Empty on the first run, whose status block shows only the open decisions'
+    required: false
+    default: ''
   under_status:
-    description: 'Whether the rendered body goes under the status block, which already gives the headline and the open decisions - so the body leaves them out'
+    description: 'Whether the rendered body goes under the status block, which already gives the open decisions - so the body leaves them and the headline out'
     required: false
     default: 'false'
   pull_request:

@@ -2635,7 +2635,7 @@ jobs:
             ${{ steps.workflow_files.outputs.instructions }}
 
             When you are done, write `.ai-review/report.json`. The workflow posts it as the round
-            comment and the status at the top of the pull request; your final message only goes
+            comment and the status in the pull request description; your final message only goes
             to the run log.
 
             ```json
@@ -2770,8 +2770,8 @@ jobs:
         with:
           fallback_file: ${{ steps.report.outputs.result_file }}
           cost_line: ${{ steps.report.outputs.cost_line }}
-          label: ${{ steps.event.outputs.mode == 'initial' && 'After the first run' || format('After round {0}', steps.stage_pr.outputs.round) }}
-          # The first run's body goes under the status block that opens the pull request
+          label: ${{ steps.event.outputs.mode == 'round' && format('Update on round {0}', steps.stage_pr.outputs.round) || '' }}
+          # The first run's body goes under the status block, which holds the open decisions
           under_status: ${{ steps.event.outputs.mode == 'initial' }}
 
       # The edit the agent was told not to make, taken back out of the working tree before it
@@ -3164,6 +3164,10 @@ jobs:
           DETAILS_FILE: ${{ steps.render.outputs.details_file }}
           STATUS_FILE: ${{ steps.render.outputs.status_file }}
           COMMAND: ${{ inputs.command }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          USAGE: ${{ steps.report.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CONTEXT_URL: ${{ steps.context.outputs.artifact-url }}
           REOPEN: ${{ steps.existing.outputs.reopen }}
           # What the pull request being revived used to target. Only differs from BASE when its
           # branch was gone and a new one was cut from somewhere else.
@@ -3208,10 +3212,10 @@ jobs:
             # `Closes #N` is what closes the issue when this merges. Github only acts on it for a
             # pull request into the default branch; one into any other base leaves it open.
             {
-              [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
               printf 'Closes #%s' "$ISSUE"
               [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
               printf '\n\n'
+              [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
                 cat "$SUMMARY_FILE"
                 printf '\n'
@@ -3221,13 +3225,19 @@ jobs:
               # details, where somebody about to test the change will look.
               printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
               [[ -n "$DETAILS_FILE" && -f "$DETAILS_FILE" ]] && printf '%s\n\n' "$(cat "$DETAILS_FILE")"
-              printf '## What'"'"'s next\n\n'
+              printf '### What'"'"'s next\n\n'
               printf 'Review happens here from now on. Comment on the lines you want changed and submit the review as **Request changes**, and the next round starts by itself.\n\n'
               # This workflow's own command, said on the pull request rather than only in the
               # hand-off comment back on the issue. It is the answer to "how do I ask for a round"
               # wherever that comes up later - including a revised plan, which the planning
               # workflow announces here without naming a command it does not own.
-              printf '`%s` here runs a round too, for when you would rather say what you want in prose than in review comments.\n' "$COMMAND"
+              printf '`%s` here runs a round too, for when you would rather say what you want in prose than in review comments.\n\n' "$COMMAND"
+              printf -- '---\n\n'
+              printf 'Requested by @%s.' "$ACTOR"
+              [[ -n "$USAGE" ]] && printf ' %s.' "$USAGE"
+              printf ' [Run](%s)' "$RUN_URL"
+              [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+              printf '\n'
             } > "$RUNNER_TEMP/pr-body.md"
 
             url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
@@ -3491,13 +3501,13 @@ jobs:
           cat "$RUNNER_TEMP/round-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$PR" --body-file "$RUNNER_TEMP/round-comment.md"
 
-      # After the round comment, so the block at the top of the pull request never describes a
-      # round that did not finish. The reviewer and the next round read the report back out of it.
-      - name: Update the status at the top of the pull request
+      # After the round comment, so the status block never describes a round that did not finish.
+      # The reviewer and the next round read the report back out of it.
+      - name: Update the status in the pull request description
         if: ${{ success() && env.PROCEED == 'true' && steps.close.outcome == 'success' && steps.render.outputs.rendered == 'true' }}
         uses: uniquesca/ci/ai-render-report@v11
         with:
-          label: ${{ format('After round {0}', steps.stage_pr.outputs.round) }}
+          label: ${{ format('Update on round {0}', steps.stage_pr.outputs.round) }}
           pull_request: ${{ steps.event.outputs.pull_request }}
           token: ${{ secrets.GITHUB_TOKEN }}
 

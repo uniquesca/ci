@@ -148,7 +148,7 @@ runs:
         else
           {
             printf '%s\n\n' "$MARKER"
-            printf '## %s\n\n' "$SECTION"
+            printf '### %s\n\n' "$SECTION"
             cat "$tmp/section.md"
             printf '\n%s\n' "$END_MARKER"
           } > "$tmp/block.md"
