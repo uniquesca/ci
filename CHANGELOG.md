@@ -1459,3 +1459,7 @@
 
 * Update: making ai-implement to post comments using the app token instead of github (dd25a7b by George Shestayev)
 * Update: improved AI footers visual (3345d8a by George Shestayev)
+
+## v11.23.0
+
+* New: introduced ai-harness-hint workflow to analyze PRs and mark good candidates for AI harness (56937b8 by George Shestayev)
