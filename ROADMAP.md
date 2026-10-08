@@ -82,6 +82,17 @@ opened before this change.
 
 **Plan, if this happens often:** a small job on merge that closes the issue for any branch.
 
+### Point people at the harness
+
+`ai-harness-hint.yml` comments on a pull request somebody wrote by hand when QA failed on its first
+run or Copilot review took several rounds. Still to do:
+
+- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
+- Count both triggers on past pull requests, to see how often each would fire.
+- Post at most one hint per person per week.
+- When a pull request goes back and forth a lot, look at its issue and suggest how it could have
+  been written better.
+
 ## For v12
 
 These are breaking changes, so they wait for the next major version.
