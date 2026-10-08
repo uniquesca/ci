@@ -772,6 +772,7 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && steps.permissions.outputs.allowed != 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           COMMAND: ${{ inputs.command }}
           PERMISSION: ${{ steps.permissions.outputs.permission }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -814,6 +815,7 @@ jobs:
               || steps.event.outputs.trigger == 'issue-command')
           && steps.permissions.outputs.allowed == 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           # Two numbers, because they are not always the same one: the pull request the command
           # cannot run on, and the thread the person who typed it is reading
           PR: ${{ steps.event.outputs.pull_request }}
@@ -845,6 +847,7 @@ jobs:
           && steps.event.outputs.mode == 'round'
           && steps.event.outputs.trigger == 'issue-command' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           PR: ${{ steps.event.outputs.pull_request }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -874,6 +877,7 @@ jobs:
         id: existing
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
           COMMAND: ${{ inputs.command }}
@@ -938,6 +942,7 @@ jobs:
           && steps.event.outputs.mode == 'initial'
           && steps.event.outputs.base_given == 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           BASE: ${{ steps.event.outputs.requested_base }}
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -1009,6 +1014,7 @@ jobs:
           && steps.event.outputs.mode == 'initial'
           && steps.stage_issue.outputs.has_plan != 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
           COMMAND: ${{ inputs.command }}
@@ -1327,6 +1333,7 @@ jobs:
           && steps.stage_pr.outputs.has_feedback != 'true'
           && steps.revision.outputs.revised != 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           PR: ${{ steps.event.outputs.pull_request }}
           ACTOR: ${{ steps.event.outputs.actor }}
           SINCE: ${{ steps.stage_pr.outputs.since }}
@@ -1350,6 +1357,7 @@ jobs:
           && steps.event.outputs.attended == 'false'
           && steps.stage_pr.outputs.unattended_rounds >= inputs.max_unattended_rounds }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           PR: ${{ steps.event.outputs.pull_request }}
           ACTOR: ${{ steps.event.outputs.actor }}
           ROUNDS: ${{ steps.stage_pr.outputs.unattended_rounds }}
@@ -1526,6 +1534,7 @@ jobs:
           && steps.event.outputs.base_given == 'true'
           && steps.branch.outputs.created != 'true' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           TARGET: ${{ steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
           BRANCH: ${{ steps.branch.outputs.branch }}
@@ -1575,6 +1584,7 @@ jobs:
           && steps.stage_issue.outputs.plan_base != ''
           && steps.event.outputs.requested_base != steps.stage_issue.outputs.plan_base }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           TARGET: ${{ steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
           REQUESTED: ${{ steps.event.outputs.requested_base }}
@@ -3233,9 +3243,9 @@ jobs:
               printf '`%s` here runs a round too, for when you would rather say what you want in prose than in review comments.\n\n' "$COMMAND"
               printf -- '---\n\n'
               printf 'Requested by @%s' "$ACTOR"
-              [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-              printf ' · [Run](%s)' "$RUN_URL"
-              [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+              [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+              printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+              [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
               printf '\n'
             } > "$RUNNER_TEMP/pr-body.md"
 
@@ -3304,6 +3314,7 @@ jobs:
           && steps.event.outputs.mode == 'initial'
           && steps.pr.outputs.url != '' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           PR_URL: ${{ steps.pr.outputs.url }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -3322,9 +3333,9 @@ jobs:
             printf 'This issue keeps the plan. Run `/ai-plan` here if the approach itself needs revising, and the next round will pick it up.\n\n'
             printf -- '---\n\n'
             printf 'Requested by @%s' "$ACTOR"
-            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-            printf ' · [Run](%s)' "$RUN_URL"
-            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+            [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+            printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             if [[ -n "$COST" ]]; then
               printf '\n%s\n' "$COST"
@@ -3341,6 +3352,7 @@ jobs:
           && steps.event.outputs.mode == 'initial'
           && steps.push.outputs.pushed == 'false' }}
         env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -3386,7 +3398,7 @@ jobs:
         with:
           pull_request: ${{ steps.event.outputs.pull_request }}
           repository: ${{ github.repository }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.ai_implement.outputs.token }}
           marker: ${{ env.REPLY_MARKER }}
 
       # Every round ends with one of these, whether or not it changed a file. It is what the
@@ -3397,6 +3409,10 @@ jobs:
         id: close
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'round' }}
         env:
+          # Posted as AI Implement, like the pull request it answers for. An app's comment starts
+          # the callers' `issue_comment` runs, which `GITHUB_TOKEN`'s does not - they are skipped
+          # at the job `if`, as the comment does not start with a command.
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           PR: ${{ steps.event.outputs.pull_request }}
           ACTOR: ${{ steps.event.outputs.actor }}
           TRIGGER: ${{ steps.event.outputs.trigger }}
@@ -3471,23 +3487,23 @@ jobs:
 
             printf '\n\n'
             printf -- '---\n\n'
-            printf 'Round %s · %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
+            printf 'Round %s &nbsp;·&nbsp; %s feedback item(s)' "$ROUND" "$FEEDBACK_COUNT"
             [[ "$CHECK_COUNT" != '0' ]] && printf ', %s failing check(s)' "$CHECK_COUNT"
             # The revised plan is not a feedback item, so the count above does not account for it.
             # Said once here for the record - the reader was already told at the top.
-            [[ "$REVISED" == 'true' ]] && printf ' · Worked to a revised plan'
+            [[ "$REVISED" == 'true' ]] && printf ' &nbsp;·&nbsp; Worked to a revised plan'
             if [[ "$TRIGGER" == 'review' ]]; then
-              printf ' · Started by @%s requesting changes' "$ACTOR"
+              printf ' &nbsp;·&nbsp; Started by @%s requesting changes' "$ACTOR"
             elif [[ "$TRIGGER" == 'checks' ]]; then
-              printf ' · Started by `%s` finishing' "$CHECKS_WORKFLOW"
+              printf ' &nbsp;·&nbsp; Started by `%s` finishing' "$CHECKS_WORKFLOW"
             else
-              printf ' · Requested by @%s' "$ACTOR"
+              printf ' &nbsp;·&nbsp; Requested by @%s' "$ACTOR"
             fi
-            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' · Answered %s review thread(s)' "$POSTED"
-            [[ "$PUSHED" != 'true' ]] && printf ' · **No file changed this round**'
-            [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
-            printf ' · [Run](%s)' "$RUN_URL"
-            [[ -n "$CONTEXT_URL" ]] && printf ' · [Context](%s)' "$CONTEXT_URL"
+            [[ -n "$POSTED" && "$POSTED" != '0' ]] && printf ' &nbsp;·&nbsp; Answered %s review thread(s)' "$POSTED"
+            [[ "$PUSHED" != 'true' ]] && printf ' &nbsp;·&nbsp; **No file changed this round**'
+            [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+            printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+            [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
             printf '\n'
             # Last, and never second: the round metadata above is read by line number, so a
             # line added anywhere but the end would take `ai-stage-pull-request` with it
@@ -3663,6 +3679,7 @@ jobs:
           USAGE: ${{ steps.report.outputs.summary }}
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          AI_IMPLEMENT_TOKEN: ${{ steps.ai_implement.outputs.token }}
         run: |
           # A round a check started was started by a bot, and mentioning it notifies nobody. Each
           # round asks the person who started it for a review, so that is who is waiting.
@@ -3710,7 +3727,10 @@ jobs:
             exit 0
           fi
 
-          gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md" \
+          # Posted as AI Implement, falling back to `GITHUB_TOKEN`: the app's token lasts an hour,
+          # and a run that long may have failed because it expired
+          GH_TOKEN="$AI_IMPLEMENT_TOKEN" gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md" \
+            || gh issue comment "$TARGET" --body-file "$RUNNER_TEMP/failure-comment.md" \
             || echo "::warning title=Could not report the failure::Nothing was posted on #$TARGET - the run summary has the detail"
 
       - name: Say how it ended

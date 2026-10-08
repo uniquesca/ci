@@ -215,11 +215,11 @@ runs:
               summary="${secs}s"
             fi
           fi
-          [[ -n "$turns" && "$turns" != null ]] && summary="${summary:+$summary · }${turns} turns"
-          [[ -n "$tokens" && "$tokens" != null ]] && summary="${summary:+$summary · }${tokens} tokens"
+          [[ -n "$turns" && "$turns" != null ]] && summary="${summary:+$summary &nbsp;·&nbsp; }${turns} turns"
+          [[ -n "$tokens" && "$tokens" != null ]] && summary="${summary:+$summary &nbsp;·&nbsp; }${tokens} tokens"
           if [[ -n "$cost" && "$cost" != null ]]; then
             # The agent's own estimate from its token counts, not a billed figure
-            summary="${summary:+$summary · }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
+            summary="${summary:+$summary &nbsp;·&nbsp; }~\$$(awk -v c="$cost" 'BEGIN { printf (c < 0.01 ? "%.4f" : "%.2f"), c }')"
             cost_usd="$cost"
           fi
 
@@ -284,4 +284,4 @@ runs:
           printf 'cost_line=%s\n' "$cost_line"
         } >> "$GITHUB_OUTPUT"
 
-        echo "$summary"
+        echo "${summary//&nbsp;/ }"
