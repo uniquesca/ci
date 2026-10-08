@@ -1454,3 +1454,8 @@
 * Update: AI plans judge how much QA a change needs from what a user could see break (fd7850b by George Shestayev)
 * Update: AI prompts are about half as long, instructions only (ea585fc by George Shestayev)
 * Update: AI plans add regression QA for refactors of code users run (512de93 by George Shestayev)
+
+## v11.22.1
+
+* Update: making ai-implement to post comments using the app token instead of github (dd25a7b by George Shestayev)
+* Update: improved AI footers visual (3345d8a by George Shestayev)
