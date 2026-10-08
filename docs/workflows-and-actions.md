@@ -49,6 +49,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | [`ai-plan.yml`](ai/ai-plan.md) | Turns an issue into an implementation plan, on `/ai-plan` |
 | [`ai-implement.yml`](ai/ai-implement.md) | Implements the plan on a branch, opens a pull request, and runs another round for every review or red check |
 | [`ai-review.yml`](ai/ai-review.md) | Reviews a pull request as a real Github review, on `/ai-review` or on what an implementing round pushed |
+| [`ai-harness-hint.yml`](ai/ai-harness-hint.md) | Comments on a hand-written pull request that went back and forth in a way the harness would have handled itself |
 
 ### QA
 

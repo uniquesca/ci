@@ -82,6 +82,37 @@ opened before this change.
 
 **Plan, if this happens often:** a small job on merge that closes the issue for any branch.
 
+### Point people at the harness
+
+`ai-harness-hint.yml` comments on a pull request somebody wrote by hand when QA failed on its first
+run or Copilot review took several rounds. Still to do:
+
+- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
+- Count both triggers on past pull requests, to see how often each would fire.
+- Post at most one hint per person per week.
+
+### Measure how the harness is used
+
+A monthly report, next to the AI cost report, showing per person how many pull requests they
+opened, and how each was made:
+
+- **Harness:** the branch starts with `ai-feature/`.
+- **Local AI:** a commit has a `Co-Authored-By: Claude` line, or the description says it was
+  generated with Claude Code. People can remove these, so this number is a lower bound.
+- **By hand:** everything else.
+
+For pull requests made by hand or with local AI, it also shows how many the hint workflow checked
+and how many it found were a good fit for the harness. For this, `ai-harness-hint.yml` first has
+to save every verdict, including "not a fit" and the ones in shadow mode. Today it saves nothing.
+Decide who sees the numbers for each person before it goes out.
+
+### Learn from issues that needed a lot of rounds
+
+When a harness pull request merges after many rounds, compare its issue with what the review
+rounds changed. Then suggest what the issue should have said, so that next time one round is
+enough. Post it on the issue or in a team summary, not on the merged pull request, where nobody
+reads it.
+
 ## For v12
 
 These are breaking changes, so they wait for the next major version.

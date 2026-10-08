@@ -1,0 +1,319 @@
+name: AI Harness Hint
+
+on:
+  workflow_call:
+    inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
+        required: false
+        default: ''
+        type: string
+      qa_workflow:
+        description: 'Name of the QA workflow whose first run on a pull request is watched, as it appears in its `name:`. The caller has to list the same name under `workflow_run: workflows:`'
+        required: true
+        type: string
+      ignore_job_patterns:
+        description: 'Case-insensitive regular expression matching QA jobs whose failure does not count, for checks the harness could not have run either - ones needing secrets, external services or a deployed environment. Empty counts every failed job'
+        required: false
+        default: ''
+        type: string
+      copilot_login:
+        description: 'Login the Copilot reviewer submits its reviews as'
+        required: false
+        default: 'copilot-pull-request-reviewer[bot]'
+        type: string
+      copilot_rounds:
+        description: 'How many rounds of fixes after a Copilot review make a hint. A round is a Copilot review followed by a push and another Copilot review'
+        required: false
+        default: 2
+        type: number
+      branch_prefix:
+        description: 'Prefix of the branches the implementing workflow pushes to. A pull request on one came from the harness already and gets no hint. Keep it the same as the implementing workflow branch_prefix'
+        required: false
+        default: 'ai-feature/'
+        type: string
+      skip_label:
+        description: 'A pull request carrying this label gets no hint'
+        required: false
+        default: 'no-ai-hint'
+        type: string
+      docs_url:
+        description: 'Where the hint sends somebody to get started with the harness'
+        required: false
+        # pin-ci-version: skip - a page for people to read, and main is the one kept current
+        default: 'https://github.com/uniquesca/ci/blob/main/docs/ai.md'
+        type: string
+      shadow:
+        description: 'Write the hint to the job summary instead of posting it. For tuning the inputs on real pull requests before anybody sees a comment'
+        required: false
+        default: true
+        type: boolean
+      model:
+        description: 'Model that judges whether the change suited the harness'
+        required: false
+        default: 'claude-sonnet-5-5'
+        type: string
+      effort:
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to'
+        required: false
+        default: 'low'
+        type: string
+      max_turns:
+        description: 'How many turns the agent may spend reading the change before it has to decide'
+        required: false
+        default: 15
+        type: number
+      max_diff_bytes:
+        description: 'Longest diff to stage. A bigger change is truncated, and the agent is told so'
+        required: false
+        default: 100000
+        type: number
+      timeout_minutes:
+        description: 'How long the whole job may run'
+        required: false
+        default: 15
+        type: number
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  hint:
+    name: Check whether the harness would have suited this
+    # Two triggers, each a sign the change cost its author a round trip the harness would have
+    # taken in its sandbox: QA going red on the first run, and Copilot reviews answered by more
+    # pushes. Only a pull_request run counts as QA on a pull request; a push run on the same branch
+    # carries no pull request to talk to.
+    if: >-
+      ${{ (github.event_name == 'workflow_run'
+           && github.event.workflow_run.name == inputs.qa_workflow
+           && github.event.workflow_run.event == 'pull_request'
+           && github.event.workflow_run.conclusion == 'failure'
+           && github.event.workflow_run.run_attempt == 1
+           && github.event.workflow_run.head_repository.full_name == github.repository)
+          || (github.event_name == 'pull_request_review'
+              && github.event.review.user.login == inputs.copilot_login
+              && github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    # Both triggers can fire for one pull request at about the same time, and each checks for an
+    # earlier hint before posting. Queued so the second sees the first one's comment.
+    concurrency:
+      group: ai-harness-hint-${{ github.repository }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # Posting the hint. `gh pr comment` goes through GraphQL, which asks for the pull request
+      # scope rather than the issue one
+      pull-requests: write
+      issues: write
+      # The jobs of the QA run, to name the ones that failed
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HINT_MARKER: '<!-- ai-harness-hint -->'
+      # `Gather the evidence` sets this to false when there is nothing to hint, and every step
+      # after it must test `env.PROCEED == 'true'` in its `if`.
+      PROCEED: 'true'
+    steps:
+      - name: Gather the evidence
+        id: evidence
+        env:
+          EVENT: ${{ github.event_name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          REVIEW_NUMBER: ${{ github.event.pull_request.number }}
+          IGNORE_JOBS: ${{ inputs.ignore_job_patterns }}
+          COPILOT_LOGIN: ${{ inputs.copilot_login }}
+          COPILOT_ROUNDS: ${{ inputs.copilot_rounds }}
+          BRANCH_PREFIX: ${{ inputs.branch_prefix }}
+          SKIP_LABEL: ${{ inputs.skip_label }}
+        run: |
+          stand_down() {
+            echo "$1"
+            echo 'PROCEED=false' >> "$GITHUB_ENV"
+            exit 0
+          }
+
+          number="${RUN_NUMBER:-$REVIEW_NUMBER}"
+          [[ -n "$number" ]] || stand_down 'The run carries no pull request.'
+
+          pr=$(gh api "repos/$GH_REPO/pulls/$number")
+          [[ $(jq -r .state <<<"$pr") == 'open' ]] || stand_down "#$number is not open."
+          [[ $(jq -r .draft <<<"$pr") == 'false' ]] || stand_down "#$number is a draft."
+          head_ref=$(jq -r .head.ref <<<"$pr")
+          [[ "$head_ref" != "$BRANCH_PREFIX"* ]] || stand_down "#$number came from the harness."
+          if [[ -n "$SKIP_LABEL" ]] && jq -e --arg l "$SKIP_LABEL" 'any(.labels[]; .name == $l)' <<<"$pr" >/dev/null; then
+            stand_down "#$number carries $SKIP_LABEL."
+          fi
+          if gh api --paginate "repos/$GH_REPO/issues/$number/comments" --jq '.[].body' | grep -qF "$HINT_MARKER"; then
+            stand_down "#$number already has a hint."
+          fi
+
+          mkdir -p .ai-harness-hint
+          evidence=.ai-harness-hint/evidence.md
+
+          if [[ "$EVENT" == 'workflow_run' ]]; then
+            # The first QA run since the pull request opened. A branch name can be reused by an
+            # older, closed pull request, so runs from before this one was created are left out.
+            created=$(jq -r .created_at <<<"$pr")
+            first=$(gh api --paginate "repos/$GH_REPO/actions/workflows/$WORKFLOW_ID/runs?branch=$RUN_BRANCH&event=pull_request&per_page=100" \
+              --jq ".workflow_runs[] | select(.created_at >= \"$created\") | .id" | sort -n | head -n 1)
+            [[ "$first" == "$RUN_ID" ]] || stand_down "Run $RUN_ID is not the first QA run on #$number."
+
+            failed=$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
+              --jq '.jobs[] | select(.conclusion == "failure") | .name')
+            if [[ -n "$IGNORE_JOBS" ]]; then
+              failed=$(grep -Eiv -- "$IGNORE_JOBS" <<<"$failed" || true)
+            fi
+            [[ -n "$failed" ]] || stand_down 'Only ignored jobs failed.'
+
+            jobs=$(jq -Rr '"`\(.)`"' <<<"$failed" | paste -sd, -)
+            jobs=${jobs//,/, }
+            echo "- QA failed on its first run: $jobs. The harness runs the checks before it opens a pull request." > "$evidence"
+          else
+            # Each Copilot review records the commit it read, so a new commit between two of them
+            # is one round of fixes. Commit dates would not do: a rebase or a local commit pushed
+            # later carries a time that says nothing about when it reached the pull request.
+            rounds=$(gh api --paginate "repos/$GH_REPO/pulls/$number/reviews?per_page=100" \
+              --jq ".[] | select(.user.login == \"$COPILOT_LOGIN\") | .commit_id" | uniq | wc -l)
+            rounds=$((rounds - 1))
+            (( rounds >= COPILOT_ROUNDS )) || stand_down "Copilot review is at $rounds rounds of fixes."
+
+            echo "- Copilot review took $rounds rounds of fixes. The harness answers review feedback itself before a person is asked." > "$evidence"
+          fi
+
+          {
+            echo "number=$number"
+            echo "head_sha=$(jq -r .head.sha <<<"$pr")"
+          } >> "$GITHUB_OUTPUT"
+          jq '{title, body, author: .user.login, base: .base.ref, head: .head.ref,
+               additions, deletions, changed_files}' <<<"$pr" > .ai-harness-hint/pull-request.json
+
+      - name: Check out the pull request
+        if: ${{ env.PROCEED == 'true' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.evidence.outputs.head_sha }}
+          persist-credentials: false
+          # The staged files above live in the workspace the checkout would otherwise wipe
+          clean: false
+
+      - name: Stage the diff
+        id: diff
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          NUMBER: ${{ steps.evidence.outputs.number }}
+          MAX_BYTES: ${{ inputs.max_diff_bytes }}
+        run: |
+          # Github refuses a diff past 300 files. The agent has the checkout and the file list, so
+          # it still decides, from less.
+          gh pr diff "$NUMBER" > .ai-harness-hint/full.patch || true
+          head -c "$MAX_BYTES" .ai-harness-hint/full.patch > .ai-harness-hint/diff.patch
+          if (( $(wc -c < .ai-harness-hint/full.patch) > MAX_BYTES )) || [[ ! -s .ai-harness-hint/full.patch ]]; then
+            echo 'truncated=true' >> "$GITHUB_OUTPUT"
+          fi
+          rm .ai-harness-hint/full.patch
+          gh pr diff "$NUMBER" --name-only > .ai-harness-hint/changed-files.txt || true
+
+      - name: Judge the change
+        id: agent
+        if: ${{ env.PROCEED == 'true' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # A review trigger has Copilot as its actor, and the action refuses a bot it is not told
+          # about
+          allowed_bots: ${{ inputs.copilot_login }}
+          prompt: |
+            A person opened pull request #${{ steps.evidence.outputs.number }} of this repository
+            by hand, and it went back and forth before it was ready.
+
+            Decide whether this change was a good fit for the AI harness instead. The harness
+            takes a Github issue, writes a plan people approve, implements it, runs the QA checks
+            and answers review feedback on its own.
+
+            Read:
+
+            - `.ai-harness-hint/evidence.md` - the back and forth above.
+            - `.ai-harness-hint/pull-request.json` - title, description and size.
+            - `.ai-harness-hint/diff.patch` - the change.
+              ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED: `.ai-harness-hint/changed-files.txt` and the checkout have the rest.' || '' }}
+
+            A good fit: the goal could have been written down as an issue before any code
+            existed, and a reviewer can tell from the result whether it was met. Following a
+            pattern the repository already has is a strong sign. A change across many files or
+            areas is a good fit too, because the plan shows its impact before anything is written.
+
+            Not a fit: the right answer was an open design question; it touches authentication,
+            payments, secrets or production data; it depends on something outside the repository,
+            such as a vendor console or production debugging; or it is an urgent hotfix.
+
+            Write `.ai-harness-hint/verdict.json` and nothing else:
+
+            {"candidate": true or false, "reason": "..."}
+
+            `reason` is one or two plain sentences to the author about this change: what about it
+            made it a fit or not. No praise, no restating the evidence, no advice.
+          claude_args: |
+            --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,Write"
+
+      - name: Post the hint
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          NUMBER: ${{ steps.evidence.outputs.number }}
+          DOCS_URL: ${{ inputs.docs_url }}
+          SHADOW: ${{ inputs.shadow }}
+        run: |
+          verdict=.ai-harness-hint/verdict.json
+          if ! jq -e '(.candidate | type == "boolean") and (.reason | type == "string")' "$verdict" >/dev/null 2>&1; then
+            echo '::error title=No verdict::The agent did not write a valid .ai-harness-hint/verdict.json'
+            exit 1
+          fi
+          reason=$(jq -r .reason "$verdict")
+
+          if [[ $(jq -r .candidate "$verdict") != 'true' ]]; then
+            echo "#$NUMBER is not a fit: $reason" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "$HINT_MARKER"
+            echo '**This pull request looks like a good fit for the AI harness.**'
+            echo
+            cat .ai-harness-hint/evidence.md
+            echo
+            echo "$reason"
+            echo
+            echo "Next time, open an issue and comment \`/ai-plan\` on it. [How to start]($DOCS_URL)"
+          } > .ai-harness-hint/comment.md
+
+          if [[ "$SHADOW" == 'true' ]]; then
+            { echo "Shadow mode, not posted to #$NUMBER:"; echo; cat .ai-harness-hint/comment.md; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr comment "$NUMBER" --body-file .ai-harness-hint/comment.md
+          fi
