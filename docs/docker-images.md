@@ -95,4 +95,5 @@ runs that command without supervisord, as before: supercronic still starts along
 ### Stopping
 
 `docker stop` stops every program before supervisord exits. A program that finishes its current
-work on SIGTERM needs the container's stop timeout to cover that work.
+work on SIGTERM needs both Supervisor's `stopwaitsecs` setting (10 seconds by default) and the
+container's stop timeout to cover that work.
