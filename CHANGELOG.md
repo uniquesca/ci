@@ -1468,3 +1468,8 @@
 
 * New: ai-retro workflow explaining why a merged AI pull request took many rounds (f472e97 by George Shestayev)
 * Update: ai-harness-hint tags the author and limits its length (0982793 by George Shestayev)
+
+## v11.25.0
+
+* Update: adding arm64 support to the Docker images (#34) (c6ef346 by George Shestayev)
+* Update: docker images are switched to use supervisord to run multiple things and keep them alive (2398bb2 by George Shestayev)

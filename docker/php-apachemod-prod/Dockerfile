@@ -6,8 +6,11 @@ FROM ${PHP_BASE_IMAGE} AS php-apache
 ARG NODE_VERSION=20
 ENV NODE_VERSION=${NODE_VERSION}
 
+# Set by Buildx to the platform being built
+ARG TARGETARCH
+
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
-ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
+ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-${TARGETARCH} /usr/local/bin/supercronic
 
 COPY docker/php-apachemod-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 

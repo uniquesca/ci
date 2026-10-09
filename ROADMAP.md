@@ -269,6 +269,15 @@ Still open from step 3d:
 - The plan becomes one linked issue per repository, in order, and each repository's AI does its
   part.
 
+### Step 10: Let the AI push back on bad instructions
+
+Today the AI mostly does what it is told. The implementing agent can turn down a review comment
+with a reason, but it builds a plan step it thinks is wrong, and guesses when feedback is unclear.
+The reviewer says nothing about a person's request, only about the code that comes out of it.
+Make both of them stop and ask a person when an instruction looks wrong, unclear or against the
+issue, instead of guessing or going along with it. Keep it rare, so it does not slow down the
+ordinary rounds, and use `ai-retro.yml` to see how often a round was lost to a bad instruction.
+
 ## Later
 
 Bigger ideas, for after the steps above.
