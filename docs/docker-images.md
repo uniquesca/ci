@@ -31,6 +31,7 @@ All the images contain:
    * imagick
    * intl
    * opcache
+   * pcntl - FPM and FPM + Apache images only
    * pdo_mysql
    * simplexml
    * sockets
@@ -47,6 +48,21 @@ DEV images additional have:
 1. PHP Extensions:
    * xdebug
 
+## What runs in a container
+
+In the FPM and FPM + Apache images, supervisord is the main process. It runs php-fpm (and Apache),
+supercronic when `/etc/crontab` exists, and every program file in `/etc/supervisor/conf.d/`:
+
+```ini
+; /etc/supervisor/conf.d/worker.conf, added by the application image
+[program:worker]
+command=php /app/bin/worker.php
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+redirect_stderr=true
+autorestart=true
+```
+
 ## When they are built
 
 On a tag push, and **only when something under `docker/` changed since the previous tag**. The
@@ -60,3 +76,24 @@ tag alongside the images themselves.
 To build everything regardless, run the **Build Docker images** workflow by hand from the Actions
 tab. **That is the only way to recover a failed build**: if the run for the tag that changed a
 Dockerfile went red, no later tag rebuilds it, because by then nothing has changed.
+
+## Dig deeper
+
+### Restarts
+
+supervisord restarts a program that exits unexpectedly, and one with `autorestart=true` whenever it
+exits. If a program keeps failing to start, supervisord stops the container; a clean one starts only
+if the container has a restart policy. This covers a process killed outright, whose children can
+keep its port and block every restart inside the container.
+
+### Running another command
+
+Running the FPM image with a command other than `php-fpm` (`composer install`, a one-off script)
+runs that command without supervisord, as before: supercronic still starts alongside it when
+`/etc/crontab` exists. The FPM + Apache image ignores the command and always starts supervisord.
+
+### Stopping
+
+`docker stop` stops every program before supervisord exits. A program that finishes its current
+work on SIGTERM needs both Supervisor's `stopwaitsecs` setting (10 seconds by default) and the
+container's stop timeout to cover that work.

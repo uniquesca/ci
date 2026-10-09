@@ -10,6 +10,8 @@ ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/do
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64 /usr/local/bin/supercronic
 
 COPY docker/php-fpm-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
+COPY docker/supervisor/cron.sh /usr/local/bin/uniques-cron
+COPY docker/supervisor/fatal.sh /usr/local/bin/uniques-supervisor-fatal
 
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/
@@ -29,7 +31,8 @@ RUN \
       zip  \
       git  \
       logrotate \
-      nano; \
+      nano \
+      supervisor; \
     \
     # PHP config \
 	chmod +x /usr/local/bin/install-php-extensions \
@@ -40,6 +43,7 @@ RUN \
       imagick \
       intl \
       opcache \
+      pcntl \
       pdo_mysql \
       simplexml \
       sockets \
@@ -50,9 +54,15 @@ RUN \
     # Add cron (supercronic) and an entrypoint \
     chmod +x /usr/local/bin/uniques-php-entrypoint; \
     chmod +x /usr/local/bin/supercronic; \
+    chmod +x /usr/local/bin/uniques-cron; \
+    chmod +x /usr/local/bin/uniques-supervisor-fatal; \
     \
     # Add 'll' alias to bash profile for all users \
     echo "alias ll='ls -al'" >> /etc/bash.bashrc;
+
+# After the supervisor package, which ships its own supervisord.conf
+COPY docker/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+COPY docker/php-fpm-prod/web.conf /etc/supervisor/conf.d/web.conf
 
 RUN \
     # Set up Composer \
