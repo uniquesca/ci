@@ -79,6 +79,9 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
+      # ghcr.io allows 2,000 requests a minute. All 24 builds pushing every layer and its cache at
+      # once, as they do whenever the cache is cold, go past it and fail with `toomanyrequests`
+      max-parallel: 8
       matrix:
         # Quoted, because YAML reads 5.6 as a number and the value is used as an image tag
         php-version: [ '5.6', '8.1', '8.2', '8.3', '8.4' ]
@@ -363,10 +366,11 @@ jobs:
           path: image/
           retention-days: 1
 
+  # A failed PROD image skips every DEV build, and there is nothing then to publish
   dev-merge:
     name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
-    needs: [ changes, dev ]
-    if: ${{ !cancelled() && needs.changes.outputs.build == 'true' }}
+    needs: [ dev ]
+    if: ${{ !cancelled() && needs.dev.result != 'skipped' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
