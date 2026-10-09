@@ -31,7 +31,7 @@ All the images contain:
    * imagick
    * intl
    * opcache
-   * pcntl
+   * pcntl - FPM and FPM + Apache images only
    * pdo_mysql
    * simplexml
    * sockets
@@ -60,6 +60,7 @@ command=php /app/bin/worker.php
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 redirect_stderr=true
+autorestart=true
 ```
 
 ## When they are built
@@ -80,15 +81,16 @@ Dockerfile went red, no later tag rebuilds it, because by then nothing has chang
 
 ### Restarts
 
-supervisord restarts a program that exits. If a program keeps failing to start, supervisord stops the
-container, so the restart policy starts a clean one. This covers a process killed outright, whose
-children can keep its port and block every restart inside the container.
+supervisord restarts a program that exits unexpectedly, and one with `autorestart=true` whenever it
+exits. If a program keeps failing to start, supervisord stops the container; a clean one starts only
+if the container has a restart policy. This covers a process killed outright, whose children can
+keep its port and block every restart inside the container.
 
 ### Running another command
 
 Running the FPM image with a command other than `php-fpm` (`composer install`, a one-off script)
-runs that command alone, without supervisord, as before. The FPM + Apache image ignores the
-command and always starts supervisord.
+runs that command without supervisord, as before: supercronic still starts alongside it when
+`/etc/crontab` exists. The FPM + Apache image ignores the command and always starts supervisord.
 
 ### Stopping
 

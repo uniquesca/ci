@@ -11,7 +11,7 @@ ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-
 
 COPY docker/php-fpm-prod/entrypoint.sh /usr/local/bin/uniques-php-entrypoint
 COPY docker/supervisor/cron.sh /usr/local/bin/uniques-cron
-COPY docker/supervisor/fatal.py /usr/local/bin/uniques-supervisor-fatal
+COPY docker/supervisor/fatal.sh /usr/local/bin/uniques-supervisor-fatal
 
 ENV NVM_DIR=/usr/local/nvm
 ENV COMPOSER_HOME=/.composer/
