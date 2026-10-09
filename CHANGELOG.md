@@ -1480,3 +1480,7 @@
 ## v11.25.2
 
 * Fix: fixing building docker images (f913378 by George Shestayev)
+
+## v11.25.3
+
+* Fix: fixing building docker images (7a08679 by George Shestayev)
