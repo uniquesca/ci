@@ -1476,3 +1476,7 @@
 
 ## v11.25.1
 
+
+## v11.25.2
+
+* Fix: fixing building docker images (f913378 by George Shestayev)
