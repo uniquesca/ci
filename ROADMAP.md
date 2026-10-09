@@ -108,32 +108,16 @@ Decide who sees the numbers for each person before it goes out.
 
 ### Learn from issues that needed a lot of rounds
 
-When a harness pull request is merged after too many rounds, look at why, and post one short
-comment on the pull request that tags the person who opened the issue. Too many rounds means any of
-these (to be checked against past pull requests):
+`ai-retro.yml` comments on a merged harness pull request that took too many rounds: what would have
+saved them, how the issue could have been approached better, and plan questions left open when work
+started. It tags the issue author. Still to do:
 
-- 3 or more rounds after the first push.
-- 2 or more change requests from people.
-- The loop hit its round limit, or somebody had to restart it with `/ai-do`.
-
-The comment answers:
-
-- What would have stopped the extra rounds.
-- How the issue author could have approached the issue better: the goal, how to check it is done,
-  an example to follow, or splitting it. Advice on the approach, not a rewritten issue.
-- Which unknowns (`U`) or risks (`R`) in the plan were left open when it was approved and later
-  caused a round. It tags the person who started the work on them. Only items that actually
-  caused a round count.
-- The same correction made more than once: suggest the line to add to the repository's
-  `CLAUDE.md` or `AGENTS.md`.
-- Rounds that were not the issue's fault: a reviewer asking for something new (that is a new
-  issue), reviewers contradicting each other, flaky or broken checks, or the agent missing
-  something that was clearly written. The last one is feedback for this repository's prompts.
-- What the extra rounds cost.
-
-It is blameless and specific: every point names the round, the plan id or the comment it is about,
-and a point with nothing concrete behind it is left out. Like the hint, it uses plain everyday
-English and has a hard limit on length.
+- Run it in shadow mode in a few repositories, read the retros, then turn posting on.
+- Check `min_rounds` and `min_change_requests` against past pull requests. On officio, #1194 had 2
+  rounds but 3 change requests, so the change request limit may fire too often.
+- Count the causes it finds in the monthly report, so patterns across pull requests show up.
+- Once a pull request records which plan version it was built from, use that instead of working it
+  out from comment dates.
 
 ## For v12
 
