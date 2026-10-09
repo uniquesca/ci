@@ -108,10 +108,32 @@ Decide who sees the numbers for each person before it goes out.
 
 ### Learn from issues that needed a lot of rounds
 
-When a harness pull request merges after many rounds, compare its issue with what the review
-rounds changed. Then suggest what the issue should have said, so that next time one round is
-enough. Post it on the issue or in a team summary, not on the merged pull request, where nobody
-reads it.
+When a harness pull request is merged after too many rounds, look at why, and post one short
+comment on the pull request that tags the person who opened the issue. Too many rounds means any of
+these (to be checked against past pull requests):
+
+- 3 or more rounds after the first push.
+- 2 or more change requests from people.
+- The loop hit its round limit, or somebody had to restart it with `/ai-do`.
+
+The comment answers:
+
+- What would have stopped the extra rounds.
+- How the issue author could have approached the issue better: the goal, how to check it is done,
+  an example to follow, or splitting it. Advice on the approach, not a rewritten issue.
+- Which unknowns (`U`) or risks (`R`) in the plan were left open when it was approved and later
+  caused a round. It tags the person who started the work on them. Only items that actually
+  caused a round count.
+- The same correction made more than once: suggest the line to add to the repository's
+  `CLAUDE.md` or `AGENTS.md`.
+- Rounds that were not the issue's fault: a reviewer asking for something new (that is a new
+  issue), reviewers contradicting each other, flaky or broken checks, or the agent missing
+  something that was clearly written. The last one is feedback for this repository's prompts.
+- What the extra rounds cost.
+
+It is blameless and specific: every point names the round, the plan id or the comment it is about,
+and a point with nothing concrete behind it is left out. Like the hint, it uses plain everyday
+English and has a hard limit on length.
 
 ## For v12
 

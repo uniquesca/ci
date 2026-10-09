@@ -60,6 +60,11 @@ on:
         required: false
         default: true
         type: boolean
+      max_reason_chars:
+        description: 'Longest reason the agent may give. A longer one is cut at the last whole sentence that fits'
+        required: false
+        default: 300
+        type: number
       model:
         description: 'Model that judges whether the change suited the harness'
         required: false
@@ -203,6 +208,7 @@ jobs:
           {
             echo "number=$number"
             echo "head_sha=$(jq -r .head.sha <<<"$pr")"
+            echo "author=$(jq -r .user.login <<<"$pr")"
           } >> "$GITHUB_OUTPUT"
           jq '{title, body, author: .user.login, base: .base.ref, head: .head.ref,
                additions, deletions, changed_files}' <<<"$pr" > .ai-harness-hint/pull-request.json
@@ -232,6 +238,11 @@ jobs:
           fi
           rm .ai-harness-hint/full.patch
           gh pr diff "$NUMBER" --name-only > .ai-harness-hint/changed-files.txt || true
+
+      - name: Read the style guide
+        id: style
+        if: ${{ env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
 
       - name: Judge the change
         id: agent
@@ -274,8 +285,12 @@ jobs:
 
             {"candidate": true or false, "reason": "..."}
 
-            `reason` is one or two plain sentences to the author about this change: what about it
-            made it a fit or not. No praise, no restating the evidence, no advice.
+            `reason` is one or two short sentences to the author about this change: what about it
+            made it a fit or not. At most ${{ inputs.max_reason_chars }} characters. Use plain,
+            everyday words a person new to the team would follow. No praise, no restating the
+            evidence, no advice.
+
+            ${{ steps.style.outputs.text }}
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
@@ -287,6 +302,8 @@ jobs:
         env:
           NUMBER: ${{ steps.evidence.outputs.number }}
           DOCS_URL: ${{ inputs.docs_url }}
+          AUTHOR: ${{ steps.evidence.outputs.author }}
+          MAX_CHARS: ${{ inputs.max_reason_chars }}
           SHADOW: ${{ inputs.shadow }}
         run: |
           verdict=.ai-harness-hint/verdict.json
@@ -295,6 +312,16 @@ jobs:
             exit 1
           fi
           reason=$(jq -r .reason "$verdict")
+          # The comment is for a person to read in a few seconds, so the limit holds whatever the
+          # agent wrote. Cut back to the last sentence that fits, or to the last word if none does.
+          if (( ${#reason} > MAX_CHARS )); then
+            cut=${reason:0:MAX_CHARS}
+            if [[ "$cut" == *[.!?]\ * ]]; then
+              reason=$(sed -E 's/^(.*[.!?]) .*$/\1/' <<<"$cut")
+            else
+              reason="${cut% *}…"
+            fi
+          fi
 
           if [[ $(jq -r .candidate "$verdict") != 'true' ]]; then
             echo "#$NUMBER is not a fit: $reason" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -303,7 +330,7 @@ jobs:
 
           {
             echo "$HINT_MARKER"
-            echo '**This pull request looks like a good fit for the AI harness.**'
+            echo "@$AUTHOR, this pull request looks like a good fit for the AI harness."
             echo
             cat .ai-harness-hint/evidence.md
             echo
