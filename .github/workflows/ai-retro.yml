@@ -1,0 +1,352 @@
+name: AI Retro
+
+on:
+  workflow_call:
+    inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
+        required: false
+        default: ''
+        type: string
+      branch_prefix:
+        description: 'Prefix of the branches the implementing workflow pushes to. Only a pull request on one is looked at, and the issue number is read from the rest of the branch name. Keep it the same as the implementing workflow branch_prefix'
+        required: false
+        default: 'ai-feature/'
+        type: string
+      min_rounds:
+        description: 'How many rounds after the first push make a retro'
+        required: false
+        default: 3
+        type: number
+      min_change_requests:
+        description: 'How many change requests from people make a retro, whatever the number of rounds'
+        required: false
+        default: 2
+        type: number
+      max_points:
+        description: 'Most points the comment may make'
+        required: false
+        default: 5
+        type: number
+      max_point_chars:
+        description: 'Longest a single point may be. A longer one is cut at the last whole sentence that fits'
+        required: false
+        default: 240
+        type: number
+      shadow:
+        description: 'Write the retro to the job summary instead of posting it. For reading what it says on real pull requests before anybody sees a comment'
+        required: false
+        default: true
+        type: boolean
+      model:
+        description: 'Model that works out why the pull request took so many rounds'
+        required: false
+        default: 'claude-sonnet-5-5'
+        type: string
+      effort:
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to'
+        required: false
+        default: 'medium'
+        type: string
+      max_turns:
+        description: 'How many turns the agent may spend reading the history before it has to answer'
+        required: false
+        default: 30
+        type: number
+      max_diff_bytes:
+        description: 'Longest diff to stage, for the change as first opened and for what the rounds added. A bigger one is truncated, and the agent is told so'
+        required: false
+        default: 100000
+        type: number
+      timeout_minutes:
+        description: 'How long the whole job may run'
+        required: false
+        default: 20
+        type: number
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  retro:
+    name: Look back at a pull request that took many rounds
+    if: >-
+      ${{ github.event_name == 'pull_request'
+          && github.event.action == 'closed'
+          && github.event.pull_request.merged
+          && startsWith(github.event.pull_request.head.ref, inputs.branch_prefix) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      # Posting the retro. `gh pr comment` goes through GraphQL, which asks for the pull request
+      # scope rather than the issue one
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.pull_request.number }}
+      RETRO_MARKER: '<!-- ai-retro -->'
+      # The implementing workflow's own markers, read back here. Change them there and here together
+      ROUND_MARKER: '<!-- ai-implement-round -->'
+      IMPLEMENT_MARKER: '<!-- ai-implement -->'
+      REVIEW_MARKER: '<!-- ai-review -->'
+      # `Count the rounds` sets this to false when the pull request went smoothly enough, and every
+      # step after it must test `env.PROCEED == 'true'` in its `if`.
+      PROCEED: 'true'
+    steps:
+      - name: Count the rounds
+        id: count
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BRANCH_PREFIX: ${{ inputs.branch_prefix }}
+          MIN_ROUNDS: ${{ inputs.min_rounds }}
+          MIN_CHANGE_REQUESTS: ${{ inputs.min_change_requests }}
+        run: |
+          stand_down() {
+            echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo 'PROCEED=false' >> "$GITHUB_ENV"
+            exit 0
+          }
+
+          issue="${HEAD_REF##*issue-}"
+          [[ "$HEAD_REF" == "$BRANCH_PREFIX"* && "$issue" =~ ^[0-9]+$ ]] || stand_down "$HEAD_REF names no issue."
+
+          mkdir -p .ai-retro
+          gh api --paginate "repos/$GH_REPO/issues/$NUMBER/comments?per_page=100" \
+            | jq -s 'add // [] | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, body})' > .ai-retro/pr-comments.json
+          gh api --paginate "repos/$GH_REPO/pulls/$NUMBER/reviews?per_page=100" \
+            | jq -s 'add // [] | map({author: .user.login, is_bot: (.user.type == "Bot"), state, submitted_at, commit_id, body})' > .ai-retro/reviews.json
+          gh api --paginate "repos/$GH_REPO/pulls/$NUMBER/comments?per_page=100" \
+            | jq -s 'add // [] | map({author: .user.login, path, line, in_reply_to_id, id, created_at, body})' > .ai-retro/review-comments.json
+          gh api --paginate "repos/$GH_REPO/issues/$issue/comments?per_page=100" \
+            | jq -s 'add // [] | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, body})' > .ai-retro/issue-comments.json
+
+          if jq -e --arg m "$RETRO_MARKER" 'any(.[]; .body | startswith($m))' .ai-retro/pr-comments.json >/dev/null; then
+            stand_down "#$NUMBER already has a retro."
+          fi
+
+          # Line 2 of a round comment is its metadata, as the implementing workflow writes it
+          jq --arg m "$ROUND_MARKER" '[.[] | select(.is_bot and (.body | startswith($m)))
+              | (.body | split("\n")[1] | ltrimstr("<!-- ") | rtrimstr(" -->") | fromjson? // {})
+                + {body}]' .ai-retro/pr-comments.json > .ai-retro/rounds.json
+          rounds=$(jq length .ai-retro/rounds.json)
+
+          # People's change requests: a review carrying the reviewing workflow's marker is the
+          # agent's, whichever login submitted it
+          change_requests=$(jq --arg m "$REVIEW_MARKER" '[.[] | select(.state == "CHANGES_REQUESTED"
+              and (.body // "" | startswith($m) | not))] | length' .ai-retro/reviews.json)
+          limit_hit=$(jq 'any(.[]; .body | startswith("Stopping here: the last"))' .ai-retro/pr-comments.json)
+          restarts=$(jq '[.[] | select(.trigger == "pr-command")] | length' .ai-retro/rounds.json)
+
+          echo "#$NUMBER: $rounds rounds, $change_requests change requests from people, limit hit: $limit_hit, restarted $restarts times." | tee -a "$GITHUB_STEP_SUMMARY"
+          if (( rounds < MIN_ROUNDS && change_requests < MIN_CHANGE_REQUESTS && restarts == 0 )) && [[ "$limit_hit" != 'true' ]]; then
+            stand_down 'Not enough back and forth for a retro.'
+          fi
+
+          # Who asked for the work is on the hand-off comment the implementing workflow left on
+          # the issue; the first one is the start, a later one a restart
+          starter=$(jq -r --arg m "$IMPLEMENT_MARKER" '[.[] | select(.is_bot and (.body | startswith($m)))][0].body // ""' .ai-retro/issue-comments.json \
+            | grep -oE 'Requested by @[A-Za-z0-9-]+' | head -n 1 | sed 's/Requested by @//' || true)
+
+          # Everything the AI spent on this issue: planning, implementing and reviewing
+          cost=$( { jq -r '.[].body' .ai-retro/issue-comments.json .ai-retro/pr-comments.json; jq -r '.[].body // ""' .ai-retro/reviews.json; } \
+            | grep -oE '<!-- ai-cost \{.*\} -->' | sed -E 's/^<!-- ai-cost //; s/ -->$//' \
+            | jq -s '[.[].cost_usd // 0] | add // 0 | . * 100 | round / 100' )
+
+          {
+            echo "issue=$issue"
+            echo "issue_author=$(gh api "repos/$GH_REPO/issues/$issue" --jq .user.login)"
+            echo "starter=$starter"
+            echo "rounds=$rounds"
+            echo "change_requests=$change_requests"
+            echo "cost=$cost"
+            echo "opened_sha=$(grep -oE '<!-- ai-implement-opened [0-9a-f]{40} -->' <<<"$(gh api "repos/$GH_REPO/pulls/$NUMBER" --jq .body)" | grep -oE '[0-9a-f]{40}' || true)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out the merged change
+        if: ${{ env.PROCEED == 'true' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+          # What `Count the rounds` staged lives in the workspace the checkout would otherwise wipe
+          clean: false
+
+      - name: Stage the issue and its plan
+        id: stage_issue
+        if: ${{ env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-stage-issue@v11
+        with:
+          issue: ${{ steps.count.outputs.issue }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          directory: .ai-retro/issue
+
+      - name: Stage the diffs
+        id: diff
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OPENED_SHA: ${{ steps.count.outputs.opened_sha }}
+          MAX_BYTES: ${{ inputs.max_diff_bytes }}
+        run: |
+          stage() {
+            gh api -H 'Accept: application/vnd.github.diff' "repos/$GH_REPO/compare/$1...$2" > .ai-retro/full.patch || true
+            head -c "$MAX_BYTES" .ai-retro/full.patch > ".ai-retro/$3"
+            if (( $(wc -c < .ai-retro/full.patch) > MAX_BYTES )); then echo "$3 was truncated." >> .ai-retro/truncated.txt; fi
+            rm .ai-retro/full.patch
+          }
+          stage "$BASE_SHA" "$HEAD_SHA" final.patch
+          # What the rounds changed after the pull request was opened. Missing on a pull request
+          # older than the opened-commit line
+          if [[ -n "$OPENED_SHA" ]]; then
+            stage "$OPENED_SHA" "$HEAD_SHA" rounds.patch
+          fi
+
+      - name: Read the style guide
+        id: style
+        if: ${{ env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
+
+      # Read-only, and nothing it writes leaves the runner except through the step after it, which
+      # caps how much of it reaches the pull request
+      - name: Look back at the rounds
+        id: agent
+        if: ${{ env.PROCEED == 'true' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Pull request #${{ github.event.pull_request.number }} was written by an AI agent from
+            issue #${{ steps.count.outputs.issue }} and its plan. It took
+            ${{ steps.count.outputs.rounds }} rounds of fixes and
+            ${{ steps.count.outputs.change_requests }} change requests from people before it was
+            merged. Work out what caused the extra rounds, so the next issue needs fewer.
+
+            Read:
+
+            - `.ai-retro/issue/issue.json` and `.ai-retro/issue/comments.json` - the issue and its
+              conversation. `.ai-retro/issue/plan.json` is the latest plan; ids are `S` step, `R`
+              risk, `U` unknown or assumption, `QA` acceptance check. Earlier plan versions are in
+              the comments starting `<!-- ai-plan -->`.
+            - `.ai-retro/rounds.json` - each round: its number, what started it (`review`,
+              `checks`, `pr-command` for a restart) and the agent's report on it.
+            - `.ai-retro/reviews.json` and `.ai-retro/review-comments.json` - the reviews and
+              their inline threads. A review starting `<!-- ai-review -->` is from the reviewing
+              agent; the rest are people.
+            - `.ai-retro/pr-comments.json` - the pull request conversation.
+            - `.ai-retro/rounds.patch` - what the rounds changed after the pull request was
+              opened, when it exists; `.ai-retro/final.patch` - the whole change.
+              `.ai-retro/truncated.txt`, when it exists, says which was cut short.
+
+            For every round after the first, find its cause. Look for:
+
+            - What in the issue would have prevented it. Judge the author's approach, not the
+              wording: was the goal stated, or only a solution? Could a reviewer tell when it was
+              done? Was there an existing example to follow? Should it have been split?
+            - A `U` or `R` in the plan that was still open when work started and later caused a
+              round. Only count one that actually caused a round.
+            - The same correction asked for more than once. Suggest the one line to add to the
+              repository's `CLAUDE.md` or `AGENTS.md` so it is not asked again.
+            - Causes that were not the issue's: a reviewer asking for something new, reviewers
+              contradicting each other, flaky or broken checks, or the agent missing something
+              that was clearly written.
+
+            Write `.ai-retro/retro.json` and nothing else:
+
+            {"points": [{"who": "issue_author" | "starter" | "none", "ref": "...", "text": "..."}]}
+
+            - At most ${{ inputs.max_points }} points, most useful first. Fewer is better than
+              weak ones, and no points is a fine answer.
+            - `ref` is what the point is about: a round ("Round 3"), a plan id ("U2") or a
+              reviewer and what they asked. A point you cannot tie to one is left out.
+            - `text` is at most ${{ inputs.max_point_chars }} characters: what happened and what
+              would have avoided it, in plain everyday words. Blameless - about the work, not
+              the person.
+            - `who` is who can act on it: `issue_author` for the issue, `starter` for a plan item
+              left open when work started, `none` for anything else.
+
+            ${{ steps.style.outputs.text }}
+          claude_args: |
+            --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,Write"
+
+      - name: Post the retro
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          ISSUE: ${{ steps.count.outputs.issue }}
+          ISSUE_AUTHOR: ${{ steps.count.outputs.issue_author }}
+          STARTER: ${{ steps.count.outputs.starter }}
+          ROUNDS: ${{ steps.count.outputs.rounds }}
+          COST: ${{ steps.count.outputs.cost }}
+          MAX_POINTS: ${{ inputs.max_points }}
+          MAX_CHARS: ${{ inputs.max_point_chars }}
+          SHADOW: ${{ inputs.shadow }}
+        run: |
+          retro=.ai-retro/retro.json
+          if ! jq -e '.points | type == "array"' "$retro" >/dev/null 2>&1; then
+            echo '::error title=No retro::The agent did not write a valid .ai-retro/retro.json'
+            exit 1
+          fi
+
+          # The comment is for a person to read in under a minute, so the limits hold whatever the
+          # agent wrote
+          cut() {
+            local text=$1
+            (( ${#text} > MAX_CHARS )) || { echo "$text"; return; }
+            text=${text:0:MAX_CHARS}
+            if [[ "$text" == *[.!?]\ * ]]; then
+              sed -E 's/^(.*[.!?]) .*$/\1/' <<<"$text"
+            else
+              echo "${text% *}…"
+            fi
+          }
+
+          points=$(jq -c --argjson n "$MAX_POINTS" '[.points[] | select((.ref // "") != "" and (.text // "") != "")][:$n][]' "$retro")
+          if [[ -z "$points" ]]; then
+            echo "#$NUMBER: nothing concrete to say." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "$RETRO_MARKER"
+            echo "@$ISSUE_AUTHOR, this pull request took $ROUNDS rounds after it was opened, and the AI work on #$ISSUE cost about \$$COST. What would have saved rounds:"
+            echo
+            while IFS= read -r point; do
+              who=$(jq -r .who <<<"$point")
+              mention=''
+              if [[ "$who" == 'starter' && -n "$STARTER" && "$STARTER" != "$ISSUE_AUTHOR" ]]; then
+                mention=" @$STARTER"
+              fi
+              echo "- **$(jq -r .ref <<<"$point")**:$mention $(cut "$(jq -r .text <<<"$point")")"
+            done <<<"$points"
+          } > .ai-retro/comment.md
+
+          if [[ "$SHADOW" == 'true' ]]; then
+            { echo "Shadow mode, not posted to #$NUMBER:"; echo; cat .ai-retro/comment.md; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr comment "$NUMBER" --body-file .ai-retro/comment.md
+          fi

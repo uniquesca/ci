@@ -108,10 +108,16 @@ Decide who sees the numbers for each person before it goes out.
 
 ### Learn from issues that needed a lot of rounds
 
-When a harness pull request merges after many rounds, compare its issue with what the review
-rounds changed. Then suggest what the issue should have said, so that next time one round is
-enough. Post it on the issue or in a team summary, not on the merged pull request, where nobody
-reads it.
+`ai-retro.yml` comments on a merged harness pull request that took too many rounds: what would have
+saved them, how the issue could have been approached better, and plan questions left open when work
+started. It tags the issue author. Still to do:
+
+- Run it in shadow mode in a few repositories, read the retros, then turn posting on.
+- Check `min_rounds` and `min_change_requests` against past pull requests. On officio, #1194 had 2
+  rounds but 3 change requests, so the change request limit may fire too often.
+- Count the causes it finds in the monthly report, so patterns across pull requests show up.
+- Once a pull request records which plan version it was built from, use that instead of working it
+  out from comment dates.
 
 ## For v12
 

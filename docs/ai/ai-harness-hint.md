@@ -4,7 +4,8 @@ Part of [AI assisted development](../ai.md).
 
 Comments on a pull request somebody wrote by hand when it went back and forth in a way the harness
 would have handled on its own: QA failed on its first run, or Copilot review took several rounds of
-fixes. An agent first checks that the change suited the harness, and the comment says why.
+fixes. An agent first checks that the change suited the harness, and the comment tags the author
+and says why.
 
 ## Integrating a repository
 
@@ -60,6 +61,7 @@ None.
 | `skip_label` | string | `no-ai-hint` | A pull request carrying this label gets no hint |
 | `docs_url` | string | `https://github.com/uniquesca/ci/blob/main/docs/ai.md` | Where the hint sends somebody to get started |
 | `shadow` | boolean | `true` | Write the hint to the job summary instead of posting it |
+| `max_reason_chars` | number | `300` | Longest reason the agent may give. A longer one is cut at the last whole sentence that fits |
 | `model` | string | `claude-sonnet-5-5` | Model that judges whether the change suited the harness |
 | `effort` | string | `low` | How much reasoning the agent spends. Empty leaves the CLI default |
 | `max_turns` | number | `15` | How many turns the agent may spend before it has to decide |
