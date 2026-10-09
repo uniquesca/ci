@@ -64,12 +64,13 @@ jobs:
           fi
 
   # The three PROD images share nothing but their base, so they are built at once rather than one
-  # after another. Only DEV has to wait, and only because it is built FROM what this job pushes
+  # after another. Each architecture is built natively on its own runner and pushed by digest
+  # only; `prod-merge` puts the two under the image's tags
   prod:
-    name: PROD ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
+    name: PROD ${{ matrix.variant }} (PHP ${{ matrix.php-version }}, ${{ matrix.arch }})
     needs: [ changes ]
     if: needs.changes.outputs.build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     # What lets the run's own token push to ghcr.io. A package these images were first pushed to
     # with a personal access token is linked to no repository, so `GITHUB_TOKEN` is refused until
     # each one grants this repository the Write role under Package settings, Manage Actions access
@@ -82,11 +83,15 @@ jobs:
         # Quoted, because YAML reads 5.6 as a number and the value is used as an image tag
         php-version: [ '5.6', '8.1', '8.2', '8.3', '8.4' ]
         variant: [ apachemod, fpm, apachefpm ]
+        arch: [ amd64, arm64 ]
         exclude:
           # Apache + FPM was introduced long after 5.6 went end of life, and there is no image
           # of it for that version to build on
           - php-version: '5.6'
             variant: apachefpm
+          # 5.6 is being retired. `prod-merge` and `dev-merge` expect one architecture for it
+          - php-version: '5.6'
+            arch: arm64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -98,10 +103,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # arm64 is built under emulation on this amd64 runner
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       # The default `docker` driver cannot export a build cache, so without this the layer cache
       # below is silently ignored
       - name: Set up Buildx
@@ -112,20 +113,18 @@ jobs:
         env:
           PHP_VERSION: ${{ matrix.php-version }}
           VARIANT: ${{ matrix.variant }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -u
 
           # 5.6 predates every base image the others are built on, and the newest Node it can be
           # asked to carry
-          # 5.6 is amd64 only: it is being retired, and is not worth an arm64 build
           if [[ "$PHP_VERSION" == '5.6' ]]; then
             suite='stretch'
             node_version='16'
-            platforms='linux/amd64'
           else
             suite='trixie'
             node_version='24'
-            platforms='linux/amd64,linux/arm64'
           fi
 
           case "$VARIANT" in
@@ -152,21 +151,22 @@ jobs:
           {
             echo "base=$base"
             echo "tags=$tags"
+            echo "repository=ghcr.io/uniquesca/php-${VARIANT}-prod"
             echo "node_version=$node_version"
-            echo "platforms=$platforms"
             # Kept in the image's own package, which already grants this repository the Write role
-            # the images are pushed with. One cache per PHP version: they share a package, and a
-            # single ref would have each build overwrite the last one's cache
-            echo "cache=ghcr.io/uniquesca/php-${VARIANT}-prod:buildcache-${PHP_VERSION}"
+            # the images are pushed with. One cache per PHP version and architecture: they share a
+            # package, and a single ref would have each build overwrite the last one's cache
+            echo "cache=ghcr.io/uniquesca/php-${VARIANT}-prod:buildcache-${PHP_VERSION}-${ARCH}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
           file: docker/php-${{ matrix.variant }}-prod/Dockerfile
-          platforms: ${{ steps.image.outputs.platforms }}
-          push: true
-          tags: ${{ steps.image.outputs.tags }}
+          platforms: linux/${{ matrix.arch }}
+          # Untagged: a tag pushed from here would carry one architecture until `prod-merge` ran
+          outputs: type=image,name=${{ steps.image.outputs.repository }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
             PHP_BASE_IMAGE=${{ steps.image.outputs.base }}
@@ -176,17 +176,37 @@ jobs:
           # too, not just the ones in the final image
           cache-from: type=registry,ref=${{ steps.image.outputs.cache }}
           cache-to: type=registry,ref=${{ steps.image.outputs.cache }},mode=max
-          # Buildx would otherwise attach a provenance attestation to every platform, listed in
-          # the image as an extra `unknown/unknown` entry that nothing here reads
+          # Buildx would otherwise attach a provenance attestation, listed in the image as an
+          # extra `unknown/unknown` platform that nothing here reads
           provenance: false
 
-  # Every DEV image is its PROD image plus Xdebug, pulled by tag - so this waits for the whole
-  # PROD matrix. It is a single layer over an image that was just built, so there is no cache
-  # here worth keeping: a fresh PROD digest invalidates it every time
-  dev:
-    name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
+      - name: Hand the digest to the merge
+        env:
+          REPOSITORY: ${{ steps.image.outputs.repository }}
+          TAGS: ${{ steps.image.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -u
+          mkdir image
+          echo "$REPOSITORY" > image/repository
+          echo "$TAGS" > image/tags
+          echo "$DIGEST" > "image/digest-$ARCH"
+
+      - name: Upload the digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: prod-${{ matrix.variant }}-${{ matrix.php-version }}-${{ matrix.arch }}
+          path: image/
+          retention-days: 1
+
+  # Publishes each image under its tags once all its architectures are pushed. `!cancelled()` so
+  # one failed build does not hold back every other image; an image missing an architecture
+  # fails here instead of being published without it
+  prod-merge:
+    name: PROD ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
     needs: [ changes, prod ]
-    if: needs.changes.outputs.build == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.build == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -200,6 +220,73 @@ jobs:
           - php-version: '5.6'
             variant: apachefpm
     steps:
+      - name: Download the digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: prod-${{ matrix.variant }}-${{ matrix.php-version }}-*
+          path: image
+          merge-multiple: true
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish under the image's tags
+        env:
+          PHP_VERSION: ${{ matrix.php-version }}
+        run: &merge |
+          set -u
+          shopt -s nullglob
+
+          # Mirrors the `arch` excludes in the build job's matrix
+          expected=2
+          [[ "$PHP_VERSION" == '5.6' ]] && expected=1
+
+          digests=( image/digest-* )
+          if (( ${#digests[@]} != expected )); then
+            echo "::error::Only ${#digests[@]} of $expected architectures were built - not publishing"
+            exit 1
+          fi
+
+          repository="$(< image/repository)"
+          args=()
+          IFS=',' read -ra tags < image/tags
+          for tag in "${tags[@]}"; do
+            args+=( --tag "$tag" )
+          done
+          for file in "${digests[@]}"; do
+            args+=( "${repository}@$(< "$file")" )
+          done
+
+          docker buildx imagetools create "${args[@]}"
+
+  # Every DEV image is its PROD image plus Xdebug, pulled by tag - so this waits for every PROD
+  # image to be published, and each runner pulls the architecture it runs on. It is a single layer
+  # over an image that was just built, so there is no cache here worth keeping: a fresh PROD digest
+  # invalidates it every time
+  dev:
+    name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }}, ${{ matrix.arch }})
+    needs: [ changes, prod-merge ]
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: [ '5.6', '8.1', '8.2', '8.3', '8.4' ]
+        variant: [ apachemod, fpm, apachefpm ]
+        arch: [ amd64, arm64 ]
+        exclude:
+          - php-version: '5.6'
+            variant: apachefpm
+          - php-version: '5.6'
+            arch: arm64
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -210,10 +297,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      # The default `docker` driver builds for one platform only
+      # The default `docker` driver cannot push by digest
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -225,15 +309,8 @@ jobs:
         run: |
           set -u
 
-          # Must match the platforms its PROD image was built for
-          if [[ "$PHP_VERSION" == '5.6' ]]; then
-            platforms='linux/amd64'
-          else
-            platforms='linux/amd64,linux/arm64'
-          fi
-
           # No `PHP_BASE_IMAGE`: each DEV Dockerfile defaults it to its own PROD image at this
-          # version, which is exactly what the job above pushed
+          # version, which is exactly what `prod-merge` published
           case "$VARIANT" in
             apachemod)
               tags="ghcr.io/uniquesca/php-apachemod-dev:${PHP_VERSION},ghcr.io/uniquesca/php-dev:${PHP_VERSION}"
@@ -252,17 +329,72 @@ jobs:
 
           {
             echo "tags=$tags"
-            echo "platforms=$platforms"
+            echo "repository=ghcr.io/uniquesca/php-${VARIANT}-dev"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v7
         with:
           file: docker/php-${{ matrix.variant }}-dev/Dockerfile
-          platforms: ${{ steps.image.outputs.platforms }}
-          push: true
-          tags: ${{ steps.image.outputs.tags }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.image.outputs.repository }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             PHP_VERSION=${{ matrix.php-version }}
-          # See the PROD job
           provenance: false
+
+      - name: Hand the digest to the merge
+        env:
+          REPOSITORY: ${{ steps.image.outputs.repository }}
+          TAGS: ${{ steps.image.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -u
+          mkdir image
+          echo "$REPOSITORY" > image/repository
+          echo "$TAGS" > image/tags
+          echo "$DIGEST" > "image/digest-$ARCH"
+
+      - name: Upload the digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: dev-${{ matrix.variant }}-${{ matrix.php-version }}-${{ matrix.arch }}
+          path: image/
+          retention-days: 1
+
+  dev-merge:
+    name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
+    needs: [ changes, dev ]
+    if: ${{ !cancelled() && needs.changes.outputs.build == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: [ '5.6', '8.1', '8.2', '8.3', '8.4' ]
+        variant: [ apachemod, fpm, apachefpm ]
+        exclude:
+          - php-version: '5.6'
+            variant: apachefpm
+    steps:
+      - name: Download the digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dev-${{ matrix.variant }}-${{ matrix.php-version }}-*
+          path: image
+          merge-multiple: true
+
+      - name: Log in to the container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish under the image's tags
+        env:
+          PHP_VERSION: ${{ matrix.php-version }}
+        run: *merge
