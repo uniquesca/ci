@@ -1473,3 +1473,6 @@
 
 * Update: adding arm64 support to the Docker images (#34) (c6ef346 by George Shestayev)
 * Update: docker images are switched to use supervisord to run multiple things and keep them alive (2398bb2 by George Shestayev)
+
+## v11.25.1
+
