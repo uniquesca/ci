@@ -1463,3 +1463,8 @@
 ## v11.23.0
 
 * New: introduced ai-harness-hint workflow to analyze PRs and mark good candidates for AI harness (56937b8 by George Shestayev)
+
+## v11.24.0
+
+* New: ai-retro workflow explaining why a merged AI pull request took many rounds (f472e97 by George Shestayev)
+* Update: ai-harness-hint tags the author and limits its length (0982793 by George Shestayev)
