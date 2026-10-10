@@ -33,8 +33,8 @@ application running in Docker.
 | `db_dump_path` | no | | Dump to write. Ignored unless `update_db` |
 | `generate_coverage_badge` | no | `false` | Run `./task.sh test` and commit a coverage badge |
 | `coverage_badge_file` | no | `coverage.svg` | Badge path. Ignored unless `generate_coverage_badge` |
-| `generate_coverage_report` | no | `false` | Run `./task.sh test` and commit an HTML coverage report |
-| `coverage_report_dir` | no | `coverage-report` | Report directory. Ignored unless `generate_coverage_report` |
+| `generate_coverage_report` | no | `false` | Run `./task.sh test` and commit a Markdown coverage report |
+| `coverage_report_file` | no | `docs/coverage.md` | Report path. Ignored unless `generate_coverage_report` |
 
 ## Outputs
 
@@ -49,7 +49,7 @@ This action produces no outputs - it commits to the current branch and pushes.
    repository has no `composer.json`.
 3. Writes the changelog section with [`update-changelog`](update-changelog.md).
 4. Runs `./task.sh test`, if `generate_coverage_badge` or `generate_coverage_report`, and generates
-   the badge from what it reports.
+   the badge and the report with [`coverage-report`](coverage-report.md) from what it reports.
 5. Sets `version` in `package.json` with `npm pkg set`. Skipped when there is no `package.json`.
 6. Stages whatever the above touched, runs `git clean -fd`, and commits as
    `CI: automatic commit for the new release: #<sha> [skip ci]` - then pushes. Nothing is committed
@@ -66,11 +66,11 @@ This action produces no outputs - it commits to the current branch and pushes.
   `generate_coverage_badge` or `generate_coverage_report` - the dump is taken over the network from
   `127.0.0.1:3306` as `root`/`root`, and the badge and the report come from `./task.sh test`. Use
   [`docker-spin-up`](docker-spin-up.md) first.
-* A `task.sh test` that **honours `COVERAGE_HTML_DIR`** if you are using
-  `generate_coverage_report`. The tests run in the container, so the action only sets the variable
-  to `coverage_report_dir`; forwarding it in and passing PHPUnit `--coverage-html` is the task
-  script's job, and a script that ignores it writes no report. The directory is emptied before the
-  run and staged with a plain `git add`, so one in `.gitignore` fails the commit step.
+* A `task.sh test` that **passes its arguments on to PHPUnit** if you are using
+  `generate_coverage_badge` or `generate_coverage_report`. It is given `--coverage-clover clover.xml`,
+  which has to land in the workspace, so the container's working directory has to be the workspace
+  mounted in. The report is staged with a plain `git add`, so a path in `.gitignore` fails the
+  commit step.
 
 ### What it does not do
 

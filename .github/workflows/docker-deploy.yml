@@ -409,17 +409,16 @@ jobs:
             if [ -f "${{ inputs.composer_working_directory }}/composer.json" ]; then
               echo "Installing composer dependencies"
 
-              # Uniques packages come from satis.unqs.ca, which authenticates with HTTP basic and
-              # the literal username `token`. Checked before the install because an unchanged
-              # composer.lock installs from `vendor/` without ever reaching satis - a missing
-              # token surfaces only on the deployment that does move a private package
+              # Uniques packages come from satis.unqs.ca, which authenticates with a bearer token.
+              # Checked before the install because an unchanged composer.lock installs from
+              # `vendor/` without ever reaching satis - a missing token surfaces only on the deployment that does move a private package
               SATIS_TOKEN="${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}"
               if [ -z "$SATIS_TOKEN" ]; then
                 echo "❌ SATIS_COMPOSER_ACCESS_TOKEN is empty - Composer cannot authenticate against satis.unqs.ca"
                 ( exit 1 )
               fi
               # Tracing off in a subshell: `set -x` prints the token as an expanded argument
-              ( set +x; ./task.sh composer config --auth http-basic.satis.unqs.ca token "$SATIS_TOKEN" )
+              ( set +x; ./task.sh composer config --auth bearer.satis.unqs.ca "$SATIS_TOKEN" )
               ./task.sh composer install
             fi
             rm -f ${{ inputs.composer_working_directory }}/auth.json

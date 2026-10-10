@@ -40,14 +40,14 @@ inputs:
     default: 'coverage.svg'
     type: string
   generate_coverage_report:
-    description: 'Whether an HTML unit test coverage report needs to be generated and committed'
+    description: 'Whether a Markdown unit test coverage report needs to be generated and committed'
     required: false
     default: false
     type: boolean
-  coverage_report_dir:
-    description: 'Path to the directory for the coverage report - ignored if `generate_coverage_report` is not set to `true`'
+  coverage_report_file:
+    description: 'Path to the coverage report file - ignored if `generate_coverage_report` is not set to `true`'
     required: false
-    default: 'docs/coverage-report'
+    default: 'docs/coverage.md'
     type: string
 
 runs:
@@ -86,21 +86,16 @@ runs:
     - name: Run tests
       if: inputs.generate_coverage_badge == 'true' || inputs.generate_coverage_report == 'true'
       shell: bash
-      # The tests run inside the container, so the report directory is handed to `task.sh` as an
-      # environment variable for it to forward to PHPUnit as `--coverage-html`. A repository whose
-      # task script ignores `COVERAGE_HTML_DIR` gets the tests and no report
-      env:
-        COVERAGE_HTML_DIR: ${{ (inputs.generate_coverage_report == 'true' && inputs.coverage_report_dir) || '' }}
-      run: |
-        coverage_args=()
-        if [[ -n "$COVERAGE_HTML_DIR" ]]; then
-          # PHPUnit writes into the directory without clearing it first, so a class that has been
-          # deleted keeps the page it had at the last release until the directory goes
-          rm -rf "$COVERAGE_HTML_DIR"
-          coverage_args=(--coverage-html "$COVERAGE_HTML_DIR")
-        fi
+      # A path given here overrides the one in `phpunit.xml`. It is relative to the container's
+      # working directory, which is the workspace mounted in. `git clean` in the commit step
+      # removes it
+      run: ./task.sh test --coverage-clover clover.xml
 
-        ./task.sh test "${coverage_args[@]}"
+    - name: Generate coverage report
+      if: inputs.generate_coverage_report == 'true'
+      uses: uniquesca/ci/coverage-report@v11
+      with:
+        report_file: ${{ inputs.coverage_report_file }}
 
     - name: Generate coverage badge
       if: inputs.generate_coverage_badge == 'true'
@@ -143,7 +138,7 @@ runs:
         fi
         
         if ${{ inputs.generate_coverage_report == 'true' }}; then
-          git add -A ${{ inputs.coverage_report_dir }}
+          git add ${{ inputs.coverage_report_file }}
         fi
         
         git clean -fd

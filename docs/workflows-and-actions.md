@@ -113,6 +113,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | [`update-changelog`](actions/update-changelog.md) | Generates a changelog section for a version out of the git log |
 | [`github-release`](actions/github-release.md) | Publishes a Github release with the changelog as its body |
 | [`docker-prepare-release`](actions/docker-prepare-release.md) | The release bookkeeping for a Docker-based repository, committed |
+| [`coverage-report`](actions/coverage-report.md) | Writes a Markdown coverage report from PHPUnit's Clover output |
 
 ### QA
 

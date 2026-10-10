@@ -1484,3 +1484,8 @@
 ## v11.25.3
 
 * Fix: fixing building docker images (7a08679 by George Shestayev)
+
+## v11.26.0
+
+* Update: switching to satis bearer authentication token (284d373 by George Shestayev)
+* Update: aligning docker-prepare-release and prepare-release CI jobs to generate the same coverage report (dea6fab by George Shestayev)
