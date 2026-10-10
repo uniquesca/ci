@@ -83,7 +83,7 @@ not a place to keep anything that is not either in git or ignored.
 ### What it installs
 
 * Composer, when there is a `composer.json`: `composer install --no-dev`, authenticated against
-  `satis.unqs.ca` with `SATIS_COMPOSER_ACCESS_TOKEN` over HTTP basic, username `token`. Any
+  `satis.unqs.ca` with `SATIS_COMPOSER_ACCESS_TOKEN` as a bearer token. Any
   `auth.json` is removed before and after.
 * Yarn, when there is a `package.json`, under `node_version` via `nvm`. An `.npmrc` pointing
   `@uniquesca` at `npm.pkg.github.com` is written for the install and **deleted afterwards**, so the

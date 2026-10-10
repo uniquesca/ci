@@ -170,16 +170,15 @@ jobs:
               echo "Installing Composer dependencies"
               chmod +x composer.phar
 
-              # Uniques packages come from satis.unqs.ca, which authenticates with HTTP basic and
-              # the literal username `token`. Checked before the install because an unchanged
-              # composer.lock installs from `vendor/` without ever reaching satis - a missing
-              # token surfaces only on the deployment that does move a private package
+              # Uniques packages come from satis.unqs.ca, which authenticates with a bearer token.
+              # Checked before the install because an unchanged composer.lock installs from
+              # `vendor/` without ever reaching satis - a missing token surfaces only on the deployment that does move a private package
               satis_token='${{ secrets.SATIS_COMPOSER_ACCESS_TOKEN }}'
               if [ -z "$satis_token" ]; then
                 echo "❌ SATIS_COMPOSER_ACCESS_TOKEN is empty - Composer cannot authenticate against satis.unqs.ca"
                 ( exit 1 )
               fi
-              php composer.phar config --auth http-basic.satis.unqs.ca token "$satis_token"
+              php composer.phar config --auth bearer.satis.unqs.ca "$satis_token"
 
               php composer.phar install --no-dev
             fi
