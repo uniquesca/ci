@@ -120,14 +120,13 @@ has a PHPUnit configuration** - `generate_coverage_badge` on its own does nothin
 committed with the rest, not pushed by the badge action.
 
 `generate_coverage_report` needs the PHPUnit configuration too. The report is written to
-`coverage_report_file` as Markdown from PHPUnit's Clover output: totals, then each file's line and
-method coverage and its uncovered lines. It is staged with a plain `git add` - **a path in
-`.gitignore` fails the commit step**.
+`coverage_report_file` by [`coverage-report`](../actions/coverage-report.md). It is staged with a
+plain `git add` - **a path in `.gitignore` fails the commit step**.
 
 ### The commit
 
 Staged explicitly: `package.json`, `composer.json`, the dump, `CHANGELOG.md`, the badge and the
-report directory, each only if the corresponding input asked for it. Then `git clean -fd`, which
+report, each only if the corresponding input asked for it. Then `git clean -fd`, which
 **removes untracked files a `pre_cmd`, `post_cmd` or the dependency install left behind** - build
 output, in other words, does not end up in the release commit.
 

@@ -283,61 +283,9 @@ jobs:
 
       - name: Generate coverage report
         if: env.phpunit == 1 && inputs.generate_coverage_report
-        env:
-          COVERAGE_REPORT_FILE: ${{ inputs.coverage_report_file }}
-        run: |
-          # Where the HTML report used to be written by default
-          git rm -rq --ignore-unmatch docs/coverage-report
-          mkdir -p "$(dirname "$COVERAGE_REPORT_FILE")"
-
-          # Markdown, because Github renders it and shows HTML only as source
-          php -- clover.xml "$PWD/" > "$COVERAGE_REPORT_FILE" <<'PHP'
-          <?php
-          [, $clover, $root] = $argv;
-          $xml = simplexml_load_file($clover) ?: exit(1);
-
-          $percent = fn ($covered, $total) => $total > 0 ? sprintf('%.2f%%', 100 * $covered / $total) : 'n/a';
-          $ranges = function (array $lines): string {
-              $out = [];
-              foreach ($lines as $i => $line) {
-                  if ($i > 0 && $line === $lines[$i - 1] + 1) {
-                      $out[count($out) - 1][1] = $line;
-                  } else {
-                      $out[] = [$line, $line];
-                  }
-              }
-              return implode(', ', array_map(fn ($r) => $r[0] === $r[1] ? $r[0] : "$r[0]-$r[1]", $out));
-          };
-
-          $m = $xml->project->metrics;
-          echo "# Unit test coverage\n\n";
-          echo "| Lines | Methods |\n|---|---|\n";
-          printf("| %s (%d / %d) | %s (%d / %d) |\n\n",
-              $percent((int) $m['coveredstatements'], (int) $m['statements']), $m['coveredstatements'], $m['statements'],
-              $percent((int) $m['coveredmethods'], (int) $m['methods']), $m['coveredmethods'], $m['methods']);
-
-          $files = [];
-          foreach ($xml->xpath('//file') as $file) {
-              $uncovered = [];
-              foreach ($file->line as $line) {
-                  if ((string) $line['type'] === 'stmt' && (int) $line['count'] === 0) {
-                      $uncovered[] = (int) $line['num'];
-                  }
-              }
-              $name = str_starts_with((string) $file['name'], $root) ? substr((string) $file['name'], strlen($root)) : (string) $file['name'];
-              $files[$name] = [$file->metrics, $uncovered];
-          }
-          ksort($files);
-
-          echo "| File | Lines | Methods | Uncovered lines |\n|---|---|---|---|\n";
-          foreach ($files as $name => [$fm, $uncovered]) {
-              sort($uncovered);
-              printf("| `%s` | %s | %s | %s |\n", $name,
-                  $percent((int) $fm['coveredstatements'], (int) $fm['statements']),
-                  $percent((int) $fm['coveredmethods'], (int) $fm['methods']),
-                  $ranges($uncovered));
-          }
-          PHP
+        uses: uniquesca/ci/coverage-report@v11
+        with:
+          report_file: ${{ inputs.coverage_report_file }}
 
       - name: Generate coverage badge
         if: ${{ env.phpunit == 1 && inputs.generate_coverage_badge == true }}

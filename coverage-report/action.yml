@@ -1,0 +1,29 @@
+name: Coverage report
+
+inputs:
+  clover_file:
+    description: 'PHPUnit Clover output to build the report from'
+    required: false
+    default: 'clover.xml'
+    type: string
+  report_file:
+    description: 'Path to write the Markdown report to'
+    required: false
+    default: 'docs/coverage.md'
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: Generate coverage report
+      shell: bash
+      env:
+        CLOVER_FILE: ${{ inputs.clover_file }}
+        REPORT_FILE: ${{ inputs.report_file }}
+      run: |
+        # Where the HTML report used to be written by default
+        git rm -rq --ignore-unmatch docs/coverage-report
+        mkdir -p "$(dirname "$REPORT_FILE")"
+
+        # Markdown, because Github renders it and shows HTML only as source
+        php "$GITHUB_ACTION_PATH/report.php" "$CLOVER_FILE" "$PWD" > "$REPORT_FILE"
