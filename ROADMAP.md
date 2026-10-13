@@ -106,6 +106,16 @@ and how many it found were a good fit for the harness. For this, `ai-harness-hin
 to save every verdict, including "not a fit" and the ones in shadow mode. Today it saves nothing.
 Decide who sees the numbers for each person before it goes out.
 
+### Say which tests a pull request is missing
+
+`ai-test-advice.yml` comments on a pull request whose code no test covers yet, naming the unit or
+end-to-end tests to add. Still to do:
+
+- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
+- Have the QA workflows upload a coverage report, so a script can tell the agent which changed
+  lines no test runs instead of the agent working it out. The advice then has to wait for QA.
+- Save every verdict, including "no gap", and count how often people add the test it asked for.
+
 ### Learn from issues that needed a lot of rounds
 
 `ai-retro.yml` comments on a merged harness pull request that took too many rounds: what would have
