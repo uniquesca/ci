@@ -17,8 +17,6 @@ on:
     # The same name as the qa_workflow input
     workflows: [ QA ]
     types: [ completed ]
-  pull_request_review:
-    types: [ submitted ]
 
 jobs:
   ai-harness-hint:
@@ -76,7 +74,9 @@ None. The result is a comment on the pull request, or a job summary in shadow mo
 
 ### How a round of fixes is counted
 
-Every Copilot review records the commit it read, so a round is a change of commit between two
-Copilot reviews, and commit dates play no part. The QA trigger counts only the first `pull_request`
-run of `qa_workflow` since the pull request was opened, on its first attempt. Both triggers run
-only the default-branch copy of the calling file, so neither can be tried from a branch.
+The hint looks after every `pull_request` run of `qa_workflow`, since one follows every push. A QA
+failure counts only on the first run since the pull request opened, on its first attempt. Every
+Copilot review records the commit it read, so a review of a commit the pull request has since moved
+past is one round of fixes, and commit dates play no part. **Do not add a `pull_request_review`
+trigger for Copilot**: a run its review starts fails before any job. `workflow_run` runs only the
+default-branch copy of the calling file, so it cannot be tried from a branch.
