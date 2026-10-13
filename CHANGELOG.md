@@ -1489,3 +1489,7 @@
 
 * Update: switching to satis bearer authentication token (284d373 by George Shestayev)
 * Update: aligning docker-prepare-release and prepare-release CI jobs to generate the same coverage report (dea6fab by George Shestayev)
+
+## v11.26.1
+
+* Fix: AI adoption workflow fixes (b3e28be by George Shestayev)
