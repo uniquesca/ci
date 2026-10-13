@@ -54,9 +54,12 @@ opened before this change.
 
 ### Point people at the harness
 
-`ai-harness-hint.yml` comments on a pull request somebody wrote by hand when QA failed on its first
-run or Copilot review took several rounds. Still to do:
+`ai-harness-hint.yml` comments on a merged pull request somebody wrote by hand when QA failed on its
+first run or Copilot review took several rounds. Still to do:
 
+- Replace the `ai-harness-hint.yml` and `ai-retro.yml` callers in each repository with one
+  `ai-after-merge.yml` that runs both on `pull_request: closed`. The old hint callers also listen to
+  `pull_request_review`, and runs Copilot's reviews start fail.
 - Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
 - Count both triggers on past pull requests, to see how often each would fire.
 - Post at most one hint per person per week.

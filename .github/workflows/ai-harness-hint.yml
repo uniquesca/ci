@@ -21,7 +21,7 @@ on:
         default: ''
         type: string
       qa_workflow:
-        description: 'Name of the QA workflow, as it appears in its `name:`. Every run of it on a pull request is when the hint looks, and its first run failing is one of the signs. The caller has to list the same name under `workflow_run: workflows:`'
+        description: 'Name of the QA workflow, as it appears in its `name:`. Its first run on the pull request failing is one of the signs'
         required: true
         type: string
       ignore_job_patterns:
@@ -98,37 +98,26 @@ defaults:
 jobs:
   hint:
     name: Check whether the harness would have suited this
-    # Runs after every QA run on a pull request, which follows every push. Two signs are looked
-    # for, each a round trip the harness would have taken in its sandbox: QA going red on the
-    # first run, and Copilot reviews answered by more pushes. A push after a Copilot review is
-    # exactly what makes a round, so this is where they are counted too.
-    #
-    # Not on `pull_request_review`: a run Copilot's review triggers fails at startup, before any
-    # job, with nothing in the log to say why.
-    #
-    # Only a pull_request run counts as QA on a pull request; a push run on the same branch
-    # carries no pull request to talk to.
+    # Once the pull request is merged, when every sign is on record. Two are looked for, each a
+    # round trip the harness would have taken in its sandbox: QA going red on the first run, and
+    # Copilot reviews answered by more pushes. A pull request closed without merging was not
+    # worth the work, so it gets no hint, and one from a fork gets no `id-token` to mint the
+    # agent's credential from.
     if: >-
-      ${{ github.event_name == 'workflow_run'
-          && github.event.workflow_run.name == inputs.qa_workflow
-          && github.event.workflow_run.event == 'pull_request'
-          && github.event.workflow_run.conclusion != 'cancelled'
-          && github.event.workflow_run.conclusion != 'skipped'
-          && github.event.workflow_run.head_repository.full_name == github.repository }}
+      ${{ github.event_name == 'pull_request'
+          && github.event.action == 'closed'
+          && github.event.pull_request.merged
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && !startsWith(github.event.pull_request.head.ref, inputs.branch_prefix) }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout_minutes }}
-    # Two QA runs on one pull request can finish close together, and each checks for an earlier
-    # hint before posting. Queued so the second sees the first one's comment.
-    concurrency:
-      group: ai-harness-hint-${{ github.repository }}-${{ github.event.workflow_run.pull_requests[0].number }}
-      cancel-in-progress: false
     permissions:
       contents: read
       # Posting the hint. `gh pr comment` goes through GraphQL, which asks for the pull request
       # scope rather than the issue one
       pull-requests: write
       issues: write
-      # The jobs of the QA run, to name the ones that failed
+      # The QA runs, to find the first and name the jobs that failed in it
       actions: read
       id-token: write
     env:
@@ -142,39 +131,28 @@ jobs:
       - name: Gather the evidence
         id: evidence
         env:
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
-          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CREATED: ${{ github.event.pull_request.created_at }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          QA_WORKFLOW: ${{ inputs.qa_workflow }}
           IGNORE_JOBS: ${{ inputs.ignore_job_patterns }}
           COPILOT_LOGIN: ${{ inputs.copilot_login }}
           COPILOT_ROUNDS: ${{ inputs.copilot_rounds }}
-          BRANCH_PREFIX: ${{ inputs.branch_prefix }}
           SKIP_LABEL: ${{ inputs.skip_label }}
         run: |
           stand_down() {
-            echo "$1"
+            echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"
             echo 'PROCEED=false' >> "$GITHUB_ENV"
             exit 0
           }
 
-          number="$NUMBER"
-          [[ -n "$number" ]] || stand_down 'The run carries no pull request.'
-
-          pr=$(gh api "repos/$GH_REPO/pulls/$number")
-          [[ $(jq -r .state <<<"$pr") == 'open' ]] || stand_down "#$number is not open."
-          [[ $(jq -r .draft <<<"$pr") == 'false' ]] || stand_down "#$number is a draft."
-          [[ $(jq -r .user.type <<<"$pr") != 'Bot' ]] || stand_down "#$number was opened by a bot."
-          head_ref=$(jq -r .head.ref <<<"$pr")
-          [[ "$head_ref" != "$BRANCH_PREFIX"* ]] || stand_down "#$number came from the harness."
+          [[ "$AUTHOR_TYPE" != 'Bot' ]] || stand_down "#$NUMBER was opened by a bot."
+          pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
           if [[ -n "$SKIP_LABEL" ]] && jq -e --arg l "$SKIP_LABEL" 'any(.labels[]; .name == $l)' <<<"$pr" >/dev/null; then
-            stand_down "#$number carries $SKIP_LABEL."
-          fi
-          if gh api --paginate "repos/$GH_REPO/issues/$number/comments" --jq '.[].body' | grep -qF "$HINT_MARKER"; then
-            stand_down "#$number already has a hint."
+            stand_down "#$NUMBER carries $SKIP_LABEL."
           fi
 
           # Outside the workspace: the checkout below empties it on a fresh runner
@@ -183,14 +161,26 @@ jobs:
           evidence="$staged/evidence.md"
           : > "$evidence"
 
-          # The first QA run since the pull request opened. A branch name can be reused by an
-          # older, closed pull request, so runs from before this one was created are left out.
-          if [[ "$RUN_CONCLUSION" == 'failure' && "$RUN_ATTEMPT" == '1' ]]; then
-            created=$(jq -r .created_at <<<"$pr")
-            first=$(gh api --paginate "repos/$GH_REPO/actions/workflows/$WORKFLOW_ID/runs?branch=$RUN_BRANCH&event=pull_request&per_page=100" \
-              --jq ".workflow_runs[] | select(.created_at >= \"$created\") | .id" | sort -n | head -n 1)
-            if [[ "$first" == "$RUN_ID" ]]; then
-              failed=$(gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
+          # The first QA run once the pull request was ready for review, on its first attempt: red
+          # checks on a draft are work in progress, and a re-run that went green does not undo the
+          # round trip. Counting from then also leaves out runs of an older pull request that used
+          # the same branch name. One opened as a draft first leaves draft with `ready_for_review`;
+          # one opened ready was ready from the start, whatever happened later.
+          ready=$CREATED
+          read -r first_event first_at < <(gh api --paginate "repos/$GH_REPO/issues/$NUMBER/timeline?per_page=100" \
+            --jq '.[] | select(.event == "ready_for_review" or .event == "convert_to_draft") | "\(.event) \(.created_at)"' | sed -n 1p) || true
+          if [[ "${first_event:-}" == 'ready_for_review' ]]; then
+            ready=$first_at
+          fi
+          workflow_id=$(gh api --paginate "repos/$GH_REPO/actions/workflows?per_page=100" \
+            --jq ".workflows[] | select(.name == \"$QA_WORKFLOW\") | .id" | sed -n 1p)
+          if [[ -z "$workflow_id" ]]; then
+            echo "::warning title=No QA workflow::No workflow named \"$QA_WORKFLOW\" in $GH_REPO, so QA failures are not counted. Check the qa_workflow input."
+          else
+            first=$(gh api --paginate "repos/$GH_REPO/actions/workflows/$workflow_id/runs?branch=$HEAD_REF&event=pull_request&per_page=100" \
+              --jq ".workflow_runs[] | select(.created_at >= \"$ready\") | .id" | sort -n | sed -n 1p)
+            if [[ -n "$first" && $(gh api "repos/$GH_REPO/actions/runs/$first/attempts/1" --jq .conclusion) == 'failure' ]]; then
+              failed=$(gh api --paginate "repos/$GH_REPO/actions/runs/$first/attempts/1/jobs?per_page=100" \
                 --jq '.jobs[] | select(.conclusion == "failure") | .name')
               if [[ -n "$IGNORE_JOBS" ]]; then
                 failed=$(grep -Eiv -- "$IGNORE_JOBS" <<<"$failed" || true)
@@ -203,22 +193,22 @@ jobs:
             fi
           fi
 
-          # Each Copilot review records the commit it read, so one on a commit the pull request has
-          # since moved on from was answered by a push - a round of fixes. Commit dates would not
-          # do: a rebase or a local commit pushed later carries a time that says nothing about when
-          # it reached the pull request.
-          rounds=$(gh api --paginate "repos/$GH_REPO/pulls/$number/reviews?per_page=100" \
-            --jq ".[] | select(.user.login == \"$COPILOT_LOGIN\" and .commit_id != \"$RUN_SHA\") | .commit_id" | sort -u | wc -l)
+          # Each Copilot review records the commit it read, so one on a commit the pull request
+          # moved on from was answered by a push - a round of fixes. Commit dates would not do: a
+          # rebase or a local commit pushed later carries a time that says nothing about when it
+          # reached the pull request.
+          rounds=$(gh api --paginate "repos/$GH_REPO/pulls/$NUMBER/reviews?per_page=100" \
+            --jq ".[] | select(.user.login == \"$COPILOT_LOGIN\" and .commit_id != \"$HEAD_SHA\") | .commit_id" | sort -u | wc -l)
           if (( rounds >= COPILOT_ROUNDS )); then
             echo "- Copilot review took $rounds rounds of fixes. The harness answers review feedback itself before a person is asked." >> "$evidence"
           fi
 
-          [[ -s "$evidence" ]] || stand_down "#$number: nothing to hint yet ($rounds Copilot rounds)."
+          [[ -s "$evidence" ]] || stand_down "#$NUMBER: nothing to hint ($rounds Copilot rounds)."
 
           {
-            echo "number=$number"
-            echo "head_sha=$(jq -r .head.sha <<<"$pr")"
-            echo "author=$(jq -r .user.login <<<"$pr")"
+            echo "number=$NUMBER"
+            echo "head_sha=$HEAD_SHA"
+            echo "author=$AUTHOR"
           } >> "$GITHUB_OUTPUT"
           jq '{title, body, author: .user.login, base: .base.ref, head: .head.ref,
                additions, deletions, changed_files}' <<<"$pr" > "$staged/pull-request.json"
@@ -266,7 +256,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             A person opened pull request #${{ steps.evidence.outputs.number }} of this repository
-            by hand, and it went back and forth before it was ready.
+            by hand, and it went back and forth before it was merged.
 
             Decide whether this change was a good fit for the AI harness instead. The harness
             takes a Github issue, writes a plan people approve, implements it, runs the QA checks

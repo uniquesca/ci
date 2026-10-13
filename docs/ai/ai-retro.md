@@ -10,12 +10,13 @@ the work when a plan question they left open caused a round.
 ## Integrating a repository
 
 ```yaml
-name: AI Retro
+name: AI After Merge
 
 on:
   pull_request:
     types: [ closed ]
 
+# One file for both: the retro looks at pull requests the harness opened, the hint at the rest
 jobs:
   ai-retro:
     permissions:
@@ -30,6 +31,24 @@ jobs:
       anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
       anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
       # Writes the retro to the job summary only. Set to false once the retros read right
+      shadow: true
+
+  ai-harness-hint:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write
+    uses: uniquesca/ci/.github/workflows/ai-harness-hint.yml@v11
+    with:
+      anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+      anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+      anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+      # The `name:` of the repository's QA workflow
+      qa_workflow: QA
+      # Writes the hint to the job summary only. Set to false once the hints read right
       shadow: true
 ```
 
