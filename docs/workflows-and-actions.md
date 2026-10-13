@@ -52,6 +52,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | [`ai-harness-hint.yml`](ai/ai-harness-hint.md) | Comments on a merged hand-written pull request that went back and forth in a way the harness would have handled itself |
 | [`ai-retro.yml`](ai/ai-retro.md) | Comments on a merged AI Implement pull request that took too many rounds, with what would have saved them |
 | [`ai-test-advice.yml`](ai/ai-test-advice.md) | Comments on a pull request whose code no test covers yet, naming the unit or end-to-end tests to add |
+| [`ai-affected-modules.yml`](ai/ai-affected-modules.md) | Lists the modules a pull request affects, so a caller runs only the end-to-end tests for them |
 
 ### QA
 

@@ -1,0 +1,204 @@
+name: AI Affected Modules
+
+on:
+  workflow_call:
+    inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
+        required: false
+        default: ''
+        type: string
+      model:
+        description: 'Model that decides what the change affects'
+        required: false
+        default: 'claude-sonnet-5-5'
+        type: string
+      effort:
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to'
+        required: false
+        default: 'medium'
+        type: string
+      max_turns:
+        description: 'How many turns the agent may spend reading the change and its callers before it has to answer'
+        required: false
+        default: 40
+        type: number
+      max_diff_bytes:
+        description: 'Longest diff to stage. A bigger change is truncated, and the agent is told so'
+        required: false
+        default: 200000
+        type: number
+      timeout_minutes:
+        description: 'How long the whole job may run'
+        required: false
+        default: 15
+        type: number
+    outputs:
+      all:
+        description: '`true` when the change may affect the whole application, or it could not be told'
+        value: ${{ jobs.decide.outputs.all }}
+      modules:
+        description: 'JSON array of the affected modules, each the lower-case, hyphenated name of the directory the module lives in'
+        value: ${{ jobs.decide.outputs.modules }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  decide:
+    name: Decide which modules the change affects
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    outputs:
+      all: ${{ steps.answer.outputs.all }}
+      modules: ${{ steps.answer.outputs.modules }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      # A caller gates tests on the answer, so anything short of a valid one - not a pull request,
+      # a fork with no `id-token`, the agent failing - answers "everything".
+      PROCEED: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - name: Check out the pull request
+        if: ${{ env.PROCEED == 'true' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Stage the diff
+        id: diff
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          MAX_BYTES: ${{ inputs.max_diff_bytes }}
+        run: |
+          mkdir .ai-affected-modules
+          gh api --paginate "repos/$GH_REPO/pulls/$NUMBER/files?per_page=100" \
+            --jq '.[] | "\(.status)\t\(.filename)"' > .ai-affected-modules/files.txt
+
+          # Github refuses a diff past 300 files; the agent still has the file list and the checkout
+          gh pr diff "$NUMBER" > .ai-affected-modules/full.patch || true
+          head -c "$MAX_BYTES" .ai-affected-modules/full.patch > .ai-affected-modules/diff.patch
+          if (( $(wc -c < .ai-affected-modules/full.patch) > MAX_BYTES )) || [[ ! -s .ai-affected-modules/full.patch ]]; then
+            echo 'truncated=true' >> "$GITHUB_OUTPUT"
+          fi
+          rm .ai-affected-modules/full.patch
+
+      - name: Decide what the change affects
+        if: ${{ env.PROCEED == 'true' }}
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Pull request #${{ github.event.pull_request.number }} changes this repository. Decide
+            which of the application's modules it affects, so that only the end-to-end tests
+            for those modules run.
+
+            Read:
+
+            - `.ai-affected-modules/files.txt` - every changed file, with its status.
+            - `.ai-affected-modules/diff.patch` - the change.
+              ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED: the file list and the checkout have the rest.' || '' }}
+            - The checkout, at the pull request's head.
+
+            First work out the framework and what its modules are: the directories that hold one
+            area of the application each - Laminas or Zend `module/<Name>/`, Composer packages
+            under `packages/`, Symfony bundles or domain directories under `src/<Name>/`, and so
+            on. A repository can have more than one kind; count them all. Name each module after
+            its directory, in lower case with hyphens: `module/TrustAccount` is `trust-account`,
+            `packages/officio-common` is `officio-common`, `src/Case` is `case`.
+
+            Then, for each changed file:
+
+            1. If it only changes formatting, comments, whitespace, import order or names that
+               nothing outside the file sees, it affects nothing.
+            2. If it changes a method or function whose parameters, return type and thrown errors
+               stay the same, and a unit test exercises it and this pull request leaves that test
+               unchanged, it affects nothing - the unit test covers it. Check that the test exists
+               and actually calls it; do not assume.
+            3. Otherwise it affects its own module, and every module whose code calls what
+               changed. Search for the callers: imports and direct calls, but also service
+               container and dependency injection config, event listeners and subscribers,
+               routes, templates and front-end code that call it by URL or name. Follow callers
+               further only while the behaviour they pass on changes too.
+            4. Tests, docs and CI files other than the end-to-end tests' own affect nothing. A
+               changed end-to-end test affects the modules it tests.
+
+            Answer `all` when the change can reach the whole application or you cannot tell what
+            it reaches: shared foundation code most modules build on, dependency manifests and
+            lock files, global config, the build, the database schema, shared front-end code, or
+            anything you could not make sense of.
+
+            Write `.ai-affected-modules/result.json` and nothing else:
+
+            {"framework": "...", "all": false,
+             "modules": [{"name": "...", "reason": "..."}],
+             "unaffected": [{"path": "...", "reason": "..."}]}
+
+            - `modules`: each affected module once. `reason` is one short sentence naming the
+              changed code, or the caller, that brings it in.
+            - `unaffected`: changed code files left out by rule 1 or 2, with the rule's reason
+              in a few words - for example "formatting only" or "covered by FooTest".
+          claude_args: |
+            --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,Write"
+
+      - name: Read the answer
+        id: answer
+        if: always()
+        run: |
+          result=.ai-affected-modules/result.json
+          if [[ "$PROCEED" != 'true' ]]; then
+            reason='Not a pull request from this repository, so everything is affected.'
+          elif ! jq -e '(.all | type == "boolean") and (.modules | type == "array")' "$result" >/dev/null 2>&1; then
+            reason='The agent gave no valid answer, so everything is affected.'
+          fi
+          if [[ -n "${reason:-}" ]]; then
+            echo "$reason" >> "$GITHUB_STEP_SUMMARY"
+            { echo 'all=true'; echo 'modules=[]'; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Callers match these against names they wrote by hand, so the spelling holds whatever
+          # the agent wrote
+          modules=$(jq -c '[.modules[] | if type == "object" then .name else . end | strings
+            | gsub("(?<a>[a-z0-9])(?<b>[A-Z])"; "\(.a)-\(.b)") | ascii_downcase | gsub("[^a-z0-9]+"; "-")]
+            | unique' "$result")
+          {
+            echo "all=$(jq '.all' "$result")"
+            echo "modules=$modules"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "**Framework:** $(jq -r '.framework // "unknown"' "$result")"
+            echo
+            if [[ $(jq '.all' "$result") == true ]]; then echo '**Everything is affected.**'; echo; fi
+            jq -r '.modules[] | select(type == "object") | "- `\(.name)`: \(.reason // "")"' "$result"
+            jq -r 'if (.unaffected // []) | length > 0 then "\nLeft out:\n" else empty end' "$result"
+            jq -r '(.unaffected // [])[] | "- `\(.path)`: \(.reason // "")"' "$result"
+          } >> "$GITHUB_STEP_SUMMARY"
