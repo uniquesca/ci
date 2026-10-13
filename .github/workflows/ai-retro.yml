@@ -127,6 +127,8 @@ jobs:
           issue="${HEAD_REF##*issue-}"
           [[ "$HEAD_REF" == "$BRANCH_PREFIX"* && "$issue" =~ ^[0-9]+$ ]] || stand_down "$HEAD_REF names no issue."
 
+          # Outside the workspace: the checkout below empties it on a fresh runner
+          cd "$RUNNER_TEMP"
           mkdir -p .ai-retro
           gh api --paginate "repos/$GH_REPO/issues/$NUMBER/comments?per_page=100" \
             | jq -s 'add // [] | map({author: .user.login, is_bot: (.user.type == "Bot"), created_at, body})' > .ai-retro/pr-comments.json
@@ -185,8 +187,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
-          # What `Count the rounds` staged lives in the workspace the checkout would otherwise wipe
-          clean: false
+
+      - name: Bring in the staged history
+        if: ${{ env.PROCEED == 'true' }}
+        run: mv "$RUNNER_TEMP/.ai-retro" .ai-retro
 
       - name: Stage the issue and its plan
         id: stage_issue
