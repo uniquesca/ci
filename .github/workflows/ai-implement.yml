@@ -122,17 +122,17 @@ on:
         default: true
         type: boolean
       review_label:
-        description: 'Label the reviewing agent keeps on the pull request while it works - its `progress_label`. Put on here when a review is dispatched, so it covers a review still queued. A round triggered by one of the two things that run after a push waits for the other to finish, and this is how it recognises the reviewer still working. Empty means it never waits for the reviewer'
+        description: 'Label the reviewing agent keeps on the pull request while it works - its `progress_label`. Put on here when a review is dispatched, so people see a review is coming while it is still queued. Only for people to see: the wait goes by the commit the review was asked for. Empty labels nothing'
         required: false
         default: 'ai:reviewing'
         type: string
       review_label_minutes:
-        description: 'How long the reviewer''s label counts as a review still coming. A label older than this was left by a review that never ran - nothing subscribed to the dispatch, say - so a round takes it off, warns, and goes ahead. Keep it above the reviewing workflow''s `timeout_minutes` plus the time a review can sit queued'
+        description: 'How long after asking for a review a round still waits for it. A review that has not arrived by then never ran - nothing subscribed to the dispatch, say - so a round warns and goes ahead without it. Keep it above the reviewing workflow''s `timeout_minutes` plus the time a review can sit queued'
         required: false
         default: 60
         type: number
       review_check_patterns:
-        description: 'Deprecated, and does nothing - the wait recognises the reviewer by `review_label`. Accepted so a caller still passing it keeps working, with a warning. Will be removed in v12'
+        description: 'Deprecated, and does nothing. Accepted so a caller still passing it keeps working, with a warning. Will be removed in v12'
         required: false
         default: ''
         type: string
@@ -341,6 +341,9 @@ jobs:
       # for the round record until the first round closes, so a red check on that commit still
       # starts a round.
       OPENED_MARKER: 'ai-implement-opened'
+      # Hidden line in the pull request body naming the commit the last review was asked for, and
+      # when. Written only once the dispatch is accepted.
+      REVIEW_REQUESTED_MARKER: 'ai-review-requested'
       # First line of a review the reviewing workflow submitted. Identity is not enough to
       # recognise one: which login the reviewer arrives as is the caller's to decide - the AI
       # Review app is named per repository, and a caller still on a machine user's token reads
@@ -440,7 +443,7 @@ jobs:
 
       - name: Warn about deprecated inputs
         if: ${{ inputs.review_check_patterns != '' }}
-        run: echo "::warning title=Deprecated input::review_check_patterns does nothing and will be removed in v12 - take it out of the caller. The wait recognises the reviewer by review_label"
+        run: echo "::warning title=Deprecated input::review_check_patterns does nothing and will be removed in v12 - take it out of the caller"
 
       # Two event shapes carry the same work, and nothing below should have to care which one
       # it got. Everything after this reads these outputs rather than `github.event`, which is
@@ -1141,9 +1144,9 @@ jobs:
       # working, and stands down. Whichever finishes second finds nothing pending and runs one
       # round with both sources already in the feedback.
       #
-      # There is no handshake between the two. Both questions are answered by Github's own state
-      # on this pull request, so neither has to know the other exists, and a lost or duplicated
-      # trigger cannot deadlock it.
+      # There is no handshake between the two. The round that asked for the review records which
+      # commit it asked about, and Github records which commit a review is of, so neither side has
+      # to know the other exists, and a lost or duplicated trigger cannot deadlock it.
       #
       # Only unattended rounds wait. Somebody who typed the command wants a round now, not
       # whenever CI happens to finish.
@@ -1156,53 +1159,26 @@ jobs:
           HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
           PR: ${{ steps.event.outputs.pull_request }}
           CHECKS_PENDING: ${{ steps.stage_pr.outputs.checks_pending }}
-          REVIEW_LABEL: ${{ inputs.review_label }}
-          LABEL_MINUTES: ${{ inputs.review_label_minutes }}
+          WAIT_MINUTES: ${{ inputs.review_label_minutes }}
         run: |
-          # The reviewer's label is on the pull request from the dispatch until the review ends.
-          # A dispatched review runs on the default branch, so it has no check run on this
-          # commit to look for. Asking whether it is still working - rather than whether a review
-          # has arrived - is what stops this waiting forever for a reviewer that was never turned
-          # on: nothing is dispatched for it, so nothing adds the label.
+          read -r requested_sha requested_at < <(jq -r --arg marker "$REVIEW_REQUESTED_MARKER" '
+            .body // "" | [scan("<!-- " + $marker + " ([0-9a-f]{40}) (\\S+) -->")] | last // [] | join(" ")
+          ' "$RUNNER_TEMP/pull-request.json") || true
+
+          # A review of the head counts as well: the style fixer pushes on top of the commit the
+          # review was asked for, and the reviewer reviews whatever the head is when it runs. A
+          # failed review run posts its failure as a review too. Reviews that cannot be read
+          # must not hold the round back for ever, so they count as arrived.
           review_pending=0
-          if [[ -n "$REVIEW_LABEL" ]]; then
-            review_pending=$(gh api "repos/$GH_REPO/issues/$PR/labels" 2> /dev/null \
-              | jq --arg name "$REVIEW_LABEL" 'map(select(.name == $name)) | length' 2> /dev/null || echo '')
-          fi
-
-          # An unreadable answer must not hold the round back for ever - carry on and let the
-          # feedback be whatever has landed so far
-          [[ -z "$review_pending" ]] && review_pending=0
-
-          # The label comes off only after the review is submitted, so a round that review
-          # started - or checks that finish in the seconds between - still finds it on. A review
-          # of this commit already posted is the reviewer finished, whatever the label says. Of
-          # this commit and no other: a review of an earlier push says nothing about one still
-          # queued for this one.
-          if [[ "$review_pending" -gt 0 ]] \
-             && reviews=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/reviews?per_page=100" 2> /dev/null); then
-            reviewed=$(jq -s --arg sha "$HEAD_SHA" --arg marker "$REVIEW_MARKER" \
-              'add // [] | map(select(.commit_id == $sha and ((.body // "") | startswith($marker)))) | length' \
-              <<< "$reviews" 2> /dev/null || echo 0)
-            [[ "${reviewed:-0}" -gt 0 ]] && review_pending=0
-          fi
-
-          # A dispatch Github accepted but no workflow picked up leaves the label on with nothing
-          # coming to take it off, and every round after would stand down for it. Past its time
-          # it is taken as that. An age that cannot be read keeps the label in force - a late
-          # review is the likelier story than a lost one - and so does a partial read, which
-          # could hold an older dispatch's event and not this one's.
-          if [[ "$review_pending" -gt 0 ]] \
-             && events=$(gh api --paginate "repos/$GH_REPO/issues/$PR/events?per_page=100" 2> /dev/null); then
-            labelled_at=$(jq -rs --arg name "$REVIEW_LABEL" \
-              'add // [] | map(select(.event == "labeled" and .label.name == $name)) | last | .created_at // empty' \
-              <<< "$events" 2> /dev/null || echo '')
-            if [[ -n "$labelled_at" ]] \
-               && (( $(date +%s) - $(date -d "$labelled_at" +%s) > ${LABEL_MINUTES%.*} * 60 )); then
-              echo "::warning title=Stale review label::'$REVIEW_LABEL' has been on #$PR since $labelled_at with no review finishing - taken off, and the round goes ahead without one"
-              name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
-              gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null 2>&1 || true
-              review_pending=0
+          if [[ -n "$requested_sha" ]]; then
+            if (( $(date +%s) - $(date -d "$requested_at" +%s) > ${WAIT_MINUTES%.*} * 60 )); then
+              echo "::warning title=No review arrived::The review asked for on $requested_sha at $requested_at has not arrived in $WAIT_MINUTES minutes - going ahead without it"
+            elif reviews=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/reviews?per_page=100" 2> /dev/null); then
+              reviewed=$(jq -s --arg asked "$requested_sha" --arg head "$HEAD_SHA" --arg marker "$REVIEW_MARKER" '
+                add // [] | map(select((.commit_id == $asked or .commit_id == $head)
+                                       and ((.body // "") | startswith($marker)))) | length
+              ' <<< "$reviews" 2> /dev/null || echo 0)
+              [[ "${reviewed:-0}" -gt 0 ]] || review_pending=1
             fi
           fi
 
@@ -3582,11 +3558,9 @@ jobs:
       # Nothing is dispatched for a round that changed no file. Reviewing the same commit again
       # produces the same review, and the loop would turn without moving.
       #
-      # The reviewer's label goes on here, before the dispatch. The QA checks on this push can
-      # finish while the review is still queued, and the wait in the next round only sees a
-      # reviewer that has its label on - so the reviewer labelling itself would leave a gap in
-      # which that round runs without the review, and the review then starts a second one. The
-      # reviewing workflow takes the label off however a dispatched run ends.
+      # The reviewer's label goes on here, so people see a review is coming while it is still
+      # queued. The reviewing workflow takes it off however a dispatched run ends. Nothing reads
+      # it: the next round waits by the commit recorded below.
       - name: Ask for a review
         id: dispatch
         if: >-
@@ -3597,6 +3571,7 @@ jobs:
           PR: ${{ steps.event.outputs.pull_request || steps.pr.outputs.number }}
           DISPATCH_TYPE: ${{ inputs.review_dispatch_type }}
           REVIEW_LABEL: ${{ inputs.review_label }}
+          HEAD_SHA: ${{ steps.push.outputs.head }}
         run: |
           if [[ -z "$PR" ]]; then
             echo "::warning title=No pull request to review::Nothing was dispatched"
@@ -3610,7 +3585,7 @@ jobs:
             if gh api "repos/$GH_REPO/issues/$PR/labels" --method POST -f "labels[]=$REVIEW_LABEL" > /dev/null; then
               labelled='true'
             else
-              echo "::warning title=Could not label #$PR::'$REVIEW_LABEL' was not added, so the next round may not wait for this review"
+              echo "::warning title=Could not label #$PR::'$REVIEW_LABEL' was not added"
             fi
           fi
 
@@ -3622,10 +3597,21 @@ jobs:
           # pushed and already commented on. Warn rather than turn a good round red.
           if gh api --method POST "repos/$GH_REPO/dispatches" --input "$RUNNER_TEMP/dispatch.json"; then
             echo "Asked for a '$DISPATCH_TYPE' review of #$PR"
+
+            # Replaces the last request, which must stay the last line of the body for the
+            # blank lines before it not to pile up
+            if body=$(gh api "repos/$GH_REPO/pulls/$PR" --jq '.body // ""'); then
+              body=$(grep -vE "^<!-- $REVIEW_REQUESTED_MARKER [0-9a-f]{40} \S+ -->$" <<< "$body" || true)
+              printf -v body '%s\n\n<!-- %s %s %s -->' "$body" "$REVIEW_REQUESTED_MARKER" "$HEAD_SHA" \
+                "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              gh api "repos/$GH_REPO/pulls/$PR" --method PATCH -f body="$body" > /dev/null || body=''
+            fi
+            [[ -n "$body" ]] \
+              || echo "::warning title=Review request not recorded::A round the checks start on #$PR will not wait for this review"
           else
             echo "::warning title=Could not ask for a review::The $DISPATCH_TYPE dispatch for #$PR failed - review it yourself, or comment on it to start another round"
 
-            # Nothing is coming to take it off, and left on it holds every unattended round back
+            # Nothing is coming to take it off
             if [[ "$labelled" == 'true' ]]; then
               name=$(jq -rn --arg name "$REVIEW_LABEL" '$name | @uri')
               gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \

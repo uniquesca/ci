@@ -34,36 +34,6 @@ We looked at 105 AI pull requests across 15 repositories in early October 2026 (
 
 ## Fix next
 
-### Waiting for the review
-
-After a round pushes, the QA checks and the AI review run at the same time. Whichever finishes
-first stands down, and the second starts the next round. Today the round knows a review is still
-running from the `ai:reviewing` label. That has three problems:
-
-- If the review never starts (for example the reviewer is set up wrong), the label stays on. The
-  next round waits, and nothing wakes it up until somebody types `/ai-do`.
-- If a second review is asked for while the first is still running, the first one takes the label
-  off when it finishes. The round then runs without waiting for the second review, and that review
-  starts one more round later.
-- If a person takes the label off, the round stops waiting.
-
-**Plan:** stop using the label to decide anything. Labels are only there to show people what is
-happening.
-
-- The round comment says which commit it asked a review for.
-- The review itself shows the review is done, because GitHub records which commit it was for. A
-  review run that fails says so in its failure comment, for that commit.
-- A round waits only while the review it asked for has not arrived, and for no more than 60
-  minutes.
-
-This needs no new permissions and no change in the repositories that use the workflows.
-
-### A failed review leaves red checks unanswered
-
-If QA finishes first and the review run then fails, nothing starts the next round, and the failing
-checks wait for a person. The plan above fixes this too: the failure comment counts as the review
-having finished.
-
 ### Clean up even when a run runs out of time
 
 When a whole run takes too long, GitHub stops it and skips everything left to do. That includes
@@ -136,8 +106,27 @@ These are breaking changes, so they wait for the next major version.
 - Remove `review_check_patterns` from AI Implement. It already does nothing, and warns when it is
   set.
 - Remove `verb` from AI run report. It already does nothing, and warns when it is set.
+- Rename `review_label_minutes` in AI Implement to `review_wait_minutes`. It is how long a round
+  waits for a review, and has nothing to do with the label.
 
 ## Done
+
+### Waiting for the review
+
+After a round pushes, the QA checks and the AI review run at the same time, and whichever finishes
+second starts the next round.
+
+- The round writes in the pull request description which commit it asked a review for, once the
+  request has gone through.
+- A round waits only until a review of that commit or of the branch head arrives, and for no more than 60
+  minutes. The `ai:reviewing` label is only there to show people a review is coming.
+- A review run that fails posts its failure as a review, so the next round still starts and acts on
+  red checks.
+
+Still open:
+
+- A review that never starts, or could not be submitted and was posted as a plain comment, starts
+  nothing. If QA finished first, the round waits for somebody to type `/ai-do`.
 
 ### Step 0: The AI has its own GitHub accounts
 

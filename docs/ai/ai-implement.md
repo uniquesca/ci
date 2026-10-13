@@ -225,8 +225,8 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `dispatch_review` | boolean | `false` | Ask [`ai-review`](ai-review.md) to look at the work as soon as it is pushed, with a `repository_dispatch` event. Turn it on only once a workflow is subscribed to that event |
 | `review_dispatch_type` | string | `ai-review` | The `repository_dispatch` event type the reviewing workflow listens for. Keep it the same as its `dispatch_type` |
 | `request_review` | boolean | `true` | Ask the person who triggered a round to review the pull request when it finishes. Skipped for a bot-triggered round, and when that person opened the pull request themselves |
-| `review_label` | string | `ai:reviewing` | The reviewing agent's `progress_label`, put on the pull request when a review is dispatched and looked for by the [wait](#what-starts-a-round-and-what-it-reads). Empty never waits for the reviewer |
-| `review_label_minutes` | number | `60` | How long the reviewer's label counts as a review still coming. Older, a round takes it off and goes ahead. Keep it above the reviewing workflow's `timeout_minutes` plus queue time |
+| `review_label` | string | `ai:reviewing` | The reviewing agent's `progress_label`, put on the pull request when a review is dispatched so people see it is coming. Empty labels nothing |
+| `review_label_minutes` | number | `60` | How long after asking for a review a round still [waits](#what-starts-a-round-and-what-it-reads) for it. Keep it above the reviewing workflow's `timeout_minutes` plus queue time |
 | `review_check_patterns` | string | `''` | Deprecated, does nothing, and warns when set. Will be removed in v12 |
 | `provision_checks` | boolean | `true` | Set the runner up before the agent starts and tell it the exact commands CI will check its work with. Detected from the repository rather than configured - see [what it is given to check with](#what-the-agent-is-given-to-check-with). The master switch for all of it: turn it off and nothing is prepared |
 | `spin_up_docker` | boolean | `true` | Bring the application up when the repository has a `task.sh` or a compose file. `timeout_minutes` needs room above `agent_timeout_minutes` for it |
@@ -262,13 +262,15 @@ there are none and to leave it that way, and verifies by reading and names what 
 
 After a round pushes, your QA workflows and the reviewing agent run in parallel and finish in either
 order, so each one starting a round asks Github whether the other is still working - checks still
-reporting on the commit, or the reviewer's label still on the pull request with no review of the
-commit posted yet. The label goes on before the review is dispatched and counts for
-`review_label_minutes`. The first to finish exits having posted nothing, and the second runs the
-round with both sets of feedback. The reviewing agent's review starts it whatever its state, so red
-checks are still acted on when it approves - and that round, like one the checks start, only runs
-for something asking for a change. There is no handshake between them, so a duplicated or lost trigger cannot wedge it, and
-nothing waits for a reviewer that was never dispatched. These rounds count as unattended against
+reporting on the commit, or a review asked for and not yet posted. The pull request body records
+the commit a review was asked for, and the review counts as posted once one of that commit or of the
+head exists; after `review_label_minutes` the round goes ahead without it. A review run that fails
+posts its failure as a review, so it counts too. The first to finish exits having posted nothing,
+and the second runs the round with both sets of feedback. The reviewing agent's review starts it
+whatever its state, so red checks are still acted on when it approves - and that round, like one the
+checks start, only runs for something asking for a change. There is no handshake between them, so a
+duplicated or lost trigger cannot wedge it. **A review that never starts wakes nothing:** if QA
+finished first, the round waits for the next trigger or `/ai-do`. These rounds count as unattended against
 [the round cap](#the-round-cap), which is what stops the round → push → CI → round cycle running
 away. **`workflow_run` only fires when the workflow file containing it is on the default branch**,
 which on a feature branch looks exactly like a broken gate. "Still reporting" means every check run
