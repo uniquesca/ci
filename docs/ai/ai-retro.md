@@ -30,8 +30,6 @@ jobs:
       anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
       anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
       anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
-      # Writes the retro to the job summary only. Set to false once the retros read right
-      shadow: true
 
   ai-harness-hint:
     permissions:
@@ -48,8 +46,6 @@ jobs:
       anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
       # The `name:` of the repository's QA workflow
       qa_workflow: QA
-      # Writes the hint to the job summary only. Set to false once the hints read right
-      shadow: true
 ```
 
 A retro runs when any of these is true: `min_rounds` rounds after the pull request opened,
@@ -73,7 +69,6 @@ None.
 | `min_change_requests` | number | `2` | How many change requests from people make a retro, whatever the number of rounds |
 | `max_points` | number | `5` | Most points the comment may make |
 | `max_point_chars` | number | `240` | Longest a single point may be. A longer one is cut at the last whole sentence that fits |
-| `shadow` | boolean | `true` | Write the retro to the job summary instead of posting it |
 | `model` | string | `claude-sonnet-5-5` | Model that works out why the pull request took so many rounds |
 | `effort` | string | `medium` | How much reasoning the agent spends. Empty leaves the CLI default |
 | `max_turns` | number | `30` | How many turns the agent may spend before it has to answer |
@@ -82,7 +77,7 @@ None.
 
 ## Outputs
 
-None. The result is a comment on the pull request, or a job summary in shadow mode.
+None. The result is a comment on the pull request.
 
 ## Dig deeper
 

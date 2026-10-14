@@ -55,11 +55,6 @@ on:
         # pin-ci-version: skip - a page for people to read, and main is the one kept current
         default: 'https://github.com/uniquesca/ci/blob/main/docs/ai.md'
         type: string
-      shadow:
-        description: 'Write the hint to the job summary instead of posting it. For tuning the inputs on real pull requests before anybody sees a comment'
-        required: false
-        default: true
-        type: boolean
       max_reason_chars:
         description: 'Longest reason the agent may give. A longer one is cut at the last whole sentence that fits'
         required: false
@@ -301,7 +296,6 @@ jobs:
           DOCS_URL: ${{ inputs.docs_url }}
           AUTHOR: ${{ steps.evidence.outputs.author }}
           MAX_CHARS: ${{ inputs.max_reason_chars }}
-          SHADOW: ${{ inputs.shadow }}
         run: |
           verdict=.ai-harness-hint/verdict.json
           if ! jq -e '(.candidate | type == "boolean") and (.reason | type == "string")' "$verdict" >/dev/null 2>&1; then
@@ -336,8 +330,4 @@ jobs:
             echo "Next time, open an issue and comment \`/ai-plan\` on it. [How to start]($DOCS_URL)"
           } > .ai-harness-hint/comment.md
 
-          if [[ "$SHADOW" == 'true' ]]; then
-            { echo "Shadow mode, not posted to #$NUMBER:"; echo; cat .ai-harness-hint/comment.md; } >> "$GITHUB_STEP_SUMMARY"
-          else
-            gh pr comment "$NUMBER" --body-file .ai-harness-hint/comment.md
-          fi
+          gh pr comment "$NUMBER" --body-file .ai-harness-hint/comment.md

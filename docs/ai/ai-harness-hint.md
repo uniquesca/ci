@@ -30,8 +30,6 @@ jobs:
       anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
       anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
       anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
-      # Writes the retro to the job summary only. Set to false once the retros read right
-      shadow: true
 
   ai-harness-hint:
     permissions:
@@ -48,8 +46,6 @@ jobs:
       anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
       # The `name:` of the repository's QA workflow
       qa_workflow: QA
-      # Writes the hint to the job summary only. Set to false once the hints read right
-      shadow: true
 ```
 
 A pull request gets one hint at most, and none when it was closed without merging, came from the
@@ -74,7 +70,6 @@ None.
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branches the implementing workflow pushes to. Keep it the same as [`ai-implement`](ai-implement.md)'s |
 | `skip_label` | string | `no-ai-hint` | A pull request carrying this label gets no hint |
 | `docs_url` | string | `https://github.com/uniquesca/ci/blob/main/docs/ai.md` | Where the hint sends somebody to get started |
-| `shadow` | boolean | `true` | Write the hint to the job summary instead of posting it |
 | `max_reason_chars` | number | `300` | Longest reason the agent may give. A longer one is cut at the last whole sentence that fits |
 | `model` | string | `claude-sonnet-5-5` | Model that judges whether the change suited the harness |
 | `effort` | string | `low` | How much reasoning the agent spends. Empty leaves the CLI default |
@@ -84,7 +79,7 @@ None.
 
 ## Outputs
 
-None. The result is a comment on the pull request, or a job summary in shadow mode.
+None. The result is a comment on the pull request.
 
 ## Dig deeper
 

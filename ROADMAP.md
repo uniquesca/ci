@@ -76,7 +76,7 @@ opened, and how each was made:
 
 For pull requests made by hand or with local AI, it also shows how many the hint workflow checked
 and how many it found were a good fit for the harness. For this, `ai-harness-hint.yml` first has
-to save every verdict, including "not a fit" and the ones in shadow mode. Today it saves nothing.
+to save every verdict, including "not a fit". Today it saves nothing.
 Decide who sees the numbers for each person before it goes out.
 
 ### Say which tests a pull request is missing
@@ -84,9 +84,9 @@ Decide who sees the numbers for each person before it goes out.
 `ai-test-advice.yml` comments on a pull request whose code no test covers yet, naming the unit or
 end-to-end tests to add. Still to do:
 
-- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
-- Have the QA workflows upload a coverage report, so a script can tell the agent which changed
-  lines no test runs instead of the agent working it out. The advice then has to wait for QA.
+- If the advice often asks for tests of code that is already tested, or misses real gaps, have the
+  QA workflows upload a coverage report so a script can tell the agent which changed lines no test
+  runs. The advice then has to wait for QA.
 - Save every verdict, including "no gap", and count how often people add the test it asked for.
 
 ### Learn from issues that needed a lot of rounds

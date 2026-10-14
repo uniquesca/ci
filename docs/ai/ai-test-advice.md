@@ -29,8 +29,6 @@ jobs:
       anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
       # Optional. Only these kinds of test are suggested
       test_setup: 'Unit: PHPUnit in tests/Unit. E2E: Playwright in e2e/'
-      # Writes the advice to the job summary only. Set to false once it reads right
-      shadow: true
 ```
 
 A pull request gets one comment at most, and none when it is a draft, came from the harness or a
@@ -53,7 +51,6 @@ None.
 | `ignore_path_pattern` | string | `^(\.github\|docs)/\|\.(md\|txt\|json\|ya?ml\|lock\|xml\|neon\|dist\|ini\|env\|csv\|css\|scss\|less\|svg\|png\|jpe?g\|gif\|ico\|webp)$` | Case-insensitive regular expression matching files that never need a test |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branches the implementing workflow pushes to. Keep it the same as [`ai-implement`](ai-implement.md)'s |
 | `skip_label` | string | `no-ai-test-advice` | A pull request carrying this label gets no advice |
-| `shadow` | boolean | `true` | Write the advice to the job summary instead of posting it |
 | `max_gaps` | number | `5` | Most tests the comment may suggest |
 | `max_gap_chars` | number | `300` | Longest a single suggestion may be. A longer one is cut at the last whole sentence that fits |
 | `model` | string | `claude-sonnet-5-5` | Model that judges which tests the change is missing |
@@ -64,7 +61,7 @@ None.
 
 ## Outputs
 
-None. The result is a comment on the pull request, or a job summary in shadow mode.
+None. The result is a comment on the pull request.
 
 ## Dig deeper
 
