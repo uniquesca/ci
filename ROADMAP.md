@@ -34,16 +34,6 @@ We looked at 105 AI pull requests across 15 repositories in early October 2026 (
 
 ## Fix next
 
-### Clean up even when a run runs out of time
-
-When a whole run takes too long, GitHub stops it and skips everything left to do. That includes
-the clean-up at the end: taking the `ai:…` label off, swapping 👀 for 🚀 or 😕, and posting the
-failure comment. The label and 👀 then stay on, as if the AI were still working, and nobody is told
-the run failed. Each run leaves the AI about 5 minutes less than the whole run, so this is rare.
-
-**Plan:** move the clean-up into a small separate job that runs after the main one, however the main
-one ended, in all three workflows.
-
 ### Close the issue when its pull request merges
 
 AI pull requests say `Closes #N`, so the issue closes when the pull request merges into the default
@@ -113,6 +103,18 @@ These are breaking changes, so they wait for the next major version.
   waits for a review, and has nothing to do with the label.
 
 ## Done
+
+### Clean up even when a run runs out of time
+
+When GitHub stops a run for taking too long, it skips everything left in it. A small job after each
+of AI Plan, AI Implement and AI Review then does the clean-up the run never got to: it takes the
+`ai:…` label off, swaps 👀 for 😕, and says the run did not finish and how to try again. A cut-off
+review is still posted as a review, so the next round starts.
+
+Still open:
+
+- On the first run that really runs out of time, check that the small job got what it needed from
+  the run: which issue or pull request, and whether there was a label and a 👀 to take off.
 
 ### To fix, or recommended
 

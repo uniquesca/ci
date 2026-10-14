@@ -111,8 +111,13 @@ jobs:
     # budget - the two are separate inputs, and the defaults leave five minutes between
     # them. That gap matters: a job timeout cancels every remaining step, so if the agent
     # were allowed to run right up to it, it would take the failure comment down with it
-    # and the issue would hear nothing at all.
+    # and the issue would hear only the short note `finish` posts.
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      finished: ${{ steps.finished.outputs.done }}
+      acked: ${{ steps.ack.outcome == 'success' }}
+      posted: ${{ steps.post.outcome == 'success' }}
+      base: ${{ steps.task.outputs.base }}
     permissions:
       contents: read
       issues: write
@@ -1182,6 +1187,38 @@ jobs:
 
           gh api "repos/$GH_REPO/issues/$ISSUE/labels/$name" --method DELETE > /dev/null \
             || echo "::warning title=Could not unlabel the issue::'$LABEL' is still on #$ISSUE with nothing running - take it off by hand"
+
+      # Last, so `finish` can tell the clean-up above ran
+      - name: Mark the clean-up done
+        id: finished
+        if: always()
+        run: echo "done=true" >> "$GITHUB_OUTPUT"
+
+  # A job that runs out of time skips every step left, the clean-up at the end included. This does
+  # that clean-up when it never ran. A job that never started has no outputs, so a run cancelled in
+  # the queue is left alone.
+  finish:
+    name: Clean up after a run that was cut off
+    needs: plan
+    if: ${{ always() && needs.plan.outputs.acked == 'true' && needs.plan.outputs.finished != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - uses: uniquesca/ci/ai-cut-off@v11
+        with:
+          number: ${{ github.event.issue.number }}
+          # Nothing to say once the plan is posted
+          message: >-
+            ${{ needs.plan.outputs.posted != 'true'
+            && format('@{0} AI Plan did not finish, so there is no plan for this issue. Comment `{1}{2}` here to try again.',
+                      github.event.comment.user.login, inputs.command,
+                      needs.plan.outputs.base && format(' base={0}', needs.plan.outputs.base) || '')
+            || '' }}
+          subject: ${{ github.event.comment.node_id }}
+          label: ${{ inputs.progress_label }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # A command that will not run - not at the start of the comment, or on the wrong kind of page - would
   # otherwise get silence, which looks exactly like a run that is still working. No `permissions:`, so

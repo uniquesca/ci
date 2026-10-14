@@ -234,8 +234,18 @@ jobs:
     # budget - the two are separate inputs, and the defaults leave five minutes between
     # them. That gap matters: a job timeout cancels every remaining step, so if the agent
     # were allowed to run right up to it, it would take the failure comment down with it
-    # and nothing would be said anywhere.
+    # and only the short note `finish` posts would be said.
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      finished: ${{ steps.finished.outputs.done }}
+      acked: ${{ steps.ack.outcome == 'success' }}
+      target: ${{ steps.event.outputs.target }}
+      mention: ${{ steps.event.outputs.actor_type == 'User' && format('@{0} ', steps.event.outputs.actor) || '' }}
+      # The base asked for matters only before there is a branch
+      retry_base: >-
+        ${{ steps.event.outputs.mode == 'initial'
+        && steps.event.outputs.base_given == 'true'
+        && format(' base={0}', steps.event.outputs.requested_base) || '' }}
     # Two rounds on one pull request must not run at once - they would push over each other
     # on the same branch. Queued rather than cancelled, so the second round starts from what
     # the first one pushed.
@@ -319,8 +329,8 @@ jobs:
       # conclusion only comes from the job-level `if`, which is why the branch check above is
       # duplicated there for the triggers whose payload can answer it.
       #
-      # **Every step that does work must test `env.PROCEED == 'true'` in its `if`.** The three
-      # that deliberately do not are the two `always()` reporters at the end and the step that
+      # **Every step that does work must test `env.PROCEED == 'true'` in its `if`.** The ones
+      # that deliberately do not are the `always()` steps at the end and the step that
       # answers a stood-down command - and that one fires precisely *because* PROCEED is false.
       # Missing this test does not fail loudly: the step simply runs after the job has given up,
       # against half-set outputs. That is how `Resolve the pull request` came to run with an
@@ -3750,6 +3760,37 @@ jobs:
 
           gh api "repos/$GH_REPO/issues/$TARGET/labels/$name" --method DELETE > /dev/null \
             || echo "::warning title=Could not unlabel #$TARGET::'$LABEL' is still on it with nothing running - take it off by hand"
+
+      # Last, so `finish` can tell the clean-up above ran
+      - name: Mark the clean-up done
+        id: finished
+        if: always()
+        run: echo "done=true" >> "$GITHUB_OUTPUT"
+
+  # A job that runs out of time skips every step left, the clean-up at the end included. This does
+  # that clean-up when it never ran. A job that never started has no outputs, so a run cancelled in
+  # the queue is left alone.
+  finish:
+    name: Clean up after a run that was cut off
+    needs: implement
+    if: ${{ always() && needs.implement.outputs.target != '' && needs.implement.outputs.finished != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: uniquesca/ci/ai-cut-off@v11
+        with:
+          number: ${{ needs.implement.outputs.target }}
+          message: >-
+            ${{ format('{0}AI Implement did not finish this run. Comment `{1}{2}` here to try again.',
+                       needs.implement.outputs.mention, inputs.command, needs.implement.outputs.retry_base) }}
+          subject: >-
+            ${{ needs.implement.outputs.acked == 'true'
+            && (github.event.comment.node_id || github.event.review.node_id) || '' }}
+          label: ${{ inputs.progress_label }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # A command that will not run - not at the start of the comment, or on the wrong kind of page - would
   # otherwise get silence, which looks exactly like a run that is still working. No `permissions:`, so

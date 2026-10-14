@@ -136,6 +136,13 @@ jobs:
               && startsWith(github.event.comment.body, inputs.command)) }}
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      finished: ${{ steps.finished.outputs.done }}
+      # Minted only once PROCEED has held
+      proceeded: ${{ steps.ai_review.outcome == 'success' }}
+      pull_request: ${{ steps.pull_request.outputs.number }}
+      ai_authored: ${{ steps.pull_request.outputs.ai_authored }}
+      submitted: ${{ steps.submit.outcome == 'success' }}
     # One review per pull request at a time. Queued rather than cancelled: a second push
     # deserves its own review, and cancelling would leave the loop with nothing to answer.
     #
@@ -174,8 +181,8 @@ jobs:
       # Cheaper to hold to here than there. `Resolve the pull request` is the one place PROCEED
       # is ever set, whichever event started the run, and everything below it is downstream of
       # that one place. The two steps above it answer the commenter and touch nothing else. The
-      # three that deliberately do not test it are the two `always()` reporters at the end and
-      # the step that tells somebody their command cannot run here - and that one fires precisely
+      # ones that deliberately do not test it are the `always()` steps at the end and the step
+      # that tells somebody their command cannot run here - and that one fires precisely
       # *because* PROCEED is false.
       #
       # There is no job-level branch filter, because neither payload can answer the question
@@ -1044,6 +1051,50 @@ jobs:
              && [[ "$ADDED" == 'true' ]]; then
             echo "::warning title=Could not unlabel #$PR::'$LABEL' is still on it with nothing running - take it off by hand"
           fi
+
+      # Last, so `finish` can tell the clean-up above ran
+      - name: Mark the clean-up done
+        id: finished
+        if: always()
+        run: echo "done=true" >> "$GITHUB_OUTPUT"
+
+  # A job that runs out of time skips every step left, the clean-up at the end included. This does
+  # that clean-up when it never ran. A job that never started has no outputs, so a run cancelled in
+  # the queue is left alone.
+  finish:
+    name: Clean up after a run that was cut off
+    needs: review
+    if: ${{ always() && needs.review.outputs.proceeded == 'true' && needs.review.outputs.finished != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      # The failure goes up as a review, like the one the job above posts, so the round waiting on it starts
+      - name: Create AI Review app token
+        id: ai_review
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AI_REVIEW_APP_ID }}
+          private-key: ${{ secrets.AI_REVIEW_PRIVATE_KEY }}
+
+      - uses: uniquesca/ci/ai-cut-off@v11
+        if: always()
+        with:
+          number: ${{ needs.review.outputs.pull_request }}
+          # Nothing to say once the review is submitted
+          message: >-
+            ${{ needs.review.outputs.submitted != 'true'
+            && format('AI Review did not finish, so this pull request has not been reviewed. Review it yourself, or comment `{0}` to {1}.',
+                      needs.review.outputs.ai_authored == 'true' && inputs.implement_command || inputs.command,
+                      needs.review.outputs.ai_authored == 'true' && 'run another implementing round' || 'try again')
+            || '' }}
+          subject: ${{ github.event.comment.node_id }}
+          # Also the label the implementing workflow put on before it dispatched this run
+          label: ${{ inputs.progress_label }}
+          review_token: ${{ steps.ai_review.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   # A command that will not run - not at the start of the comment, or on the wrong kind of page - would
   # otherwise get silence, which looks exactly like a run that is still working. No `permissions:`, so

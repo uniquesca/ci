@@ -147,6 +147,7 @@ out.
 | [`ai-qa-criteria`](actions/ai-qa-criteria.md) | Copies the plan's QA acceptance criteria into the pull request body, and keeps them in step with the plan |
 | [`ai-run-report`](actions/ai-run-report.md) | Reads an agent execution log - the final message, the cost, and why the run stopped |
 | [`ai-react`](actions/ai-react.md) | Reacts on the comment or review that started an AI run, to show it was picked up and how it ended |
+| [`ai-cut-off`](actions/ai-cut-off.md) | Cleans up after an AI run that stopped before its own clean-up ran, most likely because it ran out of time |
 | [`ai-command-hint`](actions/ai-command-hint.md) | Answers an AI command that will not run, because it is not at the start of the comment or is on the wrong page |
 | [`ai-style-guide`](actions/ai-style-guide.md) | The writing rules every AI agent's prompt carries |
 | [`ai-render-report`](actions/ai-render-report.md) | Renders an implementing agent's report into the pull request, and keeps the status at its top current |
