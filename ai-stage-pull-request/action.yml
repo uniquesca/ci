@@ -304,8 +304,13 @@ runs:
         # Note the case. The webhook that triggered this reports `changes_requested`, but
         # REST reports `CHANGES_REQUESTED` - these are lowercased so a caller comparing the
         # two does not silently never match.
+        #
+        # A reviewing run that failed posts that as a review, so that it starts the next round.
+        # It says nothing about the code.
         gh api --paginate --slurp "repos/$GH_REPO/pulls/$PR/reviews" \
-          | jq 'flatten | map(select(.state != "PENDING"))' > "$tmp/reviews-raw.json"
+          | jq 'flatten | map(select(.state != "PENDING"
+                                     and ((.body // "") | contains("<!-- ai-review-failed -->") | not)))' \
+          > "$tmp/reviews-raw.json"
 
         # Split the same way the threads are, and for the same reason. A review older than the
         # watermark has been answered by the rounds after it, so it is not work - but it is

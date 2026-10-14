@@ -423,8 +423,9 @@ jobs:
             echo "::warning title=Could not label #$PR::'$LABEL' was not added, the run continues without it"
           fi
 
-      # Minted once and used only to submit the review. The reviewing agent writes review.json on
-      # disk and never receives this token, so it cannot post, edit or request changes itself.
+      # Minted once and used only to submit the review, or the failure in its place. The reviewing
+      # agent writes review.json on disk and never receives this token, so it cannot post, edit or
+      # request changes itself.
       - name: Create AI Review app token
         id: ai_review
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -921,7 +922,9 @@ jobs:
           fi
 
       # A failed review is otherwise invisible from the pull request, and it is the step that
-      # would have started the next round - so silence here stalls the whole loop.
+      # would have started the next round - so silence here stalls the whole loop. Posted as a
+      # review with the marker, on the commit it was for, so that it starts that round and ends
+      # the round's wait for this review like a finished one does.
       #
       # `verdict` and not `agent`: the agent step goes red for an overrun that cost the review
       # nothing, and a review that was submitted must not also be reported as unfinished.
@@ -940,6 +943,8 @@ jobs:
           REASON: ${{ steps.report.outputs.reason }}
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           COMMAND: ${{ inputs.command }}
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          REVIEW_TOKEN: ${{ steps.ai_review.outputs.token }}
           # A run that failed was billed for whatever it did before it failed, and on this path
           # there is no review to record it
           USAGE: ${{ steps.report.outputs.summary }}
@@ -973,7 +978,15 @@ jobs:
           } > "$RUNNER_TEMP/failure.md"
 
           cat "$RUNNER_TEMP/failure.md" >> "$GITHUB_STEP_SUMMARY"
-          gh issue comment "$PR" --body-file "$RUNNER_TEMP/failure.md"
+
+          jq -n --rawfile text "$RUNNER_TEMP/failure.md" --arg sha "$HEAD_SHA" --arg marker "$REVIEW_MARKER" \
+            '{commit_id: $sha, event: "COMMENT", body: ($marker + "\n<!-- ai-review-failed -->\n\n" + $text)}' \
+            > "$RUNNER_TEMP/failure-review.json"
+          if [[ -z "$REVIEW_TOKEN" ]] \
+             || ! GH_TOKEN="$REVIEW_TOKEN" gh api "repos/$GH_REPO/pulls/$PR/reviews" --method POST \
+                    --input "$RUNNER_TEMP/failure-review.json" > /dev/null; then
+            gh issue comment "$PR" --body-file "$RUNNER_TEMP/failure.md"
+          fi
 
       - name: Say how it ended
         if: ${{ always() && steps.ack.outcome == 'success' }}
@@ -989,8 +1002,7 @@ jobs:
       # and the output rather than the outcome, because a skipped step's outputs read as empty.
       #
       # A dispatched run takes it off even when it stood down before labelling anything. The
-      # implementing workflow labels the pull request before it dispatches, and its next round
-      # waits for as long as the label stays on.
+      # implementing workflow labels the pull request before it dispatches.
       - name: Take the label back off
         if: >-
           ${{ always() && inputs.progress_label != ''

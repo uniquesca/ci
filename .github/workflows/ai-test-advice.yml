@@ -1,0 +1,322 @@
+name: AI Test Advice
+
+on:
+  workflow_call:
+    inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
+        required: false
+        default: ''
+        type: string
+      test_setup:
+        description: 'The kinds of test the repository has and where they live, in a sentence or two - for example "Unit: PHPUnit in tests/Unit. E2E: Playwright in e2e/". Only those kinds are suggested. Empty lets the agent find out from the repository'
+        required: false
+        default: ''
+        type: string
+      test_path_pattern:
+        description: 'Case-insensitive regular expression matching test files. A pull request that changes nothing but these, and files matching ignore_path_pattern, gets no advice'
+        required: false
+        default: '(^|/)(tests?|__tests__|specs?|e2e|cypress|playwright)/|\.(test|spec|cy|e2e)\.[a-z]+$|Test\.php$'
+        type: string
+      ignore_path_pattern:
+        description: 'Case-insensitive regular expression matching files that never need a test: docs, config, lock files, styles and images'
+        required: false
+        default: '^(\.github|docs)/|\.(md|txt|json|ya?ml|lock|xml|neon|dist|ini|env|csv|css|scss|less|svg|png|jpe?g|gif|ico|webp)$'
+        type: string
+      branch_prefix:
+        description: 'Prefix of the branches the implementing workflow pushes to. A pull request on one gets no advice, because AI Review already asks for the tests there. Keep it the same as the implementing workflow branch_prefix'
+        required: false
+        default: 'ai-feature/'
+        type: string
+      skip_label:
+        description: 'A pull request carrying this label gets no advice'
+        required: false
+        default: 'no-ai-test-advice'
+        type: string
+      shadow:
+        description: 'Write the advice to the job summary instead of posting it. For reading what it says on real pull requests before anybody sees a comment'
+        required: false
+        default: true
+        type: boolean
+      max_gaps:
+        description: 'Most tests the comment may suggest'
+        required: false
+        default: 5
+        type: number
+      max_gap_chars:
+        description: 'Longest a single suggestion may be. A longer one is cut at the last whole sentence that fits'
+        required: false
+        default: 300
+        type: number
+      model:
+        description: 'Model that judges which tests the change is missing'
+        required: false
+        default: 'claude-sonnet-5-5'
+        type: string
+      effort:
+        description: 'How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to'
+        required: false
+        default: 'medium'
+        type: string
+      max_turns:
+        description: 'How many turns the agent may spend reading the change and the tests before it has to answer'
+        required: false
+        default: 25
+        type: number
+      max_diff_bytes:
+        description: 'Longest diff to stage. A bigger change is truncated, and the agent is told so'
+        required: false
+        default: 100000
+        type: number
+      timeout_minutes:
+        description: 'How long the whole job may run'
+        required: false
+        default: 15
+        type: number
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  advise:
+    name: Check whether the change is missing tests
+    # Once, when the pull request is opened or leaves draft. A pull request from a fork gets no
+    # `id-token` to mint the agent's credential from.
+    if: >-
+      ${{ github.event_name == 'pull_request'
+          && (github.event.action == 'opened' || github.event.action == 'ready_for_review')
+          && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    # Opening a pull request and marking it ready can come close together, and each checks for
+    # earlier advice before posting. Queued so the second sees the first one's comment.
+    concurrency:
+      group: ai-test-advice-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      # Posting the advice. `gh pr comment` goes through GraphQL, which asks for the pull request
+      # scope rather than the issue one
+      pull-requests: write
+      issues: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      ADVICE_MARKER: '<!-- ai-test-advice -->'
+      # `Pick the code to judge` sets this to false when there is nothing to advise on, and every
+      # step after it must test `env.PROCEED == 'true'` in its `if`.
+      PROCEED: 'true'
+    steps:
+      - name: Pick the code to judge
+        id: pick
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          TEST_PATTERN: ${{ inputs.test_path_pattern }}
+          IGNORE_PATTERN: ${{ inputs.ignore_path_pattern }}
+          BRANCH_PREFIX: ${{ inputs.branch_prefix }}
+          SKIP_LABEL: ${{ inputs.skip_label }}
+        run: |
+          stand_down() {
+            echo "$1" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo 'PROCEED=false' >> "$GITHUB_ENV"
+            exit 0
+          }
+
+          number="$NUMBER"
+          # Fetched rather than read from the event: the labels may have changed while it queued
+          pr=$(gh api "repos/$GH_REPO/pulls/$number")
+          [[ $(jq -r .state <<<"$pr") == 'open' ]] || stand_down "#$number is not open."
+          [[ $(jq -r .draft <<<"$pr") == 'false' ]] || stand_down "#$number is a draft."
+          [[ $(jq -r .user.type <<<"$pr") != 'Bot' ]] || stand_down "#$number was opened by a bot."
+          [[ $(jq -r .head.ref <<<"$pr") != "$BRANCH_PREFIX"* ]] || stand_down "#$number came from the harness."
+          if [[ -n "$SKIP_LABEL" ]] && jq -e --arg l "$SKIP_LABEL" 'any(.labels[]; .name == $l)' <<<"$pr" >/dev/null; then
+            stand_down "#$number carries $SKIP_LABEL."
+          fi
+
+          # Leaving draft again after being advised. Only this workflow's own comment counts:
+          # anybody can paste the marker into one of theirs
+          own=$(gh api --paginate "repos/$GH_REPO/issues/$number/comments?per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | .body')
+          if grep -qF -- "$ADVICE_MARKER" <<<"$own"; then
+            stand_down "#$number already has advice."
+          fi
+
+          # Outside the workspace: the checkout below empties it on a fresh runner
+          staged="$RUNNER_TEMP/ai-test-advice"
+          mkdir -p "$staged"
+
+          # Deleted files need no test, and the list API goes past the 300 files a diff stops at
+          gh api --paginate "repos/$GH_REPO/pulls/$number/files?per_page=100" \
+            --jq '.[] | select(.status != "removed") | .filename' > "$staged/all-files.txt"
+          grep -Ei -- "$TEST_PATTERN" "$staged/all-files.txt" > "$staged/test-files.txt" || true
+          grep -Eiv -- "$TEST_PATTERN" "$staged/all-files.txt" | grep -Eiv -- "$IGNORE_PATTERN" > "$staged/code-files.txt" || true
+          [[ -s "$staged/code-files.txt" ]] || stand_down "#$number changes no code that would need a test."
+
+          {
+            echo "number=$number"
+            echo "head_sha=$(jq -r .head.sha <<<"$pr")"
+            echo "author=$(jq -r .user.login <<<"$pr")"
+          } >> "$GITHUB_OUTPUT"
+          jq '{title, body, author: .user.login, base: .base.ref, head: .head.ref,
+               additions, deletions, changed_files}' <<<"$pr" > "$staged/pull-request.json"
+
+      - name: Check out the pull request
+        if: ${{ env.PROCEED == 'true' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pick.outputs.head_sha }}
+          persist-credentials: false
+
+      - name: Stage the diff
+        id: diff
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          NUMBER: ${{ steps.pick.outputs.number }}
+          MAX_BYTES: ${{ inputs.max_diff_bytes }}
+        run: |
+          mv "$RUNNER_TEMP/ai-test-advice" .ai-test-advice
+
+          # Github refuses a diff past 300 files. The agent has the checkout and the file lists, so
+          # it still decides, from less.
+          gh pr diff "$NUMBER" > .ai-test-advice/full.patch || true
+          head -c "$MAX_BYTES" .ai-test-advice/full.patch > .ai-test-advice/diff.patch
+          if (( $(wc -c < .ai-test-advice/full.patch) > MAX_BYTES )) || [[ ! -s .ai-test-advice/full.patch ]]; then
+            echo 'truncated=true' >> "$GITHUB_OUTPUT"
+          fi
+          rm .ai-test-advice/full.patch
+
+      - name: Read the style guide
+        id: style
+        if: ${{ env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
+
+      # Read-only, and nothing it writes leaves the runner except through the step after it, which
+      # caps how much of it reaches the pull request
+      - name: Look for missing tests
+        id: agent
+        if: ${{ env.PROCEED == 'true' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Pull request #${{ steps.pick.outputs.number }} of this repository changes code.
+            Decide whether it needs tests it does not have yet, and which.
+
+            Read:
+
+            - `.ai-test-advice/pull-request.json` - title, description and size.
+            - `.ai-test-advice/diff.patch` - the change.
+              ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED: the file lists and the checkout have the rest.' || '' }}
+            - `.ai-test-advice/code-files.txt` - the changed files that are code.
+            - `.ai-test-advice/test-files.txt` - the test files the pull request adds or changes.
+            - The checkout, at the pull request's head, for the tests that already exist.
+
+            The repository's tests: ${{ inputs.test_setup || 'not described. Find out from the repository which kinds it has and where they live - test config such as phpunit.xml, playwright.config.*, cypress.config.*, jest, vitest or karma config, and the scripts in package.json.' }}
+
+            Only suggest a kind of test the repository already has. If it has none, answer with
+            no gaps.
+
+            A gap is behaviour the change adds or alters that a test would catch breaking, and
+            that no test exercises - neither an existing one nor one this pull request adds.
+            Before calling something a gap, search the tests for the class, function or
+            component the change touches.
+
+            - `unit`: logic inside one class, function or component - a calculation, a condition,
+              parsing, validation, an error path, or a bug this change fixes, which deserves a
+              test that would have caught it.
+            - `e2e`: a flow a user goes through across pages, forms or services, that a unit test
+              cannot reach. Only for flows the change actually alters.
+
+            Not gaps: renames, formatting, moved code, config, wiring with no logic, logging,
+            wording, generated code, and code the tests already reach.
+
+            Write `.ai-test-advice/advice.json` and nothing else:
+
+            {"gaps": [{"kind": "unit" | "e2e", "path": "...", "test": "..."}]}
+
+            - At most ${{ inputs.max_gaps }} gaps, most important first. No gaps is a common
+              and fine answer: a weak suggestion costs the reader more than it gives.
+            - `path` is the changed file the test is for.
+            - `test` is at most ${{ inputs.max_gap_chars }} characters: the case to test, concrete
+              enough to write - what goes in and what should come out - and the existing test
+              file to add it to, if there is one. Plain everyday words. No praise, no restating
+              the change.
+
+            ${{ steps.style.outputs.text }}
+          claude_args: |
+            --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools "Read,Grep,Glob,LS,Write"
+
+      - name: Post the advice
+        if: ${{ env.PROCEED == 'true' }}
+        env:
+          NUMBER: ${{ steps.pick.outputs.number }}
+          AUTHOR: ${{ steps.pick.outputs.author }}
+          MAX_GAPS: ${{ inputs.max_gaps }}
+          MAX_CHARS: ${{ inputs.max_gap_chars }}
+          SHADOW: ${{ inputs.shadow }}
+        run: |
+          advice=.ai-test-advice/advice.json
+          if ! jq -e '.gaps | type == "array"' "$advice" >/dev/null 2>&1; then
+            echo '::error title=No advice::The agent did not write a valid .ai-test-advice/advice.json'
+            exit 1
+          fi
+
+          # The comment is for a person to read in under a minute, so the limits hold whatever the
+          # agent wrote
+          cut() {
+            local text=$1
+            (( ${#text} > MAX_CHARS )) || { echo "$text"; return; }
+            text=${text:0:MAX_CHARS}
+            if [[ "$text" == *[.!?]\ * ]]; then
+              sed -E 's/^(.*[.!?]) .*$/\1/' <<<"$text"
+            else
+              echo "${text% *}…"
+            fi
+          }
+
+          gaps=$(jq -c --argjson n "$MAX_GAPS" '[.gaps[]
+            | select(type == "object" and (.kind == "unit" or .kind == "e2e")
+                     and (.path | type == "string" and . != "") and (.test | type == "string" and . != ""))][:$n][]' "$advice")
+
+          if [[ -z "$gaps" ]]; then
+            echo "#$NUMBER: no missing tests." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "$ADVICE_MARKER"
+            echo "@$AUTHOR, this change has code no test covers yet. Tests worth adding:"
+            echo
+            while IFS= read -r gap; do
+              kind=$(jq -r 'if .kind == "e2e" then "E2E" else "Unit" end' <<<"$gap")
+              path=$(jq -r '.path | gsub("`"; "")' <<<"$gap")
+              echo "- **$kind** \`$path\`: $(cut "$(jq -r .test <<<"$gap")")"
+            done <<<"$gaps"
+          } > .ai-test-advice/comment.md
+
+          if [[ "$SHADOW" == 'true' ]]; then
+            { echo "Shadow mode, not posted to #$NUMBER:"; echo; cat .ai-test-advice/comment.md; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr comment "$NUMBER" --body-file .ai-test-advice/comment.md
+          fi

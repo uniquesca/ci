@@ -34,36 +34,6 @@ We looked at 105 AI pull requests across 15 repositories in early October 2026 (
 
 ## Fix next
 
-### Waiting for the review
-
-After a round pushes, the QA checks and the AI review run at the same time. Whichever finishes
-first stands down, and the second starts the next round. Today the round knows a review is still
-running from the `ai:reviewing` label. That has three problems:
-
-- If the review never starts (for example the reviewer is set up wrong), the label stays on. The
-  next round waits, and nothing wakes it up until somebody types `/ai-do`.
-- If a second review is asked for while the first is still running, the first one takes the label
-  off when it finishes. The round then runs without waiting for the second review, and that review
-  starts one more round later.
-- If a person takes the label off, the round stops waiting.
-
-**Plan:** stop using the label to decide anything. Labels are only there to show people what is
-happening.
-
-- The round comment says which commit it asked a review for.
-- The review itself shows the review is done, because GitHub records which commit it was for. A
-  review run that fails says so in its failure comment, for that commit.
-- A round waits only while the review it asked for has not arrived, and for no more than 60
-  minutes.
-
-This needs no new permissions and no change in the repositories that use the workflows.
-
-### A failed review leaves red checks unanswered
-
-If QA finishes first and the review run then fails, nothing starts the next round, and the failing
-checks wait for a person. The plan above fixes this too: the failure comment counts as the review
-having finished.
-
 ### Clean up even when a run runs out of time
 
 When a whole run takes too long, GitHub stops it and skips everything left to do. That includes
@@ -84,10 +54,13 @@ opened before this change.
 
 ### Point people at the harness
 
-`ai-harness-hint.yml` comments on a pull request somebody wrote by hand when QA failed on its first
-run or Copilot review took several rounds. Still to do:
+`ai-harness-hint.yml` comments on a merged pull request somebody wrote by hand when QA failed on its
+first run or Copilot review took several rounds. Still to do:
 
-- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
+- Replace the `ai-harness-hint.yml` and `ai-retro.yml` callers in each repository with one
+  `ai-pr-post-analytics.yml` that runs both on `pull_request: closed`, with posting on. The old hint
+  callers also listen to `pull_request_review`, and runs Copilot's reviews start fail.
+- Read the first 20 hints posted, and change the prompt if they read wrong.
 - Count both triggers on past pull requests, to see how often each would fire.
 - Post at most one hint per person per week.
 
@@ -106,13 +79,23 @@ and how many it found were a good fit for the harness. For this, `ai-harness-hin
 to save every verdict, including "not a fit" and the ones in shadow mode. Today it saves nothing.
 Decide who sees the numbers for each person before it goes out.
 
+### Say which tests a pull request is missing
+
+`ai-test-advice.yml` comments on a pull request whose code no test covers yet, naming the unit or
+end-to-end tests to add. Still to do:
+
+- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
+- Have the QA workflows upload a coverage report, so a script can tell the agent which changed
+  lines no test runs instead of the agent working it out. The advice then has to wait for QA.
+- Save every verdict, including "no gap", and count how often people add the test it asked for.
+
 ### Learn from issues that needed a lot of rounds
 
 `ai-retro.yml` comments on a merged harness pull request that took too many rounds: what would have
 saved them, how the issue could have been approached better, and plan questions left open when work
 started. It tags the issue author. Still to do:
 
-- Run it in shadow mode in a few repositories, read the retros, then turn posting on.
+- Read the first retros posted, and change the prompt if they read wrong.
 - Check `min_rounds` and `min_change_requests` against past pull requests. On officio, #1194 had 2
   rounds but 3 change requests, so the change request limit may fire too often.
 - Count the causes it finds in the monthly report, so patterns across pull requests show up.
@@ -126,8 +109,27 @@ These are breaking changes, so they wait for the next major version.
 - Remove `review_check_patterns` from AI Implement. It already does nothing, and warns when it is
   set.
 - Remove `verb` from AI run report. It already does nothing, and warns when it is set.
+- Rename `review_label_minutes` in AI Implement to `review_wait_minutes`. It is how long a round
+  waits for a review, and has nothing to do with the label.
 
 ## Done
+
+### Waiting for the review
+
+After a round pushes, the QA checks and the AI review run at the same time, and whichever finishes
+second starts the next round.
+
+- The round writes in the pull request description which commit it asked a review for, once the
+  request has gone through.
+- A round waits only until a review of that commit or of the branch head arrives, and for no more than 60
+  minutes. The `ai:reviewing` label is only there to show people a review is coming.
+- A review run that fails posts its failure as a review, so the next round still starts and acts on
+  red checks.
+
+Still open:
+
+- A review that never starts, or could not be submitted and was posted as a plain comment, starts
+  nothing. If QA finished first, the round waits for somebody to type `/ai-do`.
 
 ### Step 0: The AI has its own GitHub accounts
 
