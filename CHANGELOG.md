@@ -1504,3 +1504,7 @@
 ## v11.28.0
 
 * Update: AI Affected Modules explains its decision in the log and summary (e8ac6c4 by George Shestayev)
+
+## v11.29.0
+
+* Update: AI Review marks each finding to fix or recommended, and recommendations wait for a person (d5782c1 by George Shestayev)
