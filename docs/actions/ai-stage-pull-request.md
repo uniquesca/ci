@@ -29,6 +29,8 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `round_marker` | no | `<!-- ai-implement-round -->` | First line of the round comment the caller posts. Used to count rounds and find the watermark |
 | `reply_marker` | no | `<!-- ai-implement-reply -->` | First line of a reply the implementing agent already posted |
 | `include_answered_threads` | no | `false` | Keep threads the implementing agent has already answered |
+| `hold_recommendations` | no | `false` | Leave out the open threads a reviewing agent only recommended, which wait for a round a person asked for |
+| `recommendation_marker` | no | `<!-- ai-review-recommendation -->` | First line of an inline comment a reviewing agent only recommended. Has to match what [`ai-post-review`](ai-post-review.md) writes |
 | `settled_record` | no | `false` | Also write `settled.json` - the decisions already taken, where `feedback.json` is what is still open |
 | `ignore_check_patterns` | no | `(ai.implement\|ai.plan)` | Case-insensitive regular expression matching check runs to leave out |
 | `max_annotations` | no | `20` | How many annotations of a failing check to stage |
@@ -42,6 +44,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `actionable_count` | How many staged items are asking for a change |
 | `feedback_count` | How many feedback items were staged, across every source |
 | `thread_count` | How many unresolved review threads were staged |
+| `held_count` | How many open recommendation threads `hold_recommendations` left out |
 | `check_count` | How many failing check runs were staged |
 | `settled_count` | How many items were written to `settled.json`. Zero when `settled_record` is off |
 | `approved_at` | When the newest approval by a person was submitted, empty when nobody has approved |
@@ -86,7 +89,8 @@ round, or from the pull request's creation on the first round.
 `has_actionable` counts the subset asking for a change: a failing check, and a review body or thread
 from a review whose state is `changes_requested`. A review that only commented is staged but not
 counted, so a caller can tell a recommendation from a request before starting a round nobody asked
-for.
+for. `hold_recommendations` goes further for a reviewing agent's recommendations, whatever review
+they were in: an open one is left out of both files, since only a person resolving it decides it.
 
 A thread whose newest comment carries `reply_marker` has been answered and is left out, or every
 round would re-address the same comment forever. A human replying after the bot puts the thread back

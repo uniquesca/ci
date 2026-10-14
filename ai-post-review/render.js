@@ -30,6 +30,7 @@ const options = {
     maxComments: Number(process.env.MAX_COMMENTS),
     maxLength: Number(process.env.MAX_LENGTH),
     plan,
+    command: process.env.IMPLEMENT_COMMAND || '',
 };
 let links = [];
 if (linksFile) {

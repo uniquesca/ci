@@ -31,6 +31,14 @@ inputs:
     description: 'Keep threads the implementing agent has already answered. Off for an implementing agent, which would otherwise redo the same work every round; on for a reviewing agent, to which an answered thread is the most interesting kind - it is where its own last concern was addressed or argued with'
     required: false
     default: false
+  hold_recommendations:
+    description: 'Leave out the open threads a reviewing agent only recommended. Those are a person''s to decide, so they wait for a round somebody asked for - on for a round nobody did. A held thread is in neither file: nobody has decided it yet'
+    required: false
+    default: false
+  recommendation_marker:
+    description: 'First line of an inline comment a reviewing agent only recommended. It has to match what `ai-post-review` writes'
+    required: false
+    default: '<!-- ai-review-recommendation -->'
   settled_record:
     description: 'Also write `settled.json` - the decisions already taken on this pull request, where the feedback is what is still open. Resolved threads and reviews from before the watermark are dropped from the feedback by design, and an agent that cannot see them re-raises a concern somebody closed, or acts on one re-raised at it. The two files never overlap, so nothing is counted as work twice'
     required: false
@@ -60,6 +68,9 @@ outputs:
   thread_count:
     description: 'How many unresolved review threads were staged'
     value: ${{ steps.stage.outputs.thread_count }}
+  held_count:
+    description: 'How many open recommendation threads `hold_recommendations` left out'
+    value: ${{ steps.stage.outputs.held_count }}
   check_count:
     description: 'How many failing check runs were staged'
     value: ${{ steps.stage.outputs.check_count }}
@@ -114,6 +125,8 @@ runs:
         ROUND_MARKER: ${{ inputs.round_marker }}
         REPLY_MARKER: ${{ inputs.reply_marker }}
         INCLUDE_ANSWERED: ${{ inputs.include_answered_threads }}
+        HOLD_RECOMMENDATIONS: ${{ inputs.hold_recommendations }}
+        RECOMMENDATION_MARKER: ${{ inputs.recommendation_marker }}
         SETTLED_RECORD: ${{ inputs.settled_record }}
         IGNORE_CHECKS: ${{ inputs.ignore_check_patterns }}
         MAX_ANNOTATIONS: ${{ inputs.max_annotations }}
@@ -254,7 +267,11 @@ runs:
         # already been decided, and an agent that cannot see them re-raises a concern somebody
         # closed. So both halves are kept: `open` is what this caller acts on, `settled` is
         # everything else, and no thread is in both.
-        jq --arg reply_marker "$REPLY_MARKER" --argjson include_answered "$INCLUDE_ANSWERED" '
+        #
+        # Except an open recommendation held back for a person. It is not this round's work and
+        # nothing has settled it, so it is in neither - and a person resolving it is what settles it.
+        jq --arg reply_marker "$REPLY_MARKER" --argjson include_answered "$INCLUDE_ANSWERED" \
+           --arg rec_marker "$RECOMMENDATION_MARKER" --argjson hold "$HOLD_RECOMMENDATIONS" '
           def normalise:
             map(.comments.nodes[0] as $first | {
               id: .id,
@@ -281,10 +298,14 @@ runs:
 
           [ .data.repository.pullRequest.reviewThreads.nodes[]? ]
           | map(select((.comments.nodes | length) > 0))
-          | map(. + {answered: (.comments.nodes | last | .body | startswith($reply_marker))})
+          | map(. + {answered: (.comments.nodes | last | .body | startswith($reply_marker)),
+                     held: ($hold and (.isResolved | not)
+                            and (.comments.nodes[0].body // "" | startswith($rec_marker)))})
           | {
+              held: (map(select(.held)) | length),
               open: (map(select((.isResolved | not)
-                                and ($include_answered or (.answered | not))))
+                                and ($include_answered or (.answered | not))
+                                and (.held | not)))
                      | normalise),
               settled: (map(select(.isResolved
                                    or (.answered and ($include_answered | not))))
@@ -505,6 +526,7 @@ runs:
         fi
 
         thread_count=$(jq 'length' "$tmp/threads.json")
+        held_count=$(jq '.held' "$tmp/threads-split.json")
         check_count=$(jq 'length' "$tmp/checks.json")
         feedback_count=$(jq 'length' "$DIR/feedback.json")
 
@@ -529,6 +551,7 @@ runs:
           printf 'actionable_count=%s\n' "$actionable_count"
           printf 'feedback_count=%s\n' "$feedback_count"
           printf 'thread_count=%s\n' "$thread_count"
+          printf 'held_count=%s\n' "$held_count"
           printf 'check_count=%s\n' "$check_count"
           printf 'settled_count=%s\n' "$settled_count"
           printf 'approved_at=%s\n' "$approved_at"
@@ -545,6 +568,7 @@ runs:
         echo "Staged pull request #$PR round $round: $feedback_count feedback item(s)," \
              "$actionable_count of them asking for a change" \
              "- $thread_count unresolved thread(s), $check_count failing check(s)," \
+             "$held_count recommendation(s) held for a person," \
              "$checks_pending check(s) still running. Watermark $since, $unattended_rounds" \
              "unattended round(s) behind us." \
              "$settled_count settled item(s)${approved_sha:+, approved by a person at $approved_at on $approved_sha}."

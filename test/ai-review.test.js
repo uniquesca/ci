@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderReview } from '../src/ai-review.js';
+import { RECOMMENDATION_MARKER, renderReview } from '../src/ai-review.js';
 
 const positions = new Set(['src/a.js:10', 'src/a.js:11']);
 
@@ -24,12 +24,13 @@ test('a high finding requests changes, and the verdict comes from nothing else',
         path: 'src/a.js',
         line: 10,
         side: 'RIGHT',
-        body: '**🔴 High:** No backoff (S3)\n\nUse the existing helper.',
+        body: '**🔴 High · to fix:** No backoff (S3)\n\nUse the existing helper.',
     }]);
     assert.equal(result.body, [
         '### 🔴 Changes requested',
         'The retry never backs off.',
         '**Findings:** 🔴 1 high',
+        '**To fix** - needed before this merges.',
         '1. **🔴 High** No backoff (S3) - `src/a.js:10`',
     ].join('\n\n'));
 });
@@ -38,10 +39,10 @@ test('findings are counted and listed high to low, whatever order they were writ
     const result = renderReview({
         headline: 'h',
         findings: [
-            { severity: 'low', title: 'Typo' },
+            { severity: 'low', title: 'Typo', fix: false },
             { severity: 'high', title: 'Bug' },
-            { severity: 'medium', title: 'Missing test' },
-            { severity: 'low', title: 'Wording' },
+            { severity: 'medium', title: 'Missing test', fix: false },
+            { severity: 'low', title: 'Wording', fix: false },
         ],
     });
 
@@ -52,11 +53,55 @@ test('findings are counted and listed high to low, whatever order they were writ
     assert.deepEqual([...order].sort((a, b) => a - b), order);
 });
 
-test('without a high finding the verdict suggests changes', () => {
-    const result = renderReview({ headline: 'h', findings: [{ severity: 'medium', title: 'T' }] });
+test('a finding to fix requests changes at any severity, and is listed before the recommendations', () => {
+    const result = renderReview({
+        headline: 'h',
+        findings: [
+            { severity: 'medium', title: 'Root in production', fix: false },
+            { severity: 'low', title: 'Stale comment', fix: true },
+        ],
+    }, { command: '/ai-do' });
+
+    assert.equal(result.verdict, 'changes_requested');
+    assert.match(result.body, /\*\*To fix\*\* - the implementing agent fixes these\.\n\n1\. \*\*🟡 Low\*\* Stale comment\n\n\*\*Recommended\*\*[^\n]*\n\n2\. \*\*🟠 Medium\*\* Root in production$/);
+});
+
+test('recommendations alone do not request changes', () => {
+    const result = renderReview({ headline: 'h', findings: [{ severity: 'medium', title: 'T', fix: false }] });
 
     assert.equal(result.verdict, 'comment');
-    assert.ok(result.body.startsWith('### 🟡 Changes suggested'));
+    assert.ok(result.body.startsWith('### 🟡 Recommendations only'));
+    assert.match(result.body, /\*\*Recommended\*\* - yours to decide\. Act on the ones you want and resolve the rest\./);
+    assert.doesNotMatch(result.body, /To fix/);
+});
+
+test('recommendations tell a person how to get them done, and carry the marker inline', () => {
+    const raw = {
+        headline: 'h',
+        findings: [
+            { severity: 'medium', title: 'Inline', fix: false, path: 'src/a.js', line: 10 },
+            { severity: 'low', title: 'Off the diff', fix: false, path: 'src/a.js', line: 99 },
+        ],
+    };
+
+    const both = renderReview(raw, { positions, command: '/ai-do' });
+    assert.ok(both.comments[0].body.startsWith(`${RECOMMENDATION_MARKER}\n**🟠 Medium · recommended:** Inline`));
+    assert.match(both.body, /Resolve the threads you do not want, then comment `\/ai-do` and the agent does the rest\. One without a thread is only done if you name it in that comment\./);
+
+    const none = renderReview(raw, { command: '/ai-do' });
+    assert.match(none.body, /Comment `\/ai-do` naming the ones you want done\./);
+});
+
+test('a finding that does not say who acts on it is a recommendation, and high is always to fix', () => {
+    const result = renderReview({
+        headline: 'h',
+        findings: [{ severity: 'medium', title: 'Unsaid' }, { severity: 'high', title: 'Bug', fix: false }],
+    });
+
+    assert.equal(result.verdict, 'changes_requested');
+    assert.match(result.body, /\*\*To fix\*\*[^\n]*\n\n1\. \*\*🔴 High\*\* Bug/);
+    assert.match(result.body, /2\. \*\*🟠 Medium\*\* Unsaid$/);
+    assert.deepEqual(result.problems, ['"Unsaid" does not say whether it is to fix, treated as a recommendation']);
 });
 
 test('a finding placed inline is listed by its title and linked once the review is posted', () => {
@@ -91,7 +136,7 @@ test('a finding that cannot sit on a diff line keeps its body in the list', () =
 test('the severities a review used to have still read', () => {
     const result = renderReview({
         headline: 'h',
-        findings: [{ severity: 'blocking', title: 'A' }, { severity: 'should', title: 'B' }, { severity: 'nit', title: 'C' }],
+        findings: [{ severity: 'blocking', title: 'A' }, { severity: 'should', title: 'B', fix: true }, { severity: 'nit', title: 'C', fix: false }],
     });
 
     assert.equal(result.verdict, 'changes_requested');
@@ -100,7 +145,7 @@ test('the severities a review used to have still read', () => {
 });
 
 test('an unknown severity is treated as medium and reported', () => {
-    const result = renderReview({ headline: 'h', findings: [{ severity: 'major', title: 'Thing' }] });
+    const result = renderReview({ headline: 'h', findings: [{ severity: 'major', title: 'Thing', fix: false }] });
 
     assert.equal(result.verdict, 'comment');
     assert.match(result.body, /\*\*🟠 Medium\*\* Thing/);
@@ -126,6 +171,7 @@ test('a value that is not text where text belongs reads as missing, and never th
         'no headline',
         'a finding without a title was dropped',
         '"Kept" has severity "", treated as "medium"',
+        '"Kept" does not say whether it is to fix, treated as a recommendation',
     ]);
     assert.match(result.body, /1\. \*\*🟠 Medium\*\* Kept$/m);
 });
@@ -159,7 +205,7 @@ test('inline comments stop at the cap, and the rest keep their text in the list'
 test('long text is clipped', () => {
     const result = renderReview({
         headline: 'x'.repeat(500),
-        findings: [{ severity: 'medium', title: 'y'.repeat(500), body: 'z'.repeat(5000), path: 'src/a.js', line: 10 }],
+        findings: [{ severity: 'medium', fix: true, title: 'y'.repeat(500), body: 'z'.repeat(5000), path: 'src/a.js', line: 10 }],
     }, { positions, maxLength: 100 });
 
     assert.ok(result.body.split('\n\n')[1].length <= 300);
@@ -167,7 +213,7 @@ test('long text is clipped', () => {
 });
 
 test('a review too long for Github loses the text of its least severe findings first, then the findings', () => {
-    const finding = (severity, title) => ({ severity, title, body: 'x'.repeat(200), path: 'src/b.js' });
+    const finding = (severity, title) => ({ severity, fix: true, title, body: 'x'.repeat(200), path: 'src/b.js' });
     const raw = { headline: 'H.', findings: [finding('high', 'B'), finding('medium', 'S'), finding('low', 'N')] };
 
     const shortened = renderReview(raw, { maxBody: 600 });
@@ -186,11 +232,11 @@ test('references and QA focus are short ids, so a giant one cannot push a review
     const huge = 'S'.repeat(70000);
     const result = renderReview({
         headline: 'H.',
-        findings: [{ severity: 'medium', title: 'T', path: 'src/a.js', line: 10, refs: ['S1', huge, ...Array(20).fill('S2')] }],
+        findings: [{ severity: 'medium', fix: true, title: 'T', path: 'src/a.js', line: 10, refs: ['S1', huge, ...Array(20).fill('S2')] }],
         qa_focus: [huge, 'QA1'],
     }, { positions });
 
-    assert.equal(result.comments[0].body, '**🟠 Medium:** T (S1, S2, S2, S2, S2, S2, S2, S2, S2, S2)');
+    assert.equal(result.comments[0].body, '**🟠 Medium · to fix:** T (S1, S2, S2, S2, S2, S2, S2, S2, S2, S2)');
     assert.match(result.body, /For a tester to check first: QA1\./);
     assert.ok(result.body.length < 1000);
     assert.equal(result.problems.length, 2);
@@ -200,7 +246,7 @@ test('with the plan, references and QA focus on ids it does not have are dropped
     const plan = { steps: [{ id: 'S1' }], qa: [{ id: 'QA1' }] };
     const { body, problems } = renderReview({
         headline: 'One fix needed.',
-        findings: [{ severity: 'medium', title: 'Off by one', refs: ['S1', 'S7'] }],
+        findings: [{ severity: 'medium', fix: true, title: 'Off by one', refs: ['S1', 'S7'] }],
         qa_focus: ['QA1', 'QA4'],
     }, { plan });
 

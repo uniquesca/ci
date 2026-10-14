@@ -39,6 +39,10 @@ inputs:
     description: 'Hidden last line of the review body, the `cost_line` output of `ai-run-report`. It records what the run cost where the review is, for a cost report to read back, and renders as nothing at all. The length of the review and what the checks found are added to it'
     required: false
     default: ''
+  implement_command:
+    description: 'Comment command that runs an implementing round on this pull request. The recommendations tell a person to type it once they have resolved the ones they do not want. Empty where no round can run here - a pull request somebody wrote'
+    required: false
+    default: ''
   max_comments:
     description: 'How many inline comments one review may carry'
     required: false
@@ -56,7 +60,7 @@ outputs:
     description: 'What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Not always what was asked for: a rejected `REQUEST_CHANGES` is downgraded rather than lost'
     value: ${{ steps.review.outputs.event }}
   verdict:
-    description: 'The verdict the findings call for - `changes_requested` when one is high, `comment` otherwise'
+    description: 'The verdict the findings call for - `changes_requested` when one is to fix, `comment` when they only recommend'
     value: ${{ steps.review.outputs.verdict }}
   comments_posted:
     description: 'How many inline comments the submitted review carries'
@@ -93,6 +97,7 @@ runs:
         COST: ${{ inputs.cost }}
         MAX_COMMENTS: ${{ inputs.max_comments }}
         MAX_LENGTH: ${{ inputs.max_length }}
+        IMPLEMENT_COMMAND: ${{ inputs.implement_command }}
       run: |
         submitted='false'
         event=''

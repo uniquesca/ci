@@ -37,6 +37,11 @@ on:
         required: false
         default: 'admin write'
         type: string
+      implement_command:
+        description: 'Comment command that runs an implementing round. On a branch the implementing workflow pushed, the review tells a person to type it for the recommendations they want done. Keep it the same as the implementing workflow command'
+        required: false
+        default: '/ai-do'
+        type: string
       dispatch_type:
         description: 'The `repository_dispatch` event type this reacts to. The implementing workflow sends it as the last thing it does in a round, which is what starts a review - a `pull_request` trigger would fire on the push instead, before the round comment and the thread replies the reviewer has to read are in place'
         required: false
@@ -641,7 +646,8 @@ jobs:
               ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }}.
               If it made the change, drop it. If it argued against, accept the argument or raise
               a finding saying a person should settle it - **never repeat the original comment**.
-            - An open, unanswered thread is already raised: do not duplicate it.
+            - An open, unanswered thread is already raised: do not duplicate it. One you only
+              recommended is waiting on a person, not left unfixed.
             - A failing `check` is already seen. Do not restate it inline
               ${{ steps.pull_request.outputs.ai_authored == 'true' && '- the implementing agent has it.' || '- but where the change cannot be right while it is red, say so in the headline.' }}
 
@@ -658,6 +664,15 @@ jobs:
             - a missing test, where the repository tests that kind of thing
 
             `medium` is worth fixing before merging; `low` the author can take or leave.
+
+            Separately from how much it matters, say who acts on it - `fix: true` or `false`:
+
+            - **To fix** - plainly wrong, with one right answer ${{ steps.pull_request.outputs.ai_authored == 'true' && 'the implementing agent' || 'the author' }} can make from what you
+              wrote: a bug, a stale comment, a missed case. Any severity. One requests changes,
+              and `high` is always to fix.
+            - **Recommended** - a judgement call, a trade-off, or a question only a person can
+              answer, like how production is set up. A person decides; nothing acts on it until
+              they do.
 
             A missing `CHANGELOG.md` entry is never a finding; a pull request editing it is.
 
@@ -677,6 +692,7 @@ jobs:
               "findings": [
                 {
                   "severity": "high",
+                  "fix": true,
                   "title": "What is wrong, in a line",
                   "body": "Why, and what to do instead. Markdown.",
                   "path": "src/config.js",
@@ -693,6 +709,7 @@ jobs:
               not summarise them anywhere.
               - `severity` - `high`, `medium` or `low`, so the text never says how much it
                 matters.
+              - `fix` - `true` to fix, `false` recommended.
               - `title` - the problem in one line. `body` - why it matters and what to do, in a
                 few sentences; the reader has only your words and the code.
               - `path` and `line` - where it is. `line` is in the **new file**, and gets an
@@ -833,6 +850,8 @@ jobs:
           # above is for whoever reads the review; this is the only copy a machine can add up.
           cost: ${{ steps.report.outputs.cost_line }}
           max_comments: ${{ inputs.max_comments }}
+          # Only where a round can run - on a pull request somebody wrote, its author acts on them
+          implement_command: ${{ steps.pull_request.outputs.ai_authored == 'true' && inputs.implement_command || '' }}
 
       # What came of the review, always in the run summary and on the pull request only when the
       # review cannot say it itself. A submitted review carries its own verdict, its summary and
@@ -943,6 +962,7 @@ jobs:
           REASON: ${{ steps.report.outputs.reason }}
           AI_AUTHORED: ${{ steps.pull_request.outputs.ai_authored }}
           COMMAND: ${{ inputs.command }}
+          IMPLEMENT_COMMAND: ${{ inputs.implement_command }}
           HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
           REVIEW_TOKEN: ${{ steps.ai_review.outputs.token }}
           # A run that failed was billed for whatever it did before it failed, and on this path
@@ -964,7 +984,7 @@ jobs:
 
             printf 'Nothing is waiting on it - review it yourself'
             if [[ "$AI_AUTHORED" == 'true' ]]; then
-              printf ', or comment `/ai-do` to run another implementing round'
+              printf ', or comment `%s` to run another implementing round' "$IMPLEMENT_COMMAND"
             else
               printf ', or comment `%s` to try again' "$COMMAND"
             fi

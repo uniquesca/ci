@@ -194,7 +194,8 @@ jobs:
     # An `approved` or `commented` review deliberately does not trigger a round by itself.
     # Requesting changes is a decision, and it batches every inline comment in that review into
     # one round. A `commented` review still reaches the agent - the next round to run for any
-    # reason stages it out of the feedback like anything else.
+    # reason stages it out of the feedback like anything else. The reviewing agent's
+    # recommendations are the exception: they wait for a round a person asks for.
     #
     # The reviewing agent's own review is the exception, whatever its state. QA that finished
     # first stood down to wait for it, so it is the last thing left to start a round for the
@@ -1044,6 +1045,9 @@ jobs:
           # that was settled three rounds ago. Staged separately, because the feedback list is
           # the work and this is only the record of it
           settled_record: true
+          # A recommendation is a person's call. They resolve the ones they do not want and ask
+          # for a round, which then does the rest - so a round nobody asked for leaves them alone
+          hold_recommendations: ${{ steps.event.outputs.attended == 'false' }}
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
 
       # The framework catalogue, staged the way everything else an agent reads is. Every reusable
@@ -2583,6 +2587,9 @@ jobs:
             each, make the change or decide against it with a reason - you have read the code and
             the reviewer may not have. An item asking again for something `settled.json` shows
             was settled is not done again: reply that it was settled, and where.
+
+            A reviewing agent's summary has findings **to fix** and ones only **recommended**. A
+            recommendation is a person's to decide. ${{ steps.event.outputs.attended == 'true' && 'A person asked for this round: a recommendation whose thread is still open in the feedback is one they kept, so do it. One with no thread only if they asked for it.' || 'Nobody asked for this round, so leave every recommendation alone - their threads are held back until a person has looked.' }}
 
             ${{ steps.revision.outputs.instruction }}
 
