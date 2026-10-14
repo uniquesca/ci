@@ -1,7 +1,7 @@
 # AI post review
 
 Renders the findings a reviewing agent wrote into a Github review and submits it - the verdict
-derived from their severity, each placed inline where the diff has its line.
+derived from which are to fix, each placed inline where the diff has its line.
 
 Used by [`ai-review`](../ai/ai-review.md).
 
@@ -29,6 +29,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 | `marker` | no | `<!-- ai-review -->` | Hidden first line of the review body |
 | `footer` | no | | Markdown added under a rule at the end of the review body |
 | `cost` | no | | Hidden last line of the review body, the `cost_line` output of [`ai-run-report`](ai-run-report.md) - what the run cost, where a cost report can read it back. [What was posted](../ai/ai-costs.md#what-the-hidden-line-holds) is added to it |
+| `implement_command` | no | | Comment command that runs an implementing round here, which the recommendations tell a person to type. Empty on a pull request somebody wrote |
 | `max_comments` | no | `30` | How many findings one review may place inline |
 | `max_length` | no | `1500` | Longest finding body, in characters. Anything over is truncated rather than dropped |
 
@@ -38,7 +39,7 @@ Used by [`ai-review`](../ai/ai-review.md).
 |---|---|
 | `submitted` | Whether a review was submitted - `true` or `false` |
 | `event` | What was actually submitted - `REQUEST_CHANGES` or `COMMENT`. Empty when nothing was |
-| `verdict` | `changes_requested` when a finding is high, `comment` otherwise |
+| `verdict` | `changes_requested` when a finding is to fix, `comment` otherwise |
 | `comments_posted` | How many inline comments the submitted review carries |
 | `comments_dropped` | How many findings named a line but went into the body instead - off the diff, or over the cap |
 | `body_file` | The rendered review body, for a caller to post when the review could not be submitted |
@@ -65,11 +66,14 @@ saying so - the inline comments survive a comment review perfectly well.
 ### The review file, and the verdict
 
 The agent writes `headline`, one sentence, and `findings`, each with a `severity` of `high`,
-`medium` or `low`, a `title`, a `body`, and optionally `path`, `line` and `refs` (plan ids). One
-high finding requests changes; anything else comments. Approving is not an option - merging is a
-person's decision. `src/ai-review.js` lays the body out: a verdict line, the headline, a count by
-severity, then every finding from high to low - by its title where it is an inline comment, in full
-where it is not - and `qa_focus` as one line. Once the review is posted, the list is linked to its
+`medium` or `low`, `fix` - `true` to fix, `false` recommended - a `title`, a `body`, and optionally
+`path`, `line` and `refs` (plan ids). One finding to fix requests changes, and `high` always is;
+recommendations alone comment, and one that does not say is a recommendation. Approving is not an
+option - merging is a person's decision. `src/ai-review.js` lays the body out: a verdict line, the
+headline, a count by severity, then the findings to fix and the recommendations, each from high to
+low - by its title where it is an inline comment, in full where it is not - and `qa_focus` as one
+line. A recommendation's inline comment starts with a hidden marker, which is how
+[`ai-stage-pull-request`](ai-stage-pull-request.md) holds it back from a round nobody asked for. Once the review is posted, the list is linked to its
 inline comments. Anything malformed is normalised or dropped with a warning, never allowed to fail
 the review - including a reference to an id `plan_file` does not have. A phrase the style guide
 rules out is reported as a warning.
@@ -90,8 +94,8 @@ A review that could not be submitted is a warning and an output the caller acts 
 still has `body_file` to post as a plain comment. The fallbacks, in order: as asked;
 downgraded to a comment if Github said "your own pull request"; without the inline comments; as a
 comment without them. Without the inline comments, the body carries every finding's text, and so
-does `body_file`. A body too long for Github loses the text of its least severe findings first, and
-then the findings themselves, with a line saying how many were left out.
+does `body_file`. A body too long for Github loses the text of its recommendations and then its least
+severe findings first, and then the findings themselves, with a line saying how many were left out.
 
 `head_sha` is pinned explicitly so that a push which landed since the diff was taken makes the review
 outdated rather than silently misplaced.

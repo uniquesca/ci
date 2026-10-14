@@ -114,6 +114,17 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### To fix, or recommended
+
+A review used to ask for changes only for a high finding. Everything else sat on the pull request
+and nobody knew whose job it was.
+
+- Each finding still has a severity, and also says who acts on it: **to fix** or **recommended**.
+- Anything to fix, at any severity, asks for changes and goes back to the coding agent.
+- A recommendation is for a person. The review says what to do: resolve the threads you do not
+  want, then comment `/ai-do` and the agent does the rest.
+- Rounds nobody asked for leave open recommendations alone.
+
 ### Waiting for the review
 
 After a round pushes, the QA checks and the AI review run at the same time, and whichever finishes
@@ -176,8 +187,8 @@ The AI writes its answer as data, and the workflow checks it and lays it out the
 time. If the data is missing or broken, the AI's plain answer is used instead.
 
 - **The review:** a verdict, a one-line summary, a count of findings by severity - 🔴 high,
-  🟠 medium, 🟡 low - and the findings from high to low, each linked to its inline comment. Only a
-  high finding asks for changes.
+  🟠 medium, 🟡 low - then the findings to fix and the recommendations, each from high to low and
+  linked to its inline comment. Only a finding to fix asks for changes.
 - **The report after each round:** notes for the reviewer, what was not done, and the questions for
   a person come first, then the QA steps. What was done and how it was checked are folded away. From
   round 2 on, an "Update on round N" section under the links is rewritten every round.

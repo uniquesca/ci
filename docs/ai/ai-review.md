@@ -80,9 +80,10 @@ behaves like a review from a colleague, with the same options
 [described for a human review](ai-implement.md#what-to-do-with-a-reply) - let it run, resolve a
 thread, reply to overrule either side, or take over with `/ai-do`.
 
-**It either requests changes or it does not**: it never approves, and merging is a person's
-decision. A changes-requested review blocks the merge until somebody deals with it, wherever the
-branch came from. It will sometimes find nothing, which ends the loop there. And it cannot test the
+**Each finding is to fix or recommended.** One to fix requests changes, which blocks the merge and,
+on a branch AI Implement pushed, starts the next round. A recommendation is yours to decide: resolve
+the threads you do not want, then comment `/ai-do` and the agent does the rest. It never approves -
+merging is a person's decision. It will sometimes find nothing, which ends the loop there. And it cannot test the
 QA criteria - what it can say is that the code cannot satisfy one as written, or that nothing in the
 diff addresses the steps a criterion covers.
 
@@ -110,6 +111,7 @@ the code, go back to [`/ai-plan` on the issue](ai-plan.md#adjusting-the-plan).
 | `anthropic_workspace_id` | string | *(none)* | Workspace the minted token is scoped to. Only needed when the rule covers more than one workspace - a rule bound to a single workspace resolves it on its own |
 | `command` | string | `/ai-review` | Comment command that asks for a review, at the very beginning of a comment on a pull request. This is how a pull request nothing dispatched for is reviewed |
 | `allowed_permissions` | string | `admin write` | Space-separated repository permission levels allowed to run the command. Github reports the maintain role as `write` and the triage role as `read`, so this covers owners, maintainers and developers |
+| `implement_command` | string | `/ai-do` | Comment command that runs an implementing round. A review on a branch the implementing workflow pushed tells a person to type it for the recommendations they want done. Keep it the same as that workflow's `command` |
 | `dispatch_type` | string | `ai-review` | The `repository_dispatch` event type this reacts to. [`ai-implement`](ai-implement.md) sends it after it pushes |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branches the implementing workflow pushes to. A dispatched review is only accepted for a branch carrying it, and the prefix is also what tells that workflow's pull requests from ones somebody wrote - which decides whether the agent is told about the plan and the round. Keep it the same as the implementing workflow's |
 | `progress_label` | string | `ai:reviewing` | Label put on the pull request while the run is reviewing, and taken off however it ends. Created if the repository has not got it, then left alone, so recolouring it there sticks. Empty to not label anything |
@@ -168,8 +170,8 @@ comments, then as a plain comment review, then as an ordinary comment.
 A reviewer that always finds something never lets the loop end. Five things work against that: the
 [`max_unattended_rounds`](ai-implement.md#the-round-cap) cap, enforced in the implementing workflow;
 a round that changes nothing dispatching no review, so a stalled loop stops rather than spinning on
-one commit; a "no blocking concerns" verdict starting nothing, since only a changes-requested review
-does; the settled record, so a concern somebody closed cannot come back as a fresh finding; and the
+one commit; a review with nothing to fix starting nothing, since only a changes-requested review
+does, and recommendations waiting for a person whatever the review; the settled record, so a concern somebody closed cannot come back as a fresh finding; and the
 agent being told at length that finding nothing is a valid outcome - not to manufacture a concern,
 not to request changes over a preference, and to accept a reasoned refusal rather than repeat the
 concern. If the cap is reached while it still wants changes, the pull request is left with a

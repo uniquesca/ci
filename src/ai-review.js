@@ -4,8 +4,12 @@
 
 import { knownIds, phraseProblems, planIds } from './ai-text.js';
 
-// Highest first. A `high` finding is what requests changes.
+// Highest first. How much a finding matters - whether it requests changes is `fix`.
 export const SEVERITIES = ['high', 'medium', 'low'];
+
+// First line of an inline comment that only recommends. A round nobody asked for leaves those
+// threads out, so it has to match what `ai-stage-pull-request` looks for.
+export const RECOMMENDATION_MARKER = '<!-- ai-review-recommendation -->';
 
 const LABELS = { high: '🔴 High', medium: '🟠 Medium', low: '🟡 Low' };
 
@@ -88,8 +92,18 @@ export function normaliseReview(raw, { plan = null } = {}) {
             severity = 'medium';
         }
 
+        // `high` is what should not merge, so it is always for fixing. Anything left unsaid is a
+        // recommendation: the cheaper mistake is a person deciding, not a round nobody wanted.
+        let fix = item.fix === true;
+        if (severity === 'high') {
+            fix = true;
+        } else if (typeof item.fix !== 'boolean') {
+            problems.push(`"${title}" does not say whether it is to fix, treated as a recommendation`);
+        }
+
         findings.push({
             severity,
+            fix,
             title,
             body: text(item.body).trim(),
             path: typeof item.path === 'string' && item.path ? item.path : null,
@@ -98,7 +112,7 @@ export function normaliseReview(raw, { plan = null } = {}) {
         });
     }
 
-    findings.sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
+    findings.sort((a, b) => (b.fix - a.fix) || SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
 
     const qaFocus = knownIds(idList(review.qa_focus, problems, 'qa_focus'), known, problems, 'qa_focus');
     problems.push(...phraseProblems({ headline, findings }));
@@ -110,10 +124,12 @@ export function normaliseReview(raw, { plan = null } = {}) {
 // inline is listed in the body by its title and tracked as a thread; one that cannot be placed
 // keeps its text in the body instead. `links` holds the address of each inline comment, in the
 // order of `comments` - known only once the review is posted, so the body is rendered again then.
-export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX, links = [], plan = null } = {}) {
+// `command` is the one that runs an implementing round, empty where none can run on this pull
+// request - it is what the recommendations tell a person to type.
+export function renderReview(raw, { positions = new Set(), maxComments = 30, maxLength = 1500, maxBody = BODY_MAX, links = [], plan = null, command = '' } = {}) {
     const { headline, findings, qaFocus, problems } = normaliseReview(raw, { plan });
 
-    const verdict = findings.some((f) => f.severity === 'high') ? 'changes_requested' : 'comment';
+    const verdict = findings.some((f) => f.fix) ? 'changes_requested' : 'comment';
 
     const comments = [];
     for (const finding of findings) {
@@ -126,7 +142,8 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
                 path: finding.path,
                 line: finding.line,
                 side: 'RIGHT',
-                body: `**${LABELS[finding.severity]}:** ${finding.title}${refsSuffix(finding.refs)}`
+                body: (finding.fix ? '' : RECOMMENDATION_MARKER + '\n')
+                    + `**${LABELS[finding.severity]} · ${finding.fix ? 'to fix' : 'recommended'}:** ${finding.title}${refsSuffix(finding.refs)}`
                     + (finding.body ? `\n\n${clip(finding.body, maxLength)}` : ''),
             });
         }
@@ -134,7 +151,22 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
 
     const status = verdict === 'changes_requested'
         ? '### 🔴 Changes requested'
-        : findings.length ? '### 🟡 Changes suggested' : '### 🟢 Looks good';
+        : findings.length ? '### 🟡 Recommendations only' : '### 🟢 Looks good';
+
+    const toFix = command
+        ? '**To fix** - the implementing agent fixes these.'
+        : '**To fix** - needed before this merges.';
+    // What a person does with a recommendation. One without a thread cannot be resolved, so a
+    // round only does it when somebody names it.
+    const recommendations = findings.filter((f) => !f.fix);
+    const threaded = recommendations.filter((f) => f.inline).length;
+    let recommended = '**Recommended** - yours to decide. Act on the ones you want and resolve the rest.';
+    if (command && !threaded) {
+        recommended = `**Recommended** - yours to decide. Comment \`${command}\` naming the ones you want done.`;
+    } else if (command) {
+        recommended = `**Recommended** - yours to decide. Resolve the threads you do not want, then comment \`${command}\` and the agent does the rest.`
+            + (threaded < recommendations.length ? ' One without a thread is only done if you name it in that comment.' : '');
+    }
 
     const counts = SEVERITIES
         .map((severity) => [findings.filter((f) => f.severity === severity).length, severity])
@@ -157,9 +189,11 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
             parts.push(`**Findings:** ${counts.join(' · ')}`);
         }
 
-        const lines = entries.filter((e) => e.use !== 'dropped').map((e) => e[e.use]);
-        if (lines.length) {
-            parts.push(lines.join('\n'));
+        for (const [heading, fix] of [[toFix, true], [recommended, false]]) {
+            const lines = entries.filter((e) => e.finding.fix === fix && e.use !== 'dropped').map((e) => e[e.use]);
+            if (lines.length) {
+                parts.push(heading, lines.join('\n'));
+            }
         }
 
         const dropped = entries.filter((e) => e.use === 'dropped').length;
@@ -174,8 +208,8 @@ export function renderReview(raw, { positions = new Set(), maxComments = 30, max
         return parts.join('\n\n');
     };
 
-    // Too long: the least severe findings lose their text first, from the bottom up, and only
-    // then are left out altogether
+    // Too long: from the bottom up - recommendations, then the least severe - findings lose their
+    // text first, and only then are left out altogether
     let body = build();
     while (body.length > maxBody) {
         const shorten = entries.findLast((e) => e.use === 'full' && e.full !== e.short);
