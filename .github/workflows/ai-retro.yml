@@ -45,11 +45,6 @@ on:
         required: false
         default: 240
         type: number
-      shadow:
-        description: 'Write the retro to the job summary instead of posting it. For reading what it says on real pull requests before anybody sees a comment'
-        required: false
-        default: true
-        type: boolean
       model:
         description: 'Model that works out why the pull request took so many rounds'
         required: false
@@ -308,7 +303,6 @@ jobs:
           COST: ${{ steps.count.outputs.cost }}
           MAX_POINTS: ${{ inputs.max_points }}
           MAX_CHARS: ${{ inputs.max_point_chars }}
-          SHADOW: ${{ inputs.shadow }}
         run: |
           retro=.ai-retro/retro.json
           if ! jq -e '.points | type == "array"' "$retro" >/dev/null 2>&1; then
@@ -349,8 +343,4 @@ jobs:
             done <<<"$points"
           } > .ai-retro/comment.md
 
-          if [[ "$SHADOW" == 'true' ]]; then
-            { echo "Shadow mode, not posted to #$NUMBER:"; echo; cat .ai-retro/comment.md; } >> "$GITHUB_STEP_SUMMARY"
-          else
-            gh pr comment "$NUMBER" --body-file .ai-retro/comment.md
-          fi
+          gh pr comment "$NUMBER" --body-file .ai-retro/comment.md

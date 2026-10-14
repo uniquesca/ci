@@ -66,6 +66,6 @@ A change to formatting, comments or import order affects nothing. Neither does a
 method whose inputs and outputs stay the same, when an unchanged unit test calls it. Anything else
 affects its own module and the modules that call it, through imports, dependency injection config,
 events, routes or front-end code. Shared foundation code, dependencies, global config, the build and
-the database schema affect everything. The job summary lists each module with the reason, and the
-changes left out. **Anything short of a valid answer is `all: true`** - a push or schedule, a pull
+the database schema affect everything. The job summary and log list each module with the reason, the
+changes left out, and what made everything affected when it was. **Anything short of a valid answer is `all: true`** - a push or schedule, a pull
 request from a fork, or the agent failing - so a caller never skips tests on a missing answer.

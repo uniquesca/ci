@@ -154,10 +154,11 @@ jobs:
 
             Write `.ai-affected-modules/result.json` and nothing else:
 
-            {"framework": "...", "all": false,
+            {"framework": "...", "all": false, "all_reason": "",
              "modules": [{"name": "...", "reason": "..."}],
              "unaffected": [{"path": "...", "reason": "..."}]}
 
+            - `all_reason`: when `all` is true, one short sentence naming what reaches everything.
             - `modules`: each affected module once. `reason` is one short sentence naming the
               changed code, or the caller, that brings it in.
             - `unaffected`: changed code files left out by rule 1 or 2, with the rule's reason
@@ -168,37 +169,62 @@ jobs:
             --max-turns ${{ inputs.max_turns }}
             --allowedTools "Read,Grep,Glob,LS,Write"
 
+      # Printed to the log as well as the summary, so the job page shows the decision
       - name: Read the answer
         id: answer
         if: always()
+        env:
+          FILES: ${{ env.PROCEED == 'true' && steps.diff.outcome == 'success' }}
+          TRUNCATED: ${{ steps.diff.outputs.truncated }}
         run: |
           result=.ai-affected-modules/result.json
+          summary="$RUNNER_TEMP/summary.md"
           if [[ "$PROCEED" != 'true' ]]; then
-            reason='Not a pull request from this repository, so everything is affected.'
+            reason='Not a pull request from this repository, so everything counts as affected.'
           elif ! jq -e '(.all | type == "boolean") and (.modules | type == "array")' "$result" >/dev/null 2>&1; then
-            reason='The agent gave no valid answer, so everything is affected.'
+            reason='The agent gave no valid answer, so everything counts as affected. The step before this one has what went wrong.'
           fi
           if [[ -n "${reason:-}" ]]; then
-            echo "$reason" >> "$GITHUB_STEP_SUMMARY"
+            printf '### Affected modules: everything\n\n%s\n' "$reason" | tee -a "$GITHUB_STEP_SUMMARY"
             { echo 'all=true'; echo 'modules=[]'; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           # Callers match these against names they wrote by hand, so the spelling holds whatever
           # the agent wrote
-          modules=$(jq -c '[.modules[] | if type == "object" then .name else . end | strings
-            | gsub("(?<a>[a-z0-9])(?<b>[A-Z])"; "\(.a)-\(.b)") | ascii_downcase | gsub("[^a-z0-9]+"; "-")]
+          name='def name: gsub("(?<a>[a-z0-9])(?<b>[A-Z])"; "\(.a)-\(.b)") | ascii_downcase | gsub("[^a-z0-9]+"; "-");'
+          modules=$(jq -c "$name"'[.modules[] | if type == "object" then .name else . end | strings | name]
             | unique' "$result")
+          all=$(jq '.all' "$result")
           {
-            echo "all=$(jq '.all' "$result")"
+            echo "all=$all"
             echo "modules=$modules"
           } >> "$GITHUB_OUTPUT"
 
           {
-            echo "**Framework:** $(jq -r '.framework // "unknown"' "$result")"
+            if [[ "$all" == true ]]; then
+              echo '### Affected modules: everything'
+              echo
+              jq -r '.all_reason // "" | select(length > 0)' "$result"
+            elif [[ "$modules" == '[]' ]]; then
+              echo '### Affected modules: none'
+              echo
+              echo 'Nothing in this change reaches a module.'
+            else
+              echo "### Affected modules: $(jq -r 'map("`" + . + "`") | join(", ")' <<< "$modules")"
+            fi
             echo
-            if [[ $(jq '.all' "$result") == true ]]; then echo '**Everything is affected.**'; echo; fi
-            jq -r '.modules[] | select(type == "object") | "- `\(.name)`: \(.reason // "")"' "$result"
-            jq -r 'if (.unaffected // []) | length > 0 then "\nLeft out:\n" else empty end' "$result"
-            jq -r '(.unaffected // [])[] | "- `\(.path)`: \(.reason // "")"' "$result"
-          } >> "$GITHUB_STEP_SUMMARY"
+            printf '%s framework' "$(jq -r '.framework // "Unknown"' "$result")"
+            [[ "$FILES" == true ]] && printf ', %s changed file(s)' "$(wc -l < .ai-affected-modules/files.txt)"
+            [[ "$TRUNCATED" == true ]] && printf ', diff too long to read in full'
+            printf '.\n'
+            if [[ $(jq '.modules | map(objects) | length' "$result") -gt 0 ]]; then
+              printf '\n| Module | Why |\n|---|---|\n'
+              jq -r "$name"'.modules[] | objects | "| `\(.name | strings | name)` | \(.reason // "" | gsub("\\|"; "/")) |"' "$result"
+            fi
+            if [[ $(jq '.unaffected // [] | length' "$result") -gt 0 ]]; then
+              printf '\n| Left out | Why |\n|---|---|\n'
+              jq -r '.unaffected[] | "| `\(.path)` | \(.reason // "" | gsub("\\|"; "/")) |"' "$result"
+            fi
+          } > "$summary"
+          tee -a "$GITHUB_STEP_SUMMARY" < "$summary"

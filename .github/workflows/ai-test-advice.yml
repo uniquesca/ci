@@ -45,11 +45,6 @@ on:
         required: false
         default: 'no-ai-test-advice'
         type: string
-      shadow:
-        description: 'Write the advice to the job summary instead of posting it. For reading what it says on real pull requests before anybody sees a comment'
-        required: false
-        default: true
-        type: boolean
       max_gaps:
         description: 'Most tests the comment may suggest'
         required: false
@@ -274,7 +269,6 @@ jobs:
           AUTHOR: ${{ steps.pick.outputs.author }}
           MAX_GAPS: ${{ inputs.max_gaps }}
           MAX_CHARS: ${{ inputs.max_gap_chars }}
-          SHADOW: ${{ inputs.shadow }}
         run: |
           advice=.ai-test-advice/advice.json
           if ! jq -e '.gaps | type == "array"' "$advice" >/dev/null 2>&1; then
@@ -315,8 +309,4 @@ jobs:
             done <<<"$gaps"
           } > .ai-test-advice/comment.md
 
-          if [[ "$SHADOW" == 'true' ]]; then
-            { echo "Shadow mode, not posted to #$NUMBER:"; echo; cat .ai-test-advice/comment.md; } >> "$GITHUB_STEP_SUMMARY"
-          else
-            gh pr comment "$NUMBER" --body-file .ai-test-advice/comment.md
-          fi
+          gh pr comment "$NUMBER" --body-file .ai-test-advice/comment.md
