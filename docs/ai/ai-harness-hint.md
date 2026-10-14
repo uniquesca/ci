@@ -10,7 +10,7 @@ why.
 ## Integrating a repository
 
 ```yaml
-name: AI After Merge
+name: AI PR Post Analytics
 
 on:
   pull_request:

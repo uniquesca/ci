@@ -10,7 +10,7 @@ the work when a plan question they left open caused a round.
 ## Integrating a repository
 
 ```yaml
-name: AI After Merge
+name: AI PR Post Analytics
 
 on:
   pull_request:

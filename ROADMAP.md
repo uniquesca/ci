@@ -58,9 +58,9 @@ opened before this change.
 first run or Copilot review took several rounds. Still to do:
 
 - Replace the `ai-harness-hint.yml` and `ai-retro.yml` callers in each repository with one
-  `ai-after-merge.yml` that runs both on `pull_request: closed`. The old hint callers also listen to
-  `pull_request_review`, and runs Copilot's reviews start fail.
-- Run it in shadow mode in a few repositories, read about 20 verdicts, then turn posting on.
+  `ai-pr-post-analytics.yml` that runs both on `pull_request: closed`, with posting on. The old hint
+  callers also listen to `pull_request_review`, and runs Copilot's reviews start fail.
+- Read the first 20 hints posted, and change the prompt if they read wrong.
 - Count both triggers on past pull requests, to see how often each would fire.
 - Post at most one hint per person per week.
 
@@ -95,7 +95,7 @@ end-to-end tests to add. Still to do:
 saved them, how the issue could have been approached better, and plan questions left open when work
 started. It tags the issue author. Still to do:
 
-- Run it in shadow mode in a few repositories, read the retros, then turn posting on.
+- Read the first retros posted, and change the prompt if they read wrong.
 - Check `min_rounds` and `min_change_requests` against past pull requests. On officio, #1194 had 2
   rounds but 3 change requests, so the change request limit may fire too often.
 - Count the causes it finds in the monthly report, so patterns across pull requests show up.
