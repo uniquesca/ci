@@ -1500,3 +1500,7 @@
 * New: AI Affected Modules workflow lists the modules a pull request affects (b72c976 by George Shestayev)
 * New: introduced a workflow to analyze and advice on adding more test coverage in PRs (fa4fa12 by George Shestayev)
 * Update: ai-harness-hint runs once a pull request is merged, and shares one caller with ai-retro (3934ea4 by George Shestayev)
+
+## v11.28.0
+
+* Update: AI Affected Modules explains its decision in the log and summary (e8ac6c4 by George Shestayev)
