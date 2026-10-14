@@ -48,7 +48,7 @@ jobs:
       qa_workflow: QA
 ```
 
-A pull request gets one hint at most, and none when it was closed without merging, came from the
+A pull request gets one hint at most, an author one a week in each repository, and none when it was closed without merging, came from the
 harness or a fork, or carries the `skip_label`.
 
 ## Secrets

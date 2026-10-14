@@ -112,6 +112,7 @@ jobs:
           anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
           anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: '*'
           prompt: |
             Pull request #${{ github.event.pull_request.number }} changes this repository. Decide
             which of the application's modules it affects, so that only the end-to-end tests

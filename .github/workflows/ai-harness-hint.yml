@@ -119,6 +119,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       HINT_MARKER: '<!-- ai-harness-hint -->'
+      # The first line after the mention, which is how `Gather the evidence` finds earlier hints
+      HINT_OPENING: 'this pull request looks like a good fit for the AI harness.'
       # `Gather the evidence` sets this to false when there is nothing to hint, and every step
       # after it must test `env.PROCEED == 'true'` in its `if`.
       PROCEED: 'true'
@@ -148,6 +150,14 @@ jobs:
           pr=$(gh api "repos/$GH_REPO/pulls/$NUMBER")
           if [[ -n "$SKIP_LABEL" ]] && jq -e --arg l "$SKIP_LABEL" 'any(.labels[]; .name == $l)' <<<"$pr" >/dev/null; then
             stand_down "#$NUMBER carries $SKIP_LABEL."
+          fi
+          # One hint a week per person, or it reads as nagging. The token sees only this
+          # repository, so somebody working in several can get one in each.
+          week_ago=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          recent=$(gh api --paginate "repos/$GH_REPO/issues/comments?since=$week_ago&per_page=100" \
+            --jq ".[] | select(.created_at >= \"$week_ago\") | .body")
+          if grep -qxF -- "@$AUTHOR, $HINT_OPENING" <<<"$recent"; then
+            stand_down "#$NUMBER: $AUTHOR had a hint in the last 7 days."
           fi
 
           # Outside the workspace: the checkout below empties it on a fresh runner
@@ -321,7 +331,9 @@ jobs:
 
           {
             echo "$HINT_MARKER"
-            echo "@$AUTHOR, this pull request looks like a good fit for the AI harness."
+            echo '### 🟡 Using AI harness recommended'
+            echo
+            echo "@$AUTHOR, $HINT_OPENING"
             echo
             cat .ai-harness-hint/evidence.md
             echo
