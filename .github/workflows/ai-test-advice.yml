@@ -211,6 +211,7 @@ jobs:
           anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
           anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          allowed_bots: '*'
           prompt: |
             Pull request #${{ steps.pick.outputs.number }} of this repository changes code.
             Decide whether it needs tests it does not have yet, and which.
@@ -300,6 +301,8 @@ jobs:
 
           {
             echo "$ADVICE_MARKER"
+            echo '### 🟡 Test coverage recommended'
+            echo
             echo "@$AUTHOR, this change has code no test covers yet. Tests worth adding:"
             echo
             while IFS= read -r gap; do

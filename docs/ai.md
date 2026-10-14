@@ -35,7 +35,7 @@ issue                                    pull request
 and later commands follow it without being told again.
 
 While a run is working it labels what it is working on - `ai:planning`, `ai:implementing` or
-`ai:reviewing` - and takes the label off when it ends.
+`ai:reviewing` - and takes the label off when it ends, even when it ran out of time.
 
 ## Integrating a repository
 

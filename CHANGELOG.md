@@ -1508,3 +1508,10 @@
 ## v11.29.0
 
 * Update: AI Review marks each finding to fix or recommended, and recommendations wait for a person (d5782c1 by George Shestayev)
+
+## v11.30.0
+
+* Fix: added the list of allowed bots for AI analytics (2137a46 by George Shestayev)
+* Fix: AI workflows take the label and 👀 off and say so when a run runs out of time (c056ed8 by George Shestayev)
+* Update: AI Harness Hint posts at most one hint a week per person in each repository (2137a46 by George Shestayev)
+* Update: improved AI analytics output to catch attention (2137a46 by George Shestayev)

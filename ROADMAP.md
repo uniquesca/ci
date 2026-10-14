@@ -34,35 +34,18 @@ We looked at 105 AI pull requests across 15 repositories in early October 2026 (
 
 ## Fix next
 
-### Clean up even when a run runs out of time
-
-When a whole run takes too long, GitHub stops it and skips everything left to do. That includes
-the clean-up at the end: taking the `ai:…` label off, swapping 👀 for 🚀 or 😕, and posting the
-failure comment. The label and 👀 then stay on, as if the AI were still working, and nobody is told
-the run failed. Each run leaves the AI about 5 minutes less than the whole run, so this is rare.
-
-**Plan:** move the clean-up into a small separate job that runs after the main one, however the main
-one ended, in all three workflows.
-
-### Close the issue when its pull request merges
-
-AI pull requests say `Closes #N`, so the issue closes when the pull request merges into the default
-branch. Still left open: issues whose pull request went into another branch, and pull requests
-opened before this change.
-
-**Plan, if this happens often:** a small job on merge that closes the issue for any branch.
-
 ### Point people at the harness
 
 `ai-harness-hint.yml` comments on a merged pull request somebody wrote by hand when QA failed on its
 first run or Copilot review took several rounds. Still to do:
 
-- Replace the `ai-harness-hint.yml` and `ai-retro.yml` callers in each repository with one
-  `ai-pr-post-analytics.yml` that runs both on `pull_request: closed`, with posting on. The old hint
-  callers also listen to `pull_request_review`, and runs Copilot's reviews start fail.
+- Commit the `ai-pr-post-analytics.yml` callers staged in forms-dev-platform, context-lib,
+  sentry-lib, uforms, form-suite, field-framework, condition-manager, angular-core,
+  formula-builder and scoring-lib. Until then the old callers there fail on every run.
 - Read the first 20 hints posted, and change the prompt if they read wrong.
 - Count both triggers on past pull requests, to see how often each would fire.
-- Post at most one hint per person per week.
+- A person gets at most one hint a week, but in each repository. Across repositories needs a token
+  that can read the whole organisation.
 
 ### Measure how the harness is used
 
@@ -113,6 +96,23 @@ These are breaking changes, so they wait for the next major version.
   waits for a review, and has nothing to do with the label.
 
 ## Done
+
+### Close the issue when its pull request merges
+
+AI pull requests say `Closes #N`. Of 125 merged by October 2026, every issue was closed, including
+the 4 that went into a release branch, so no job is needed for the other branches.
+
+### Clean up even when a run runs out of time
+
+When GitHub stops a run for taking too long, it skips everything left in it. A small job after each
+of AI Plan, AI Implement and AI Review then does the clean-up the run never got to: it takes the
+`ai:…` label off, swaps 👀 for 😕, and says the run did not finish and how to try again. A cut-off
+review is still posted as a review, so the next round starts.
+
+Still open:
+
+- On the first run that really runs out of time, check that the small job got what it needed from
+  the run: which issue or pull request, and whether there was a label and a 👀 to take off.
 
 ### To fix, or recommended
 

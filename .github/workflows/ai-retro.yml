@@ -331,6 +331,8 @@ jobs:
 
           {
             echo "$RETRO_MARKER"
+            echo '### 🟡 Retro on this PR available'
+            echo
             echo "@$ISSUE_AUTHOR, this pull request took $ROUNDS rounds after it was opened, and the AI work on #$ISSUE cost about \$$COST. What would have saved rounds:"
             echo
             while IFS= read -r point; do
