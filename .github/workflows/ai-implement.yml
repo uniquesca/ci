@@ -2451,6 +2451,8 @@ jobs:
 
             Read these first:
 
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
             - `.ai-plan/plan.json` - the approved plan, and the specification. `.ai-plan/plan.md`
               is the part a person sees, and wins where it differs; an older plan has only
               `plan.md`. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
@@ -2567,6 +2569,8 @@ jobs:
 
             This is round ${{ steps.stage_pr.outputs.round }}. Read these first:
 
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
             - `.ai-review/feedback.json` - everything asking for a change. This is the work.
               Each entry has:
               - `source` - `thread` an inline review comment, `review` a reviewer's summary,

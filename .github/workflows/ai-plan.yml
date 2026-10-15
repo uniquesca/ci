@@ -772,8 +772,10 @@ jobs:
             - `.ai-plan/issue.json` - the issue number, title and body. This is the task.
             - `.ai-plan/comments.json` - every comment, oldest first, with its author and an
               `is_bot` flag.
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
 
-            You have no shell or network. If those files are missing, stop and return a one-line
+            You have no shell or network. If the first two are missing, stop and return a one-line
             plan saying so.
 
             A plan posted before is staged as `.ai-plan/plan.json`, and the part a person sees as

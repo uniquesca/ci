@@ -640,6 +640,8 @@ jobs:
 
             Read these first:
 
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
             - `.ai-review/diff.patch` - the change, against
               `${{ steps.pull_request.outputs.base }}`. ${{ steps.review_diff.outputs.staged == 'true' && 'Context, and where inline comment lines come from.' || 'This is what you review.' }}
               ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED and stops partway: read the files for the rest.' || '' }}

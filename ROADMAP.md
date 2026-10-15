@@ -97,6 +97,19 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### The AI reads `AGENTS.md`
+
+The plan, implement and review prompts tell the agent to read `AGENTS.md` when it is not already in
+its instructions. Claude Code reads it on its own only when there is no `CLAUDE.md`, and not in
+every session. scoring-lib, condition-manager, field-framework and uforms each have an `AGENTS.md`,
+and a `CLAUDE.md` that imports it, as officio, bcpnp-frontend and forms-dev-platform do.
+
+Still open:
+
+- Write one for formula-builder, sentry-lib, officio-gui, context-lib and angular-core.
+- form-suite's `CLAUDE.md` tells the agent to log every change in `.docs/CLAUDE_CHANGELOG.md` and
+  to comment complex code. Move what is still wanted into an `AGENTS.md` and drop the rest.
+
 ### Less effort for rounds
 
 A round acting on review feedback runs at `medium` effort, and the first build stays at `high`. Of
@@ -267,8 +280,6 @@ Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-mi
 most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
 rounds, not one long run.
 
-- Make sure the AI reads `AGENTS.md` in every repository. Write one for scoring-lib,
-  condition-manager, field-framework and uforms.
 - Give the AI a short map of the repository's folders.
 - Cut long check output down before the AI reads it.
 - Give the AI only the comments since the latest plan, and none to the reviewer.
