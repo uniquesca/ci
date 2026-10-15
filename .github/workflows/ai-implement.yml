@@ -2481,6 +2481,9 @@ jobs:
             stopping because forty looked like too many is not. Where something is unresolved,
             finish everything that does not depend on it.
 
+            Where the same edit goes into many files, write a script outside the working tree
+            that makes it, run it, and read its diff. Fix by hand only what it got wrong.
+
             Do not:
 
             - commit, push, create a branch, open a pull request or comment anywhere - the
@@ -2628,6 +2631,9 @@ jobs:
             name the ones you did not reach in your report - fifteen of forty is a good round. A
             round that changes no file stops the pull request where it is. Where something is
             unresolved, finish the rest.
+
+            Where the same edit goes into many files, write a script outside the working tree
+            that makes it, run it, and read its diff. Fix by hand only what it got wrong.
 
             Do not:
 

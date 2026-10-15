@@ -97,6 +97,17 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### A script for the same edit in many files
+
+When the same edit goes into many files, the coding agent writes a script for it, runs it and
+checks the result, and fixes by hand only what the script got wrong. The phpcs, psalm and module
+dependency issues cost $75 from 2026-09-24 to 2026-10-14. Building a phpcs round took around 100
+turns.
+
+Still open:
+
+- On the next phpcs round, check that the agent used a script and that it cost less.
+
 ### Only the tools each AI needs
 
 Each AI workflow gets only the tools it uses. Sub-agents, web search, background commands and task
@@ -228,10 +239,12 @@ Still open from step 3d:
 
 ### Step 4: Spend less
 
-- Measure the cost again from 2026-09-24. The old numbers are from before Opus 5.5 and are about
-  35-40% too high. Check whether the runs that cost about $26 each were hitting the 60-minute limit.
-- When the same edit is needed in many files, have the AI write a script for it instead of editing
-  each file by hand. These issues cost about $250.
+The 53 issues opened from 2026-09-24 to 2026-10-14 cost $276 so far. That is $5.21 an issue, down
+from $15.84, with a median of $3.92. Writing code was 64% of the cost, planning 24% and review 12%.
+Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-minute limit; the
+most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
+rounds, not one long run.
+
 - From the second review on, review only what changed since the last review.
 - Use a cheaper model or less effort for simple rounds, such as one that only fixes failing checks.
   Test it first, and check the model is supported (see `AGENTS.md`).
