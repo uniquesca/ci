@@ -76,6 +76,11 @@ on:
         required: false
         default: 'high'
         type: string
+      round_effort:
+        description: 'Effort for a round acting on review feedback, where the plan is settled and the work is what the feedback names. Empty uses `effort`'
+        required: false
+        default: 'medium'
+        type: string
       branch_prefix:
         description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
         required: false
@@ -2681,7 +2686,7 @@ jobs:
           # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
             --model ${{ inputs.model }}
-            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            ${{ (inputs.round_effort || inputs.effort) && format('--effort {0}', inputs.round_effort || inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
             --tools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
             --allowedTools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"

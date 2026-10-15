@@ -97,6 +97,17 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### Less effort for rounds
+
+A round acting on review feedback runs at `medium` effort, and the first build stays at `high`. Of
+51 rounds from 2026-09-24 to 2026-10-14, only 2 just fixed failing checks, so a setting for those
+alone would save almost nothing. All 85 rounds cost $76, about $0.90 each.
+
+Still open:
+
+- After a few weeks, compare what a round costs, and how many rounds a pull request needs, with the
+  figures above. If rounds get cheaper but there are more of them, go back to `high`.
+
 ### A later review reads only what changed
 
 From the second review on, AI Review is told to review only what changed since its last review. It
@@ -256,8 +267,6 @@ Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-mi
 most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
 rounds, not one long run.
 
-- Use a cheaper model or less effort for simple rounds, such as one that only fixes failing checks.
-  Test it first, and check the model is supported (see `AGENTS.md`).
 - Make sure the AI reads `AGENTS.md` in every repository. Write one for scoring-lib,
   condition-manager, field-framework and uforms.
 - Give the AI a short map of the repository's folders.

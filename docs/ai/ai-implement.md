@@ -213,6 +213,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `allowed_bots` | string | `github-actions[bot] uniques-ai-review[bot] uniques-ai-implement[bot]` | Space-separated bot logins allowed to trigger a round. The collaborators API has no answer for a bot, so bots are checked against this list instead. **This has to name the reviewing app's bot login** - `<app-slug>[bot]` - or a review starts no round |
 | `model` | string | `claude-opus-5-5` | Model used to implement the plan and to act on review feedback |
 | `effort` | string | `'high'` | How much reasoning the agent spends - `low`, `medium`, `high`, `xhigh` or `max`. Empty leaves the model on whatever the CLI defaults it to |
+| `round_effort` | string | `'medium'` | Effort for a round acting on review feedback. Empty uses `effort` |
 | `max_turns` | number | `100` | How many turns the agent may spend before it has to stop with what it has |
 | `agent_timeout_minutes` | number | `60` | How long the implementing agent itself may run before it is given up on |
 | `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |
