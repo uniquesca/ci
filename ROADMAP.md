@@ -97,6 +97,12 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### Fewer issue comments for the AI
+
+AI Plan and AI Implement get only the issue comments since the latest plan, or all of them before
+the first plan. Earlier comments, and every older plan, are already answered by the latest plan.
+AI Review gets no issue comments. AI Retro still gets them all.
+
 ### The AI reads `AGENTS.md`
 
 The plan, implement and review prompts tell the agent to read `AGENTS.md` when it is not already in
@@ -282,7 +288,6 @@ rounds, not one long run.
 
 - Give the AI a short map of the repository's folders.
 - Cut long check output down before the AI reads it.
-- Give the AI only the comments since the latest plan, and none to the reviewer.
 - `/ai-plan from=#N`: start a plan from an earlier issue's plan, for a series of issues.
 
 ### Step 5: Fewer notifications, and show what is happening

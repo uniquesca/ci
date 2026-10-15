@@ -16,6 +16,10 @@ inputs:
     description: 'Directory inside the checkout to write into'
     required: false
     default: '.ai-plan'
+  comments:
+    description: 'Which comments go into `comments.json`: `all`, `since-plan` - those after the newest plan, or all of them when there is none - or `none` for an empty list'
+    required: false
+    default: 'all'
 
 outputs:
   title:
@@ -52,6 +56,7 @@ runs:
         GH_REPO: ${{ inputs.repository }}
         ISSUE: ${{ inputs.issue }}
         DIR: ${{ inputs.directory }}
+        COMMENTS: ${{ inputs.comments }}
       run: |
         mkdir -p "$DIR"
         tmp_comments="$RUNNER_TEMP/ai-stage-issue-comments.json"
@@ -77,9 +82,6 @@ runs:
           > "$tmp_comments"
         strip='def without_plan_data: gsub("\\n*<!-- ai-plan-json -->[\\s\\S]*?\\n</details>"; "")
                  | gsub("\\n?<!-- ai-plan-data:[A-Za-z0-9+/=]+ -->"; "");'
-        jq "$strip"' map(del(.plan_json, .plan_data) | .body |= without_plan_data)' \
-          "$tmp_comments" > "$DIR/comments.json"
-
         # Github does not allow newlines in an issue title, but strip them anyway rather
         # than risk a malformed step output
         title=$(jq -r '.title // ""' "$DIR/issue.json" | tr -d '\r\n')
@@ -95,6 +97,17 @@ runs:
         plan_comment="$RUNNER_TEMP/ai-stage-issue-plan.json"
         jq 'map(select(.is_bot and (.body | startswith("<!-- ai-plan -->")))) | last // {}' \
           "$tmp_comments" > "$plan_comment"
+
+        # The plan already answers what was said before it, so `since-plan` drops that, older plans
+        # included. Ties go to keeping: a comment made in the same second as the plan stays.
+        case "$COMMENTS" in
+          all) keep='true' ;;
+          since-plan) keep='(.created_at // "") >= ($plan[0].created_at // "") and (.url != $plan[0].url)' ;;
+          none) keep='false' ;;
+          *) echo "::error title=Unknown comments value::comments is '$COMMENTS'; use all, since-plan or none"; exit 1 ;;
+        esac
+        jq --slurpfile plan "$plan_comment" "$strip"' map(select('"$keep"') | del(.plan_json, .plan_data) | .body |= without_plan_data)' \
+          "$tmp_comments" > "$DIR/comments.json"
 
         # What a person reads: the plan without its JSON
         jq -r "$strip"' .body // empty | without_plan_data' "$plan_comment" > "$DIR/plan.md"

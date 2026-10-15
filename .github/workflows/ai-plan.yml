@@ -383,6 +383,7 @@ jobs:
           issue: ${{ github.event.issue.number }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          comments: since-plan
 
       # The framework catalogue, staged the same way and for the same reason: the agent has no
       # network, and a plan that asks for a workflow is where the framework is either used or
@@ -770,8 +771,8 @@ jobs:
             Read these first:
 
             - `.ai-plan/issue.json` - the issue number, title and body. This is the task.
-            - `.ai-plan/comments.json` - every comment, oldest first, with its author and an
-              `is_bot` flag.
+            - `.ai-plan/comments.json` - the comments since the last plan, or all of them before the
+              first, oldest first, with their author and an `is_bot` flag.
             - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
               work is done here.
 

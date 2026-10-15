@@ -510,6 +510,7 @@ jobs:
           issue: ${{ steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          comments: none
 
       # What has already been said on this pull request, and what CI already thinks. Answered
       # threads are kept here, unlike for the implementing agent: a thread where the previous

@@ -3,7 +3,8 @@
 Writes a Github issue, its comments and its most recent plan into the checkout, for an agent that
 has no shell and no network of its own.
 
-Used by [`ai-plan`](../ai/ai-plan.md) and [`ai-implement`](../ai/ai-implement.md).
+Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md),
+[`ai-review`](../ai/ai-review.md) and [`ai-retro`](../ai/ai-retro.md).
 
 ```yaml
 - uses: uniquesca/ci/ai-stage-issue@v11
@@ -22,6 +23,7 @@ Used by [`ai-plan`](../ai/ai-plan.md) and [`ai-implement`](../ai/ai-implement.md
 | `repository` | yes | | Repository the issue belongs to, in `owner/name` form |
 | `token` | yes | | Github token used to read the issue |
 | `directory` | no | `.ai-plan` | Directory inside the checkout to write into |
+| `comments` | no | `all` | Which comments go into `comments.json`: `all`, `since-plan` - those after the newest plan, or all of them when there is none - or `none` |
 
 ## Outputs
 
@@ -41,7 +43,7 @@ Used by [`ai-plan`](../ai/ai-plan.md) and [`ai-implement`](../ai/ai-implement.md
 | File | Contents |
 |---|---|
 | `issue.json` | `number`, `title` and `body` |
-| `comments.json` | Every comment, as `author`, `is_bot`, `created_at`, `url` and `body`, oldest first. A plan's JSON is taken out of its body |
+| `comments.json` | The comments `comments` asks for, as `author`, `is_bot`, `created_at`, `url` and `body`, oldest first. A plan's JSON is taken out of its body |
 | `plan.md` | The part of the plan a person sees, when the issue has one. Absent otherwise |
 | `plan.json` | The whole plan, read out of the comment it was posted in. Absent for a plan from before plans were JSON |
 

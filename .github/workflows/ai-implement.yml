@@ -1023,6 +1023,7 @@ jobs:
           issue: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          comments: since-plan
 
       # No plan is not a failure - the command was simply run too early. Only the first run
       # needs one: by the time there is a pull request the work exists, and a plan somebody
@@ -2459,8 +2460,8 @@ jobs:
               acceptance criterion. Cite them as described below, or step titles where a plan
               has no ids.
             - `.ai-plan/issue.json` - the issue, for why the work is wanted.
-            - `.ai-plan/comments.json` - every comment, oldest first, with its author and an
-              `is_bot` flag. A comment after the plan is feedback on it, and wins over it.
+            - `.ai-plan/comments.json` - the comments since the plan, oldest first, with their author
+              and an `is_bot` flag. Each is feedback on the plan, and wins over it.
 
             If there is neither `plan.json` nor `plan.md`, stop and say so as your final message.
 
