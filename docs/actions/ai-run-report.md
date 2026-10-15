@@ -74,7 +74,8 @@ that died partway is exactly when you want it.
 
 `summary` is prose for whoever opens the issue, and `cost_line` is the same run as one hidden
 HTML comment holding compact JSON: the cost, the four token counters separately, turns, duration,
-the model, the run that produced it, and the issue, pull request and round the caller named.
+the model, how much each tool handed the agent, the run that produced it, and the issue, pull
+request and round the caller named.
 Whatever the log did not record drops out of the object rather than arriving as a null, so a
 report can tell a run that recorded no cost from a run that cost nothing. Put it on the **last**
 line of the comment - `ai-stage-issue` and `ai-stage-pull-request` read a fixed line of the

@@ -54,7 +54,8 @@ carrying the cost, the four token counters separately, turns, duration, the mode
 that produced it. A run that posted what the agent wrote adds `text_chars` - its length, the
 visible part only for a plan - `structured`, false when the agent's plain final message was posted
 instead of its JSON, and `text_problems`, what the checks found, counted by kind: `length`, `id`,
-`phrase` and `shape`. The runs CSV has all three. The token counters stay separate because cache reads are most of the volume and
+`phrase` and `shape`. Every run also records `tool_output`, the characters each tool handed the
+agent, and `largest_output`, the longest single result. The runs CSV has all of these. The token counters stay separate because cache reads are most of the volume and
 a fraction of the price, so a month that costs more than the one before it cannot be explained
 without knowing which of the two grew.
 

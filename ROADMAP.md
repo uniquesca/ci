@@ -97,6 +97,21 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### How much check output the AI reads
+
+What the workflow stages about failing checks is already short. Of 267 rounds from early September
+to 2026-10-15, 17 had check reports, 30 files in all, with a median of 111 bytes and the largest 10
+KB. None came near the 200 KB cut. The 65 failing checks in the feedback had a median of 381
+characters, and the longest 1,237. What the agent gets back from the checks it runs itself was not
+recorded anywhere, so the cost line now records the characters each tool hands back, and the
+longest single result.
+
+Still open:
+
+- After a few weeks, read `tool output chars` and `largest tool output` in the runs CSV. If `Bash`
+  output is a large share of what the agent reads, have it send long check output to a file and
+  read only the failures.
+
 ### A map of the repository's folders
 
 AI Plan and AI Implement's first build get a map of the folders git tracks, with how many files are
@@ -299,7 +314,6 @@ Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-mi
 most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
 rounds, not one long run.
 
-- Cut long check output down before the AI reads it.
 - `/ai-plan from=#N`: start a plan from an earlier issue's plan, for a series of issues.
 
 ### Step 5: Fewer notifications, and show what is happening
