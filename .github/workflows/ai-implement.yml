@@ -76,6 +76,11 @@ on:
         required: false
         default: 'high'
         type: string
+      round_effort:
+        description: 'Effort for a round acting on review feedback, where the plan is settled and the work is what the feedback names. Empty uses `effort`'
+        required: false
+        default: 'medium'
+        type: string
       branch_prefix:
         description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
         required: false
@@ -549,8 +554,7 @@ jobs:
           # does is say what was asked for.
           #
           # The code below also lives in ai-plan.yml, which takes the same argument on its own
-          # command. Keep the two identical: the test extracts both and runs them against one
-          # case list, so a change to one of them fails until the other follows.
+          # command. Keep the two the same: nothing checks it.
           base_given='false'
           requested_base=''
           if [[ -n "$COMMENT_BODY" ]]; then
@@ -1018,6 +1022,7 @@ jobs:
           issue: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          comments: since-plan
 
       # No plan is not a failure - the command was simply run too early. Only the first run
       # needs one: by the time there is a pull request the work exists, and a plan somebody
@@ -2400,6 +2405,13 @@ jobs:
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
 
+      # Without one, the first turns in a repository with no `AGENTS.md` go on listing folders.
+      # A round starts from feedback that names its files, so only the first build gets it.
+      - name: Map the folders
+        id: folders
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
+        uses: uniquesca/ci/ai-folder-map@v11
+
       - name: Read the style guide
         id: style
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -2446,14 +2458,16 @@ jobs:
 
             Read these first:
 
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
             - `.ai-plan/plan.json` - the approved plan, and the specification. `.ai-plan/plan.md`
               is the part a person sees, and wins where it differs; an older plan has only
               `plan.md`. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
               acceptance criterion. Cite them as described below, or step titles where a plan
               has no ids.
             - `.ai-plan/issue.json` - the issue, for why the work is wanted.
-            - `.ai-plan/comments.json` - every comment, oldest first, with its author and an
-              `is_bot` flag. A comment after the plan is feedback on it, and wins over it.
+            - `.ai-plan/comments.json` - the comments since the plan, oldest first, with their author
+              and an `is_bot` flag. Each is feedback on the plan, and wins over it.
 
             If there is neither `plan.json` nor `plan.md`, stop and say so as your final message.
 
@@ -2462,6 +2476,8 @@ jobs:
             and say so in your report. Nothing under `node_modules`, `vendor`, `dist` or `build`
             is yours to change or worth searching unless the plan is about it; reading a
             dependency or running its binaries is fine.
+
+            ${{ steps.folders.outputs.text }}
 
             Run the plan's `C` checks yourself. One you cannot get passing is reported as failing.
 
@@ -2480,6 +2496,9 @@ jobs:
             the ones you did not reach in your report - fifteen of forty done is a good run,
             stopping because forty looked like too many is not. Where something is unresolved,
             finish everything that does not depend on it.
+
+            Where the same edit goes into many files, write a script outside the working tree
+            that makes it, run it, and read its diff. Fix by hand only what it got wrong.
 
             Do not:
 
@@ -2526,7 +2545,8 @@ jobs:
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Bash"
+            --tools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
+            --allowedTools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
       # The other half of the loop. Everything a reviewer said is on disk in one file, and
@@ -2558,6 +2578,8 @@ jobs:
 
             This is round ${{ steps.stage_pr.outputs.round }}. Read these first:
 
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
             - `.ai-review/feedback.json` - everything asking for a change. This is the work.
               Each entry has:
               - `source` - `thread` an inline review comment, `review` a reviewer's summary,
@@ -2628,6 +2650,9 @@ jobs:
             round that changes no file stops the pull request where it is. Where something is
             unresolved, finish the rest.
 
+            Where the same edit goes into many files, write a script outside the working tree
+            that makes it, run it, and read its diff. Fix by hand only what it got wrong.
+
             Do not:
 
             - commit, push or comment anywhere - the workflow does that, replies included, with
@@ -2674,9 +2699,10 @@ jobs:
           # and does not have costs it a turn, so the two have to say the same thing.
           claude_args: |
             --model ${{ inputs.model }}
-            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            ${{ (inputs.round_effort || inputs.effort) && format('--effort {0}', inputs.round_effort || inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Bash"
+            --tools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
+            --allowedTools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
       # Reads the agent's execution log: prints what it said and what it touched, and hands

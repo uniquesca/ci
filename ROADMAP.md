@@ -97,6 +97,114 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### Step 4: Spend less
+
+The 53 issues opened from 2026-09-24 to 2026-10-14 cost $276 so far. That is $5.21 an issue, down
+from $15.84, with a median of $3.92. Writing code was 64% of the cost, planning 24% and review 12%.
+Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-minute limit; the
+most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
+rounds, not one long run.
+
+### Plans that continue an earlier issue
+
+`/ai-plan from=#N` stages issue N's plan, and the comments since it, next to the new issue. The
+planner starts from it and plans only what comes next. The new plan records it, so a revision
+starts from the same plan. Officio's queue work was planned as six issues, #1204 to #1220: 9
+plans, $7.74, from 11 to 53 turns each, and #1212 alone took 4. At under $1.25 a plan, the gain is
+in plans that do not guess where the series stands more than in the cost.
+
+Still open:
+
+- On the next issue in a series, check that the plan picks up where the last one stopped, and how
+  many turns it takes.
+- Take the branch from issue N's plan too, when the new issue has no plan and no `base=`.
+
+### How much check output the AI reads
+
+What the workflow stages about failing checks is already short. Of 267 rounds from early September
+to 2026-10-15, 17 had check reports, 30 files in all, with a median of 111 bytes and the largest 10
+KB. None came near the 200 KB cut. The 65 failing checks in the feedback had a median of 381
+characters, and the longest 1,237. What the agent gets back from the checks it runs itself was not
+recorded anywhere, so the cost line now records the characters each tool hands back, and the
+longest single result.
+
+Still open:
+
+- After a few weeks, read `tool output chars` and `largest tool output` in the runs CSV. If `Bash`
+  output is a large share of what the agent reads, have it send long check output to a file and
+  read only the failures.
+
+### A map of the repository's folders
+
+AI Plan and AI Implement's first build get a map of the folders git tracks, with how many files are
+under each, at most 100 lines. In forms-dev-platform, before it had an `AGENTS.md`, 22 of 54 and 15
+of 62 tool calls in a plan were spent listing folders. In officio it was 1 to 8, and reviews list
+almost none, so AI Review and the rounds do not get it.
+
+Still open:
+
+- On the next plans in a repository without an `AGENTS.md`, check that fewer tool calls go on
+  listing folders.
+
+### Fewer issue comments for the AI
+
+AI Plan and AI Implement get only the issue comments since the latest plan, or all of them before
+the first plan. Earlier comments, and every older plan, are already answered by the latest plan.
+AI Review gets no issue comments. AI Retro still gets them all.
+
+### The AI reads `AGENTS.md`
+
+The plan, implement and review prompts tell the agent to read `AGENTS.md` when it is not already in
+its instructions. Claude Code reads it on its own only when there is no `CLAUDE.md`, and not in
+every session. Every repository with the harness has an `AGENTS.md` and a `CLAUDE.md` that
+imports it, except form-suite, which has only its own `CLAUDE.md`, and ntnp-frontend, which has no
+`CLAUDE.md` and relies on the prompt.
+
+Still open:
+
+- form-suite's `CLAUDE.md` tells the agent to log every change in `.docs/CLAUDE_CHANGELOG.md`,
+  which is gitignored, so it costs turns but never reaches a pull request. It also says to comment
+  complex code. Agree with its owner what the harness should skip.
+
+### Less effort for rounds
+
+A round acting on review feedback runs at `medium` effort, and the first build stays at `high`. Of
+51 rounds from 2026-09-24 to 2026-10-14, only 2 just fixed failing checks, so a setting for those
+alone would save almost nothing. All 85 rounds cost $76, about $0.90 each.
+
+Still open:
+
+- After a few weeks, compare what a round costs, and how many rounds a pull request needs, with the
+  figures above. If rounds get cheaper but there are more of them, go back to `high`.
+
+### A later review reads only what changed
+
+From the second review on, AI Review is told to review only what changed since its last review. It
+still has the whole diff for context. It reviews everything again when a person approved after it,
+when the base branch was merged in since, or when nothing changed.
+
+Still open:
+
+- On the next pull request with several rounds, check that later reviews cost less and do not miss
+  what an earlier round broke outside the new diff.
+
+### A script for the same edit in many files
+
+When the same edit goes into many files, the coding agent writes a script for it, runs it and
+checks the result, and fixes by hand only what the script got wrong. The phpcs, psalm and module
+dependency issues cost $75 from 2026-09-24 to 2026-10-14. Building a phpcs round took around 100
+turns.
+
+Still open:
+
+- On the next phpcs round, check that the agent used a script and that it cost less.
+
+### Only the tools each AI needs
+
+Each AI workflow gets only the tools it uses. Sub-agents, web search, background commands and task
+lists are switched off. The coding agent used to have sub-agents even though its prompt said it did
+not. In 48 recent runs no agent used any of the tools that are now off.
+
 ### Close the issue when its pull request merges
 
 AI pull requests say `Closes #N`. Of 125 merged by October 2026, every issue was closed, including
@@ -219,23 +327,6 @@ Still open from step 3d:
 - Check on real plans that the planner finds a repository's end-to-end tests.
 
 ## Next
-
-### Step 4: Spend less
-
-- Measure the cost again from 2026-09-24. The old numbers are from before Opus 5.5 and are about
-  35-40% too high. Check whether the runs that cost about $26 each were hitting the 60-minute limit.
-- When the same edit is needed in many files, have the AI write a script for it instead of editing
-  each file by hand. These issues cost about $250.
-- From the second review on, review only what changed since the last review.
-- Use a cheaper model or less effort for simple rounds, such as one that only fixes failing checks.
-  Test it first, and check the model is supported (see `AGENTS.md`).
-- Make sure the AI reads `AGENTS.md` in every repository. Write one for scoring-lib,
-  condition-manager, field-framework and uforms.
-- Give the AI a short map of the repository's folders.
-- Cut long check output down before the AI reads it.
-- Turn off the AI tools we do not need: sub-agents and web search.
-- Give the AI only the comments since the latest plan, and none to the reviewer.
-- `/ai-plan from=#N`: start a plan from an earlier issue's plan, for a series of issues.
 
 ### Step 5: Fewer notifications, and show what is happening
 

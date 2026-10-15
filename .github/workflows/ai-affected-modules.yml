@@ -168,7 +168,8 @@ jobs:
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Write"
+            --tools "Read,Grep,Glob,Write"
+            --allowedTools "Read,Grep,Glob,Write"
 
       # Printed to the log as well as the summary, so the job page shows the decision
       - name: Read the answer

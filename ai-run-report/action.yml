@@ -238,6 +238,10 @@ runs:
           # result. Not from the result's `modelUsage`: that lists every model the run had
           # configured - the main one and the small one the harness keeps for its own chores -
           # with no usage figures to tell them apart, so any pick from it is a guess.
+          #
+          # `tool_output` is how many characters each tool handed back, and `largest_output` the
+          # longest single result. Every result stays in the context for the rest of the run, so
+          # this is what says whether long check output is worth cutting down.
           cost_line=$(
             jq -rs --arg kind "$KIND" \
                    --arg repo "${GITHUB_REPOSITORY:-}" \
@@ -252,6 +256,15 @@ runs:
               flatten
               | (map(select(.type == "result")) | last) as $r
               | (map(select(.type == "assistant")) | last) as $a
+              | (map(select(.type == "assistant") | .message.content[]?
+                     | select(type == "object" and .type == "tool_use") | {key: .id, value: .name})
+                 | from_entries) as $tools
+              | [ .[] | select(.type == "user") | .message.content[]?
+                  | select(type == "object" and .type == "tool_result")
+                  | {tool: ($tools[.tool_use_id] // "other"),
+                     chars: (.content | if type == "string" then length
+                             elif type == "array" then (map(.text // "" | length) | add // 0)
+                             else 0 end)} ] as $results
               | {v: 1, kind: $kind, repo: $repo, at: $at,
                  issue: ($issue | num), pull_request: ($pull_request | num),
                  round: ($round | num),
@@ -263,6 +276,10 @@ runs:
                  cache_read_tokens: $r.usage.cache_read_input_tokens,
                  cache_write_tokens: $r.usage.cache_creation_input_tokens,
                  model: $a.message.model,
+                 tool_output: ($results | group_by(.tool)
+                               | map({key: .[0].tool, value: (map(.chars) | add)})
+                               | from_entries | if . == {} then null else . end),
+                 largest_output: ($results | map(.chars) | max),
                  completed: (($r.subtype // "") == "success" and $r.is_error != true)}
               | with_entries(select(.value != null and .value != ""))
               | "<!-- ai-cost " + tojson + " -->"' "$EXECUTION_FILE" 2>/dev/null || true

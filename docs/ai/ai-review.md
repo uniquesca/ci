@@ -147,7 +147,9 @@ resolved, and every review delivered on the branch before this round, its own in
 thread stands whatever the agent makes of the code. Only the code under it moving reopens one, and
 the inline comment then has to say what moved. An approval is a baseline: the reviewer still runs,
 but it is handed the diff since the approved commit. A finding inside code already accepted has to
-be a real defect, and the finding has to say it is raised against an approval.
+be a real defect, and the finding has to say it is raised against an approval. Its own earlier
+review works the same way: a later review is handed the diff since that review's commit, unless an
+approval is newer, the base was merged in since, or nothing changed, which all get the whole diff.
 
 Where there is no plan, the pull request's own title and description are the specification, and a
 closing keyword in that description is followed to the issue behind it - so one saying `Closes

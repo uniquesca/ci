@@ -510,6 +510,7 @@ jobs:
           issue: ${{ steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          comments: none
 
       # What has already been said on this pull request, and what CI already thinks. Answered
       # threads are kept here, unlike for the implementing agent: a thread where the previous
@@ -526,6 +527,7 @@ jobs:
           head_sha: ${{ steps.pull_request.outputs.head_sha }}
           include_answered_threads: true
           settled_record: true
+          review_marker: ${{ env.REVIEW_MARKER }}
           ignore_check_patterns: ${{ inputs.ignore_check_patterns }}
 
       # An approval is a person saying the change was fine as it stood, and the review record
@@ -558,6 +560,45 @@ jobs:
 
           echo "staged=true" >> "$GITHUB_OUTPUT"
           echo "Staged what changed since $SHA was approved at $AT:" \
+               "$(git diff --shortstat "$SHA..HEAD")"
+
+      # An earlier review read everything up to the commit it was on, so a later one reads only
+      # what moved since. Skipped when an approval is newer, which narrows it further, and when the
+      # base was merged in since: the diff would then carry the base's changes as the branch's.
+      - name: Stage what changed since the last review
+        id: review_diff
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.stage_pr.outputs.reviewed_sha != '' }}
+        env:
+          SHA: ${{ steps.stage_pr.outputs.reviewed_sha }}
+          AT: ${{ steps.stage_pr.outputs.reviewed_at }}
+          APPROVED_AT: ${{ steps.stage_pr.outputs.approved_at }}
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+          BASE: ${{ steps.pull_request.outputs.base }}
+        run: |
+          if [[ "$SHA" == "$HEAD_SHA" || ! "$AT" > "$APPROVED_AT" ]]; then
+            echo "staged=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing new since the last review on $SHA, or an approval is newer. Reviewing as before"
+            exit 0
+          fi
+
+          if ! git cat-file -e "$SHA^{commit}" 2>/dev/null; then
+            echo "staged=false" >> "$GITHUB_OUTPUT"
+            echo "The last review was on $SHA, which this branch no longer contains. Reviewing the whole change"
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$(git merge-base "origin/$BASE" HEAD)" "$SHA"; then
+            echo "staged=false" >> "$GITHUB_OUTPUT"
+            echo "$BASE was merged in since the last review on $SHA. Reviewing the whole change"
+            exit 0
+          fi
+
+          git diff "$SHA..HEAD" > .ai-review/since-last-review.patch
+
+          echo "staged=true" >> "$GITHUB_OUTPUT"
+          echo "Staged what changed since the last review on $SHA:" \
                "$(git diff --shortstat "$SHA..HEAD")"
 
       - name: Read the style guide
@@ -600,8 +641,10 @@ jobs:
 
             Read these first:
 
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
+              work is done here.
             - `.ai-review/diff.patch` - the change, against
-              `${{ steps.pull_request.outputs.base }}`. This is what you review.
+              `${{ steps.pull_request.outputs.base }}`. ${{ steps.review_diff.outputs.staged == 'true' && 'Context, and where inline comment lines come from.' || 'This is what you review.' }}
               ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED and stops partway: read the files for the rest.' || '' }}
             - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - its shape.
             - `.ai-review/pull-request.json` - the title and description.
@@ -621,6 +664,7 @@ jobs:
             - `.ai-review/settled.json` - what is **decided**: resolved threads and earlier
               reviews, yours and people's. Same shape; nothing in it is open.
             ${{ steps.approval_diff.outputs.staged == 'true' && format('- `.ai-review/since-approval.patch` - what changed after the approval at {0}, which nobody has read.', steps.stage_pr.outputs.approved_at) || '' }}
+            ${{ steps.review_diff.outputs.staged == 'true' && format('- `.ai-review/since-last-review.patch` - what changed since your last review, at {0}. **This is what you review.** Raise something outside it only where this change makes it wrong.', steps.stage_pr.outputs.reviewed_at) || '' }}
 
             You have no network. The only shell commands you may run are `git log`, `git blame`
             and `git show`; read with `Read`, search with `Grep` and `Glob`. Any other `Bash`
@@ -641,7 +685,7 @@ jobs:
               see in round three was most likely raised in round one. A concern that sits in a
               resolved or answered thread is finished.
             - An `approved` review means the code as it stood then is settled.
-              ${{ steps.approval_diff.outputs.staged == 'true' && 'Review `.ai-review/since-approval.patch` as the change in front of you.' || 'Review only what changed since.' }}
+              ${{ steps.approval_diff.outputs.staged == 'true' && steps.review_diff.outputs.staged != 'true' && 'Review `.ai-review/since-approval.patch` as the change in front of you.' || 'Review only what changed since.' }}
               Raise something inside the approved code only for a real defect they plainly
               missed, never a preference, and say in the finding that it is against an approval.
 
@@ -740,7 +784,8 @@ jobs:
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Write,Bash(git log:*),Bash(git blame:*),Bash(git show:*)"
+            --tools "Read,Grep,Glob,Write,Bash"
+            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git blame:*),Bash(git show:*)"
             ${{ inputs.debug && '--debug' || '' }}
 
       - name: Report on the run
