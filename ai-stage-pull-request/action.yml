@@ -39,6 +39,10 @@ inputs:
     description: 'First line of an inline comment a reviewing agent only recommended. It has to match what `ai-post-review` writes'
     required: false
     default: '<!-- ai-review-recommendation -->'
+  review_marker:
+    description: 'First line of a review a reviewing agent submitted. Used to find its newest review for `reviewed_sha`. Empty leaves both empty'
+    required: false
+    default: ''
   settled_record:
     description: 'Also write `settled.json` - the decisions already taken on this pull request, where the feedback is what is still open. Resolved threads and reviews from before the watermark are dropped from the feedback by design, and an agent that cannot see them re-raises a concern somebody closed, or acts on one re-raised at it. The two files never overlap, so nothing is counted as work twice'
     required: false
@@ -83,6 +87,12 @@ outputs:
   approved_sha:
     description: 'Commit that approval was submitted against - what the person actually read. Diffing it against the head separates the accepted part of the change from the part nobody has seen'
     value: ${{ steps.stage.outputs.approved_sha }}
+  reviewed_at:
+    description: 'When the newest review carrying `review_marker` was submitted. Empty when there is none, or no marker was given'
+    value: ${{ steps.stage.outputs.reviewed_at }}
+  reviewed_sha:
+    description: 'Commit that review was submitted against - what the reviewing agent last read'
+    value: ${{ steps.stage.outputs.reviewed_sha }}
   checks_pending:
     description: 'How many check runs had not finished yet. Anything above zero means the commit is not known to be green, it is only not known to be red'
     value: ${{ steps.stage.outputs.checks_pending }}
@@ -127,6 +137,7 @@ runs:
         INCLUDE_ANSWERED: ${{ inputs.include_answered_threads }}
         HOLD_RECOMMENDATIONS: ${{ inputs.hold_recommendations }}
         RECOMMENDATION_MARKER: ${{ inputs.recommendation_marker }}
+        REVIEW_MARKER: ${{ inputs.review_marker }}
         SETTLED_RECORD: ${{ inputs.settled_record }}
         IGNORE_CHECKS: ${{ inputs.ignore_check_patterns }}
         MAX_ANNOTATIONS: ${{ inputs.max_annotations }}
@@ -386,6 +397,17 @@ runs:
         approved_at=${approval%%$'\t'*}
         approved_sha=${approval##*$'\t'}
 
+        # The reviewing agent's own newest review. A failed run's review is already left out above.
+        reviewed=$(jq -r --arg marker "$REVIEW_MARKER" '
+          [ .[] | select($marker != "" and ((.body // "") | startswith($marker))) ]
+          | sort_by(.submitted_at // "")
+          | last
+          | if . == null then "\t"
+            else ((.submitted_at // "") + "\t" + (.commit_id // "")) end
+        ' "$tmp/reviews-raw.json")
+        reviewed_at=${reviewed%%$'\t'*}
+        reviewed_sha=${reviewed##*$'\t'}
+
         # --- Conversation comments ------------------------------------------------------
         #
         # Anything said in the pull request conversation since the last round, including the
@@ -556,6 +578,8 @@ runs:
           printf 'settled_count=%s\n' "$settled_count"
           printf 'approved_at=%s\n' "$approved_at"
           printf 'approved_sha=%s\n' "$approved_sha"
+          printf 'reviewed_at=%s\n' "$reviewed_at"
+          printf 'reviewed_sha=%s\n' "$reviewed_sha"
           printf 'checks_pending=%s\n' "$checks_pending"
           printf 'round=%s\n' "$round"
           printf 'unattended_rounds=%s\n' "$unattended_rounds"

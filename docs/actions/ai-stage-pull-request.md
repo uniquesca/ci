@@ -31,6 +31,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `include_answered_threads` | no | `false` | Keep threads the implementing agent has already answered |
 | `hold_recommendations` | no | `false` | Leave out the open threads a reviewing agent only recommended, which wait for a round a person asked for |
 | `recommendation_marker` | no | `<!-- ai-review-recommendation -->` | First line of an inline comment a reviewing agent only recommended. Has to match what [`ai-post-review`](ai-post-review.md) writes |
+| `review_marker` | no | | First line of a review a reviewing agent submitted. Empty leaves `reviewed_at` and `reviewed_sha` empty |
 | `settled_record` | no | `false` | Also write `settled.json` - the decisions already taken, where `feedback.json` is what is still open |
 | `ignore_check_patterns` | no | `(ai.implement\|ai.plan)` | Case-insensitive regular expression matching check runs to leave out |
 | `max_annotations` | no | `20` | How many annotations of a failing check to stage |
@@ -49,6 +50,8 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `settled_count` | How many items were written to `settled.json`. Zero when `settled_record` is off |
 | `approved_at` | When the newest approval by a person was submitted, empty when nobody has approved |
 | `approved_sha` | Commit that approval was submitted against - what the person actually read |
+| `reviewed_at` | When the newest review carrying `review_marker` was submitted, empty when there is none |
+| `reviewed_sha` | Commit that review was submitted against - what the reviewing agent last read |
 | `checks_pending` | How many check runs had not finished yet |
 | `round` | Which round this run is, counting from 1 |
 | `unattended_rounds` | How many rounds in a row were triggered by a bot, counting back from the most recent |

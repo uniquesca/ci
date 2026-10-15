@@ -97,6 +97,17 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### A later review reads only what changed
+
+From the second review on, AI Review is told to review only what changed since its last review. It
+still has the whole diff for context. It reviews everything again when a person approved after it,
+when the base branch was merged in since, or when nothing changed.
+
+Still open:
+
+- On the next pull request with several rounds, check that later reviews cost less and do not miss
+  what an earlier round broke outside the new diff.
+
 ### A script for the same edit in many files
 
 When the same edit goes into many files, the coding agent writes a script for it, runs it and
@@ -245,7 +256,6 @@ Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-mi
 most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
 rounds, not one long run.
 
-- From the second review on, review only what changed since the last review.
 - Use a cheaper model or less effort for simple rounds, such as one that only fixes failing checks.
   Test it first, and check the model is supported (see `AGENTS.md`).
 - Make sure the AI reads `AGENTS.md` in every repository. Write one for scoring-lib,
