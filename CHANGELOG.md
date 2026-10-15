@@ -1515,3 +1515,16 @@
 * Fix: AI workflows take the label and 👀 off and say so when a run runs out of time (c056ed8 by George Shestayev)
 * Update: AI Harness Hint posts at most one hint a week per person in each repository (2137a46 by George Shestayev)
 * Update: improved AI analytics output to catch attention (2137a46 by George Shestayev)
+
+## v11.31.0
+
+* New: /ai-plan from=#N starts a plan from an earlier issue's plan (95437f8 by George Shestayev)
+* Update: AI run report records how much each tool hands the agent (3a46970 by George Shestayev)
+* Update: AI Plan and AI Implement's first build get a map of the repository's folders (c5bb809 by George Shestayev)
+* Update: AI Plan and Implement read only the issue comments since the latest plan, and AI Review none (4b52df6 by George Shestayev)
+* Update: AI Plan, Implement and Review read the repository's AGENTS.md (1ab45f2 by George Shestayev)
+* Update: AI Implement rounds acting on review feedback run at medium effort (edba990 by George Shestayev)
+* Update: AI Review reviews only what changed since its last review (f7bb9e5 by George Shestayev)
+* Update: measured AI harness costs for the roadmap (9e3cecf by George Shestayev)
+* Update: AI Implement writes a script when the same edit goes into many files (9e3cecf by George Shestayev)
+* Update: AI workflows give the agent only the tools it uses; sub-agents and web search are off (090de50 by George Shestayev)
