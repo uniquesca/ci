@@ -73,6 +73,17 @@ what the last plan recorded, which is how you correct a plan written against the
 `/ai-do` inherits the same way, described under
 [basing the work on another branch](ai-implement.md#basing-the-work-on-another-branch).
 
+### Continuing an earlier issue
+
+For work split across several issues, name the issue before this one. Its plan is what the planner
+starts from, so it does not work out the series again from the code:
+
+```
+/ai-plan from=#1212       # plans what is next after #1212's plan, and records it
+/ai-plan                  # a revision still starts from #1212
+/ai-plan base=develop from=#1212    # with base=, in either order
+```
+
 ## How the plan is numbered
 
 You see a short summary of what is to be done and where, the risks with any question for you, the
@@ -164,7 +175,8 @@ exist, so every release of this project's private `@uniquesca` packages is read 
 registries beforehand and staged as `.ai-plan/private-packages.json`, with the dependency and peer
 ranges each one declares - which is what lets a plan for an upgrade name a version rather than a
 step to go and find one. Public packages are not in there, and a question about one of those stays
-an unknown in the plan.
+an unknown in the plan. With `from=`, the earlier issue, its plan and the comments since it are
+staged under `.ai-plan/from/`; the branch is not taken from that plan.
 
 The step is read-only in two independent ways: the job holds `contents: read`, and the editing and
 shell tools are switched off. The one file it may write is the plan itself, `.ai-plan/new-plan.json`,

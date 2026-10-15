@@ -554,8 +554,7 @@ jobs:
           # does is say what was asked for.
           #
           # The code below also lives in ai-plan.yml, which takes the same argument on its own
-          # command. Keep the two identical: the test extracts both and runs them against one
-          # case list, so a change to one of them fails until the other follows.
+          # command. Keep the two the same: nothing checks it.
           base_given='false'
           requested_base=''
           if [[ -n "$COMMENT_BODY" ]]; then
