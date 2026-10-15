@@ -97,6 +97,28 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### Step 4: Spend less
+
+The 53 issues opened from 2026-09-24 to 2026-10-14 cost $276 so far. That is $5.21 an issue, down
+from $15.84, with a median of $3.92. Writing code was 64% of the cost, planning 24% and review 12%.
+Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-minute limit; the
+most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
+rounds, not one long run.
+
+### Plans that continue an earlier issue
+
+`/ai-plan from=#N` stages issue N's plan, and the comments since it, next to the new issue. The
+planner starts from it and plans only what comes next. The new plan records it, so a revision
+starts from the same plan. Officio's queue work was planned as six issues, #1204 to #1220: 9
+plans, $7.74, from 11 to 53 turns each, and #1212 alone took 4. At under $1.25 a plan, the gain is
+in plans that do not guess where the series stands more than in the cost.
+
+Still open:
+
+- On the next issue in a series, check that the plan picks up where the last one stopped, and how
+  many turns it takes.
+- Take the branch from issue N's plan too, when the new issue has no plan and no `base=`.
+
 ### How much check output the AI reads
 
 What the workflow stages about failing checks is already short. Of 267 rounds from early September
@@ -305,16 +327,6 @@ Still open from step 3d:
 - Check on real plans that the planner finds a repository's end-to-end tests.
 
 ## Next
-
-### Step 4: Spend less
-
-The 53 issues opened from 2026-09-24 to 2026-10-14 cost $276 so far. That is $5.21 an issue, down
-from $15.84, with a median of $3.92. Writing code was 64% of the cost, planning 24% and review 12%.
-Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-minute limit; the
-most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
-rounds, not one long run.
-
-- `/ai-plan from=#N`: start a plan from an earlier issue's plan, for a series of issues.
 
 ### Step 5: Fewer notifications, and show what is happening
 
