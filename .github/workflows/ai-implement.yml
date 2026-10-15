@@ -2526,7 +2526,8 @@ jobs:
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Bash"
+            --tools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
+            --allowedTools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
       # The other half of the loop. Everything a reviewer said is on disk in one file, and
@@ -2676,7 +2677,8 @@ jobs:
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,Edit,Write,MultiEdit,NotebookEdit,TodoWrite,Bash"
+            --tools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
+            --allowedTools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
             ${{ inputs.debug && '--debug' || '' }}
 
       # Reads the agent's execution log: prints what it said and what it touched, and hands

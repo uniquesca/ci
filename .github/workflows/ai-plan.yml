@@ -860,16 +860,14 @@ jobs:
             it is refused, make the same JSON your whole final message.
 
             ${{ steps.style.outputs.text }}
-          # Writing is allowed for the plan file and nothing else. `Edit` stays off the deny list: a
-          # denial beats any allowance, and `Edit` rules cover every tool that writes a file, so
-          # denying it would refuse the one write the planner is allowed. Nothing it could edit
-          # elsewhere leaves the runner - this job reads the repository and never pushes.
+          # Writing is allowed for the plan file and nothing else. Nothing it could edit elsewhere
+          # leaves the runner - this job reads the repository and never pushes.
           claude_args: |
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
+            --tools "Read,Grep,Glob,Write,Edit"
             --allowedTools "Write(.ai-plan/new-plan.json),Edit(.ai-plan/new-plan.json)"
-            --disallowedTools "Replace,NotebookEdit,Bash,Task,Agent"
             ${{ inputs.debug && '--debug' || '' }}
 
       # Reads the agent's execution log: prints what it said and what it touched, and hands

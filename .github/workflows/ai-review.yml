@@ -740,7 +740,8 @@ jobs:
             --model ${{ inputs.model }}
             ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
             --max-turns ${{ inputs.max_turns }}
-            --allowedTools "Read,Grep,Glob,LS,TodoWrite,Write,Bash(git log:*),Bash(git blame:*),Bash(git show:*)"
+            --tools "Read,Grep,Glob,Write,Bash"
+            --allowedTools "Read,Grep,Glob,Write,Bash(git log:*),Bash(git blame:*),Bash(git show:*)"
             ${{ inputs.debug && '--debug' || '' }}
 
       - name: Report on the run

@@ -97,6 +97,12 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### Only the tools each AI needs
+
+Each AI workflow gets only the tools it uses. Sub-agents, web search, background commands and task
+lists are switched off. The coding agent used to have sub-agents even though its prompt said it did
+not. In 48 recent runs no agent used any of the tools that are now off.
+
 ### Close the issue when its pull request merges
 
 AI pull requests say `Closes #N`. Of 125 merged by October 2026, every issue was closed, including
@@ -233,7 +239,6 @@ Still open from step 3d:
   condition-manager, field-framework and uforms.
 - Give the AI a short map of the repository's folders.
 - Cut long check output down before the AI reads it.
-- Turn off the AI tools we do not need: sub-agents and web search.
 - Give the AI only the comments since the latest plan, and none to the reviewer.
 - `/ai-plan from=#N`: start a plan from an earlier issue's plan, for a series of issues.
 

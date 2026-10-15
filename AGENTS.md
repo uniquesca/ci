@@ -124,6 +124,10 @@ Every workflow sets `defaults: run: shell: bash`. Naming the shell is what turns
 a `run:` step that leaves it unnamed gets errexit without it, so a failure anywhere upstream of a
 `|` is discarded. Keep the block when editing a workflow, and add it to a new one.
 
+Every AI workflow names its agent's tools in `--tools`. `--allowedTools` only says which run
+without asking. A tool missing from `--tools` is still loaded, and some, such as `Agent` for
+sub-agents, run without asking.
+
 `ai-implement.yml` and `ai-review.yml` both use a `PROCEED` environment variable to stand down
 without failing. The contract is documented where it is declared in each file - read it before
 adding a step to either.
