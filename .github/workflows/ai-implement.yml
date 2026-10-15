@@ -2406,6 +2406,13 @@ jobs:
             echo 'PROMPT'
           } >> "$GITHUB_OUTPUT"
 
+      # Without one, the first turns in a repository with no `AGENTS.md` go on listing folders.
+      # A round starts from feedback that names its files, so only the first build gets it.
+      - name: Map the folders
+        id: folders
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
+        uses: uniquesca/ci/ai-folder-map@v11
+
       - name: Read the style guide
         id: style
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -2470,6 +2477,8 @@ jobs:
             and say so in your report. Nothing under `node_modules`, `vendor`, `dist` or `build`
             is yours to change or worth searching unless the plan is about it; reading a
             dependency or running its binaries is fine.
+
+            ${{ steps.folders.outputs.text }}
 
             Run the plan's `C` checks yourself. One you cannot get passing is reported as failing.
 

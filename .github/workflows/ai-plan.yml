@@ -724,6 +724,12 @@ jobs:
             echo "There are no dependency directories in the working tree, and the agent is told to ignore them"
           fi
 
+      # Without one, the first turns in a repository with no `AGENTS.md` go on listing folders
+      - name: Map the folders
+        id: folders
+        if: ${{ steps.task.outputs.has_task == 'true' }}
+        uses: uniquesca/ci/ai-folder-map@v11
+
       - name: Read the style guide
         id: style
         if: ${{ steps.task.outputs.has_task == 'true' }}
@@ -787,6 +793,8 @@ jobs:
 
             Before planning, read the code the task touches, its conventions, what exists to
             reuse, and the callers, tests and docs that would go stale.
+
+            ${{ steps.folders.outputs.text }}
 
             ${{ steps.deps_prompt.outputs.instructions }}
 

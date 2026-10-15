@@ -97,6 +97,18 @@ These are breaking changes, so they wait for the next major version.
 
 ## Done
 
+### A map of the repository's folders
+
+AI Plan and AI Implement's first build get a map of the folders git tracks, with how many files are
+under each, at most 100 lines. In forms-dev-platform, before it had an `AGENTS.md`, 22 of 54 and 15
+of 62 tool calls in a plan were spent listing folders. In officio it was 1 to 8, and reviews list
+almost none, so AI Review and the rounds do not get it.
+
+Still open:
+
+- On the next plans in a repository without an `AGENTS.md`, check that fewer tool calls go on
+  listing folders.
+
 ### Fewer issue comments for the AI
 
 AI Plan and AI Implement get only the issue comments since the latest plan, or all of them before
@@ -107,14 +119,15 @@ AI Review gets no issue comments. AI Retro still gets them all.
 
 The plan, implement and review prompts tell the agent to read `AGENTS.md` when it is not already in
 its instructions. Claude Code reads it on its own only when there is no `CLAUDE.md`, and not in
-every session. scoring-lib, condition-manager, field-framework and uforms each have an `AGENTS.md`,
-and a `CLAUDE.md` that imports it, as officio, bcpnp-frontend and forms-dev-platform do.
+every session. Every repository with the harness has an `AGENTS.md` and a `CLAUDE.md` that
+imports it, except form-suite, which has only its own `CLAUDE.md`, and ntnp-frontend, which has no
+`CLAUDE.md` and relies on the prompt.
 
 Still open:
 
-- Write one for formula-builder, sentry-lib, officio-gui, context-lib and angular-core.
-- form-suite's `CLAUDE.md` tells the agent to log every change in `.docs/CLAUDE_CHANGELOG.md` and
-  to comment complex code. Move what is still wanted into an `AGENTS.md` and drop the rest.
+- form-suite's `CLAUDE.md` tells the agent to log every change in `.docs/CLAUDE_CHANGELOG.md`,
+  which is gitignored, so it costs turns but never reaches a pull request. It also says to comment
+  complex code. Agree with its owner what the harness should skip.
 
 ### Less effort for rounds
 
@@ -286,7 +299,6 @@ Planning was 15% before, and issues now get 1.3 plans each. No run hit the 60-mi
 most expensive took 45 minutes and cost $8.68. The old issues that cost about $26 to code took many
 rounds, not one long run.
 
-- Give the AI a short map of the repository's folders.
 - Cut long check output down before the AI reads it.
 - `/ai-plan from=#N`: start a plan from an earlier issue's plan, for a series of issues.
 

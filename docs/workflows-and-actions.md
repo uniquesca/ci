@@ -150,6 +150,7 @@ out.
 | [`ai-cut-off`](actions/ai-cut-off.md) | Cleans up after an AI run that stopped before its own clean-up ran, most likely because it ran out of time |
 | [`ai-command-hint`](actions/ai-command-hint.md) | Answers an AI command that will not run, because it is not at the start of the comment or is on the wrong page |
 | [`ai-style-guide`](actions/ai-style-guide.md) | The writing rules every AI agent's prompt carries |
+| [`ai-folder-map`](actions/ai-folder-map.md) | A short map of the repository's folders for an agent's prompt |
 | [`ai-render-report`](actions/ai-render-report.md) | Renders an implementing agent's report into the pull request, and keeps the status at its top current |
 | [`ai-render-plan`](actions/ai-render-plan.md) | Checks a plan's ids against the plan before it, and renders it for the issue |
 

@@ -148,8 +148,9 @@ None. The plan is posted as a comment on the issue.
 
 The most effective thing is an `AGENTS.md` or `CLAUDE.md` in the repository being planned - the
 agent reads it first, and it saves several turns of inferring conventions from a sample of files.
-Worth putting in it: how to build and test, how the code is laid out, and the conventions a change
-is expected to follow.
+Worth putting in it: how to build and test, what each folder is for, and the conventions a change
+is expected to follow. The agent already gets the folders themselves from
+[`ai-folder-map`](../actions/ai-folder-map.md), as does AI Implement's first build.
 
 ### What the agent can and cannot do
 
