@@ -3,8 +3,8 @@
 Tell people in Teams and ClickUp what needs them, at the right moment, without noise.
 
 One new app, `comms-api` in `infra-apps`, does all of it. It receives GitHub events, keeps a small
-SQLite database, runs timers, and is the only thing that sends messages. We build it one phase at a
-time. Each phase works on its own before the next starts.
+SQLite database, runs timers, and is the only thing that sends messages. In Teams it is a bot. We
+build it one phase at a time. Each phase works on its own before the next starts.
 
 Each phase lists what a person sets up by hand (**Set up**), what we write (**Build**), and how we
 know it works (**Done when**). Values marked 🔑 are secrets: they go to the deployment in
@@ -21,72 +21,83 @@ names, issue titles and costs - into its run summary and artifact.
 
 **Done when** no run of it is left to read. Phase 2 replaces it.
 
-## Phase 1: The app, and posting to Teams
+## Phase 1: The app, and collecting AI costs
 
-The app is deployed and can post a card to a channel and to a person.
+The app is deployed and records the cost of every AI run as it is reported. It has no history from
+before it went live, so **it must be running by the 1st of a month** for that month's report to be
+complete.
 
 **Set up**
-1. **Service account.** Create `notifications@` in Microsoft 365, with a Teams licence. Messages
-   are sent under it.
-2. **Channels.** Create a `Reports` channel and a `Dev` channel. Add `notifications@` to their team.
-   Add the supervisor to `Reports`.
-3. **The flow.** Sign in to [Power Automate](https://make.powerautomate.com) as `notifications@` and
-   create an instant cloud flow:
-   - Trigger: **When a Teams webhook request is received**, who can trigger: **Anyone**.
-   - It receives `{"target": {"channel": "reports"} or {"user": "email"}, "card": {...},
-     "file": {"name": "...", "content": "base64"}}`, where `file` is optional.
-   - If there is a `file`: SharePoint **Create file** in the channel's folder of the team site, with
-     `base64ToBinary()` of the content.
-   - **Post card in a chat or channel**, posting as **Flow bot**:
-     - for a `channel`, a **Switch** on its name picks the team and channel. Any other name ends the
-       flow with an error.
-     - for a `user`, post in **Chat with Flow bot**, with the email as recipient.
-   - Save, and copy the trigger URL. 🔑 `TEAMS_FLOW_URL`
-4. **Hosting.** In `devops-infra`: a public hostname, a `/data` volume, and the secrets above.
+1. **Hosting.** In `devops-infra`: `comms-api.unqs.ca`, a `/data` volume, and the secrets below.
+2. **The webhook.** In the `uniquesca` organisation settings: Webhooks, **Add webhook**.
+   - Payload URL: `https://comms-api.unqs.ca/webhooks/github`. Content type:
+     **application/json** - the default form encoding is turned down.
+   - Secret: the output of `openssl rand -hex 32`. 🔑 `GITHUB_WEBHOOK_SECRET`
+   - Let me select individual events: Check suites, Issue comments, Pull requests, Pull request
+     reviews, Statuses. These cover every phase.
+   - Note its ID, the number at the end of its settings page address. `GITHUB_HOOK_ID`
+3. **The token.** A fine-grained token with the organisation as its owner, so it is not anybody's
+   own. Organisation permission: Webhooks, read and write, to resend what the app missed.
+   Repository permissions, on all repositories, read-only: Checks, Commit statuses, Metadata, Pull
+   requests - for phase 3. 🔑 `GITHUB_TOKEN`. Put a reminder in the calendar before it expires.
 
 **Build**
 1. Move the webhook signature check, the SQLite setup and the environment checks out of
    `ci-status-api` into Nx libraries both apps use.
 2. Make the root `Dockerfile` build one image per app, and the publish workflow build both.
 3. Create `comms-api`: Fastify, SQLite on `/data`, a health endpoint, and the test runner.
-4. A `teams` module that sends `{target, card, file}` to the flow, and retries a failed send.
-5. `people.json` in the app: GitHub login to work email and ClickUp ID. Somebody missing is skipped
-   and logged.
-6. A command that sends a test card, run inside the container.
+4. Webhook intake: check the signature, ignore events the app does not handle.
+5. On startup, ask GitHub for failed deliveries and redeliver them, so a deploy loses nothing.
+6. Read every `<!-- ai-cost {...} -->` line from comments and review bodies, and store it once
+   per run. The same run is posted in more than one place, and an edit that drops the line
+   keeps it.
 
-**Done when** a test card reaches `Reports` and one person's chat.
+**Done when** the next AI run on any repository is in the database.
 
-## Phase 2: GitHub App, and the cost report
+## Phase 2: The Teams bot, and the monthly cost report
 
-The app collects AI costs as the runs report them, and posts last month's total on the 1st. It has
-no history from before it went live.
+The bot posts last month's costs to the `Reports` channel on the 1st, and can message a person.
 
 **Set up**
-1. **The GitHub App.** In the `uniquesca` organisation settings: Developer settings, GitHub Apps,
-   **New GitHub App**.
-   - Name: `Uniques Comms`. Homepage URL: the app's address.
-   - Webhook URL: `https://<host>/webhooks/github`. Webhook secret: the output of
-     `openssl rand -hex 32`. 🔑 `GITHUB_WEBHOOK_SECRET`
-   - Repository permissions, all **Read-only**: Checks, Commit statuses, Issues, Metadata, Pull
-     requests. These cover phases 2 to 4, so the app does not need approving again.
-   - Subscribe to events: Check suite, Issue comment, Pull request, Pull request review, Status.
-   - Where it can be installed: **Only on this account**. Create it.
-   - Note the App ID. 🔑 `GITHUB_APP_ID`
-   - **Generate a private key** and keep the downloaded file. 🔑 `GITHUB_APP_PRIVATE_KEY`
-2. **Install App**, on **All repositories**.
+1. **Channels.** Create a `Reports` channel and a `Dev` channel. Add the supervisor to `Reports`.
+2. **The bot.** In the [Teams Developer Portal](https://dev.teams.microsoft.com): Tools, Bot
+   management, **New bot**, named `Uniques Comms`. Choose single tenant if asked.
+   - Endpoint address: `https://comms-api.unqs.ca/api/messages`.
+   - Client secrets, **Add a client secret**. 🔑 `MICROSOFT_APP_SECRET`. Put a reminder in the
+     calendar before it expires.
+   - Note the bot ID. `MICROSOFT_APP_ID`. Note the Directory (tenant) ID from the Entra admin
+     centre overview. `MICROSOFT_TENANT_ID`
+3. **The Teams app.** In the Developer Portal: Apps, **New app**, `Uniques Comms`.
+   - Basic information: descriptions, developer name, and the app's address for the website,
+     privacy and terms links.
+   - Branding: a 192×192 colour icon and a 32×32 outline icon.
+   - App features, **Bot**: pick the bot, with the Personal and Team scopes.
+   - Publish, **Publish to your org**.
+4. **Teams admin.** In the Teams admin centre:
+   - Teams apps, Manage apps: find `Uniques Comms` and **Publish** it.
+   - Teams apps, Setup policies, Global: under Installed apps, **Add apps**, `Uniques Comms`. This
+     installs it for everybody, so it can message them. It can take a day to reach everyone.
+5. **Add it to the team** holding `Reports` and `Dev`: in Teams, Apps, Built for your org,
+   `Uniques Comms`, **Add to a team**.
+6. **Channel IDs.** For each channel: `⋯`, **Get link to channel**. The ID is the
+   `19:…@thread.tacv2` part. Put them in the app's channel settings, as `reports` and `dev`.
 
 **Build**
-1. Webhook intake: check the signature, ignore events the app does not handle.
-2. On startup, ask GitHub for failed deliveries and redeliver them, so a deploy loses nothing.
-3. Read every `<!-- ai-cost {...} -->` line from comments and review bodies, and store it by
-   comment or review ID. An edit replaces that comment's lines.
+1. `/api/messages`: check that the request comes from Teams, and store the conversation whenever
+   the bot is installed for a person or a team.
+2. A `teams` module that sends a card to a channel by name, or to a person by email, edits a card
+   it sent, and retries a failed send. Use Microsoft's current Teams SDK, not the retired Bot
+   Framework SDK.
+3. A command, run inside the container, that sends a test card to a channel or a person.
 4. On the 1st, post a card to `Reports`: the total, the split by repository and by stage, and the
-   five most expensive issues, with the full list as a CSV file.
-5. In `ci`, delete `self-ai-cost-report.yml` and `docs/self/self-ai-cost-report.md`, and the
+   five most expensive issues.
+5. A command that posts the month so far, to check the card without waiting for the 1st.
+6. In `ci`, delete `self-ai-cost-report.yml` and `docs/self/self-ai-cost-report.md`, and the
    links to them in `docs/ai/ai-costs.md` and `docs/workflows-and-actions.md`. Keep
    `bin/ai-cost-report.sh` for looking up costs by hand.
 
-**Done when** the first monthly card and CSV are in `Reports`, and the supervisor can open them.
+**Done when** the first monthly card is in `Reports` and the supervisor has read it, and a test
+card has reached one person.
 
 ## Phase 3: Pull request notifications
 
@@ -101,7 +112,8 @@ Nothing is sent until every check on the latest commit has finished. Draft pull 
 get nothing, and Copilot does not count as a reviewer.
 
 **Set up**
-1. Fill in `people.json` for everybody who opens or reviews pull requests.
+1. Fill in `people.json` in the app: each GitHub login, with the person's work email and ClickUp ID.
+   Somebody missing is skipped and logged.
 
 **Build**
 1. The rules as plain functions - what happened, what GitHub says, what was already sent - and
@@ -142,13 +154,9 @@ AI summarise it, posts the summary to `Dev`, and deletes the transcript.
    our client agreements allow it.
 2. **Organiser account.** Create `standup@` in Microsoft 365, with a Teams licence. Microsoft only
    gives the transcript to the meeting's organiser.
-3. **Entra app.** Microsoft Entra admin centre, App registrations, **New registration**:
-   - Name: `Comms standup reader`, this organisation only.
-   - Redirect URI, Web: `https://<host>/auth/microsoft/callback`.
-   - Note the Application (client) ID and Directory (tenant) ID. `MICROSOFT_CLIENT_ID`,
-     `MICROSOFT_TENANT_ID`
-   - Certificates & secrets, **New client secret**. 🔑 `MICROSOFT_CLIENT_SECRET`. Put a reminder in
-     the calendar before it expires.
+3. **Permissions.** In the Microsoft Entra admin centre, App registrations, open the bot's
+   registration (`MICROSOFT_APP_ID`):
+   - Authentication, add a Web redirect URI: `https://comms-api.unqs.ca/auth/microsoft/callback`.
    - API permissions, Microsoft Graph, **Delegated**: `OnlineMeetings.Read`,
      `OnlineMeetingTranscript.Read.All`, `User.Read`, `offline_access`. **Grant admin consent**.
 4. **Check it works before building.** Hold a short test meeting as `standup@` with transcription
@@ -161,7 +169,8 @@ AI summarise it, posts the summary to `Dev`, and deletes the transcript.
    whoever opens the call clicks **Start transcription**.
 6. **Anthropic.** In the Claude Console, create a `comms` workspace with a monthly spend limit, and
    an API key in it. 🔑 `ANTHROPIC_API_KEY`
-7. **After deploying,** open `https://<host>/auth/microsoft` once and sign in as `standup@`.
+7. **After deploying,** open `https://comms-api.unqs.ca/auth/microsoft` once and sign in as
+   `standup@`.
 
 **Build**
 1. Microsoft sign-in for `standup@`: keep its refresh token. If the token stops working, post that
@@ -180,20 +189,21 @@ Each is its own phase, picked up when the ones above are in use.
 - **Reviewer reminders.** If a review is still missing after a working day, remind the reviewer
   once.
 - **Standup action items to ClickUp.** Comment on the task an action item names.
-- **A Teams bot in place of the flow.** Messages come from a named bot, can be edited after sending
-  ("checks failed" becomes "fixed"), and can carry buttons such as "Snooze".
+- **Edit notifications as things change.** "Checks failed" becomes "fixed" once they pass.
+- **Buttons** such as "Snooze" or "I'll review it".
+- **The full cost list,** as a download link that expires, if somebody needs more than the card.
 - **A daily digest,** if messages to a person start piling up.
 
 ## Secrets and settings
 
 | Name | Phase | From |
 |---|---|---|
-| `TEAMS_FLOW_URL` 🔑 | 1 | The flow's trigger |
-| `GITHUB_APP_ID` | 2 | The GitHub App |
-| `GITHUB_APP_PRIVATE_KEY` 🔑 | 2 | The GitHub App |
-| `GITHUB_WEBHOOK_SECRET` 🔑 | 2 | Made up when creating the GitHub App |
+| `GITHUB_WEBHOOK_SECRET` 🔑 | 1 | Made up when creating the webhook |
+| `GITHUB_HOOK_ID` | 1 | The webhook's settings page address |
+| `GITHUB_TOKEN` 🔑 | 1 | The fine-grained token |
+| `MICROSOFT_APP_ID`, `MICROSOFT_TENANT_ID` | 2 | The bot, and the Entra admin centre |
+| `MICROSOFT_APP_SECRET` 🔑 | 2 | The bot |
+| Channel IDs for `reports` and `dev` | 2 | Each channel's link |
 | `CLICKUP_TOKEN` 🔑 | 4 | The ClickUp user's settings |
 | `CLICKUP_TEAM_ID` | 4 | Any ClickUp address |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_TENANT_ID` | 5 | The Entra app |
-| `MICROSOFT_CLIENT_SECRET` 🔑 | 5 | The Entra app |
 | `ANTHROPIC_API_KEY` 🔑 | 5 | The Claude Console |

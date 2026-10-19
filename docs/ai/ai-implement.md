@@ -44,7 +44,8 @@ jobs:
       checks: read
       # Required: without it the check reports cannot be listed or downloaded
       actions: read
-      # Needed for pulling the application's Docker images
+      # Pulls the application's Docker images. Required even without Docker: the run does not
+      # start when the caller grants less than the called job asks for
       packages: read
       # Mints the agent's Claude credential from this run's own identity
       id-token: write
