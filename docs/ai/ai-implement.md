@@ -220,7 +220,7 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `timeout_minutes` | number | `65` | How long the whole job may run. Keep it a few minutes above `agent_timeout_minutes`, so a run the agent overruns still has time to say so |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch the work is pushed to - the branch is this plus `issue-<number>`. Only branches carrying it are ever worked on |
 | `progress_label` | string | `ai:implementing` | Label put on the issue, or on the pull request on a round, while the run is working, and taken off however it ends. Created if the repository has not got it, then left alone, so recolouring it there sticks. Empty to not label anything |
-| `allow_workflow_changes` | boolean | `false` | Let the agent change this repository's own workflow files. Off by default, and then a change it wants to `.github/workflows/` is [reported as a patch](#what-the-agent-can-and-cannot-do) instead of pushed. Turning it on needs the AI Implement app to hold the `workflows` permission, which means an agent editing your CI |
+| `allow_workflow_changes` | boolean | `false` | Let the agent change this repository's own workflow files. Off by default, and then a change it wants to `.github/workflows/` is [posted as a `git apply` command](#what-the-agent-can-and-cannot-do) instead of pushed. Turning it on needs the AI Implement app to hold the `workflows` permission, which means an agent editing your CI |
 | `autofix_commit_subject` | string | `CI: automatic code style fixes` | Subject line the code style fixer commits with. A commit carrying it on top of a round is the fixer rewriting the agent's own push rather than somebody taking the branch over |
 | `max_unattended_rounds` | number | `5` | How many rounds in a row a bot may trigger before a person has to look. A round a person asked for resets this to zero |
 | `ignore_check_patterns` | string | `(ai.implement\|ai.plan\|ai.review)` | Case-insensitive regular expression matching check runs to leave out of the feedback, so a run does not read its own red status back as a code defect |
@@ -348,7 +348,7 @@ executes. It **may not**:
   the agent starts and after it finishes.
 * **Change a workflow file.** Github refuses a push touching `.github/workflows/` from an identity
   without the `workflows` permission, and a refusal loses the rest of the round with it - so the
-  change arrives as a `git apply`-able patch appended to the run's report, to apply by hand. Set
+  agent's edit arrives as a `git apply` command appended to the run's report, to run by hand. Set
   `allow_workflow_changes` where the app holds that permission and you want an agent editing CI.
 * **Change the plan or the feedback it was given.** Both are excluded from git. Its replies to your
   threads are the one thing it writes back, and a reply to a thread that was not part of this round

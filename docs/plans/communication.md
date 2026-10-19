@@ -56,10 +56,12 @@ complete.
 
 ## Phase 2: The Teams bot, and the monthly cost report
 
-The bot posts last month's costs to the `Reports` channel on the 1st, and can message a person.
+The bot posts last month's costs to the existing `Administerial` channel on the 1st, and can
+message a person. The first card goes out on 1 November 2026. It covers October from the 19th,
+when collection started, and says so.
 
 **Set up**
-1. **Channels.** Create a `Reports` channel and a `Dev` channel. Add the supervisor to `Reports`.
+1. **Channels.** Costs go to the existing `Administerial` channel. Create a `Dev` channel.
 2. **The bot.** In the [Teams Developer Portal](https://dev.teams.microsoft.com): Tools, Bot
    management, **New bot**, named `Uniques Comms`. Choose single tenant if asked.
    - Endpoint address: `https://comms-api.unqs.ca/api/messages`.
@@ -77,10 +79,10 @@ The bot posts last month's costs to the `Reports` channel on the 1st, and can me
    - Teams apps, Manage apps: find `Uniques Comms` and **Publish** it.
    - Teams apps, Setup policies, Global: under Installed apps, **Add apps**, `Uniques Comms`. This
      installs it for everybody, so it can message them. It can take a day to reach everyone.
-5. **Add it to the team** holding `Reports` and `Dev`: in Teams, Apps, Built for your org,
+5. **Add it to the team** holding `Administerial` and `Dev`: in Teams, Apps, Built for your org,
    `Uniques Comms`, **Add to a team**.
 6. **Channel IDs.** For each channel: `⋯`, **Get link to channel**. The ID is the
-   `19:…@thread.tacv2` part. Put them in the app's channel settings, as `reports` and `dev`.
+   `19:…@thread.tacv2` part. Put them in the app's channel settings, as `administerial` and `dev`.
 
 **Build**
 1. `/api/messages`: check that the request comes from Teams, and store the conversation whenever
@@ -89,15 +91,15 @@ The bot posts last month's costs to the `Reports` channel on the 1st, and can me
    it sent, and retries a failed send. Use Microsoft's current Teams SDK, not the retired Bot
    Framework SDK.
 3. A command, run inside the container, that sends a test card to a channel or a person.
-4. On the 1st, post a card to `Reports`: the total, the split by repository and by stage, and the
-   five most expensive issues.
+4. On the 1st, post a card to `Administerial`: the total, the split by repository and by stage,
+   and the five most expensive issues.
 5. A command that posts the month so far, to check the card without waiting for the 1st.
 6. In `ci`, delete `self-ai-cost-report.yml` and `docs/self/self-ai-cost-report.md`, and the
    links to them in `docs/ai/ai-costs.md` and `docs/workflows-and-actions.md`. Keep
    `bin/ai-cost-report.sh` for looking up costs by hand.
 
-**Done when** the first monthly card is in `Reports` and the supervisor has read it, and a test
-card has reached one person.
+**Done when** the first monthly card is in `Administerial` and the supervisor has read it, and a
+test card has reached one person.
 
 ## Phase 3: Pull request notifications
 
@@ -203,7 +205,7 @@ Each is its own phase, picked up when the ones above are in use.
 | `GITHUB_TOKEN` 🔑 | 1 | The fine-grained token |
 | `MICROSOFT_APP_ID`, `MICROSOFT_TENANT_ID` | 2 | The bot, and the Entra admin centre |
 | `MICROSOFT_APP_SECRET` 🔑 | 2 | The bot |
-| Channel IDs for `reports` and `dev` | 2 | Each channel's link |
+| Channel IDs for `administerial` and `dev` | 2 | Each channel's link |
 | `CLICKUP_TOKEN` 🔑 | 4 | The ClickUp user's settings |
 | `CLICKUP_TEAM_ID` | 4 | Any ClickUp address |
 | `ANTHROPIC_API_KEY` 🔑 | 5 | The Claude Console |
