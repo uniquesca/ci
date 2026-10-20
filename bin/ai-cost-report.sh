@@ -4,7 +4,7 @@
 # run leaves on the issue or pull request it worked on.
 #
 #   bin/ai-cost-report.sh                          # this month so far, every repository with the harness
-#   bin/ai-cost-report.sh --last-month             # what the monthly report sends
+#   bin/ai-cost-report.sh --last-month             # the month that just ended
 #   bin/ai-cost-report.sh --month 2026-08          # one calendar month
 #   bin/ai-cost-report.sh --from 2026-08-15 --to 2026-09-02 officio bcpnp-frontend
 #   bin/ai-cost-report.sh --out /tmp/costs         # where the three files go

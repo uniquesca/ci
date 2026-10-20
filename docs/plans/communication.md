@@ -35,11 +35,8 @@ complete.
    - Secret: the output of `openssl rand -hex 32`. 🔑 `GITHUB_WEBHOOK_SECRET`
    - Let me select individual events: Check suites, Issue comments, Pull requests, Pull request
      reviews, Statuses. These cover every phase.
-   - Note its ID, the number at the end of its settings page address. `GITHUB_HOOK_ID`
-3. **The token.** A fine-grained token with the organisation as its owner, so it is not anybody's
-   own. Organisation permission: Webhooks, read and write, to resend what the app missed.
-   Repository permissions, on all repositories, read-only: Checks, Commit statuses, Metadata, Pull
-   requests - for phase 3. 🔑 `GITHUB_TOKEN`. Put a reminder in the calendar before it expires.
+3. **The token.** The organisation's shared `GHA_PRIVATE_ACCESS_TOKEN`, which reads issue titles
+   for the cost card. 🔑 `GITHUB_TOKEN`
 
 **Build**
 1. Move the webhook signature check, the SQLite setup and the environment checks out of
@@ -47,8 +44,7 @@ complete.
 2. Make the root `Dockerfile` build one image per app, and the publish workflow build both.
 3. Create `comms-api`: Fastify, SQLite on `/data`, a health endpoint, and the test runner.
 4. Webhook intake: check the signature, ignore events the app does not handle.
-5. On startup, ask GitHub for failed deliveries and redeliver them, so a deploy loses nothing.
-6. Read every `<!-- ai-cost {...} -->` line from comments and review bodies, and store it once
+5. Read every `<!-- ai-cost {...} -->` line from comments and review bodies, and store it once
    per run. The same run is posted in more than one place, and an edit that drops the line
    keeps it.
 
@@ -81,20 +77,21 @@ when collection started, and says so.
      installs it for everybody, so it can message them. It can take a day to reach everyone.
 5. **Add it to the team** holding `Administerial` and `Dev`: in Teams, Apps, Built for your org,
    `Uniques Comms`, **Add to a team**.
-6. **Channel IDs.** For each channel: `⋯`, **Get link to channel**. The ID is the
-   `19:…@thread.tacv2` part. Put them in the app's channel settings, as `administerial` and `dev`.
+6. **Channel ID.** On `Administerial`: `⋯`, **Get link to channel**. The ID is the
+   `19:…@thread.tacv2` part. `TEAMS_COST_CHANNEL_ID`
 
 **Build**
-1. `/api/messages`: check that the request comes from Teams, and store the conversation whenever
-   the bot is installed for a person or a team.
-2. A `teams` module that sends a card to a channel by name, or to a person by email, edits a card
-   it sent, and retries a failed send. Use Microsoft's current Teams SDK, not the retired Bot
-   Framework SDK.
-3. A command, run inside the container, that sends a test card to a channel or a person.
-4. On the 1st, post a card to `Administerial`: the total, the split by repository and by stage,
-   and the five most expensive issues.
-5. A command that posts the month so far, to check the card without waiting for the 1st.
-6. In `ci`, delete `self-ai-cost-report.yml` and `docs/self/self-ai-cost-report.md`, and the
+1. `/api/messages` answers Teams and acts on nothing. The bot only posts, through the Bot
+   Connector REST API, so it needs no SDK.
+2. A `teams` module that starts a post in a channel and retries one Teams turned away for now.
+   Messages to a person come with phase 3.
+3. On the 1st, post a card to `Administerial`: the total, the split by repository and by stage,
+   and the five most expensive issues. It says how many runs reported no cost, and that the total
+   is approximate: runs posted while the app was down are not counted. A month without runs is
+   skipped.
+4. `node main.js cost-report [YYYY-MM] [--post] [--channel <id>]` in the container prints the
+   card, or sends it, without waiting for the 1st.
+5. In `ci`, delete `self-ai-cost-report.yml` and `docs/self/self-ai-cost-report.md`, and the
    links to them in `docs/ai/ai-costs.md` and `docs/workflows-and-actions.md`. Keep
    `bin/ai-cost-report.sh` for looking up costs by hand.
 
@@ -201,11 +198,10 @@ Each is its own phase, picked up when the ones above are in use.
 | Name | Phase | From |
 |---|---|---|
 | `GITHUB_WEBHOOK_SECRET` 🔑 | 1 | Made up when creating the webhook |
-| `GITHUB_HOOK_ID` | 1 | The webhook's settings page address |
-| `GITHUB_TOKEN` 🔑 | 1 | The fine-grained token |
+| `GITHUB_TOKEN` 🔑 | 1 | `GHA_PRIVATE_ACCESS_TOKEN` |
 | `MICROSOFT_APP_ID`, `MICROSOFT_TENANT_ID` | 2 | The bot, and the Entra admin centre |
 | `MICROSOFT_APP_SECRET` 🔑 | 2 | The bot |
-| Channel IDs for `administerial` and `dev` | 2 | Each channel's link |
+| `TEAMS_COST_CHANNEL_ID` | 2 | `Administerial`'s link |
 | `CLICKUP_TOKEN` 🔑 | 4 | The ClickUp user's settings |
 | `CLICKUP_TEAM_ID` | 4 | Any ClickUp address |
 | `ANTHROPIC_API_KEY` 🔑 | 5 | The Claude Console |
