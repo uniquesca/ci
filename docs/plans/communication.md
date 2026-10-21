@@ -100,25 +100,36 @@ test card has reached one person.
 
 ## Phase 3: Pull request notifications
 
-| When | Who gets a message |
-|---|---|
-| Checks fail | Author |
-| Checks pass, no reviewer | Author |
-| Checks pass, reviewer assigned | Reviewer |
-| Reviewer added after checks passed | That reviewer |
+| When | Who gets a message | How often |
+|---|---|---|
+| Checks fail | Author | Once per commit |
+| Checks pass, no reviewer | Author | Once per pull request |
+| Checks pass, reviewer assigned | Reviewer | Once per review request |
+| Reviewer added after checks passed | That reviewer | Once per review request |
 
 Nothing is sent until every check on the latest commit has finished. Draft pull requests and bots
-get nothing, and Copilot does not count as a reviewer.
+get nothing, and Copilot does not count as a reviewer. Somebody who has already reviewed counts as
+a reviewer.
+
+`docker-server/comms-api/notifications.json` in `devops-infra` turns each rule on or off. Its
+`ai-review-is-enough` list eases the no-reviewer rule: for an author and repository, or a whole
+repository, requesting Copilot or commenting `/ai-review` stands in for a reviewer; an author on
+their own is never told. `node main.js notifications` shows what the app
+read. A mistake in the file leaves the rule on.
 
 **Set up**
-1. Fill in `people.json` in the app: each GitHub login, with the person's work email and ClickUp ID.
-   Somebody missing is skipped and logged.
+1. **The people map.** `docker-server/comms-api/people.json` in `devops-infra`, mounted into the
+   app as a folder: each person's name, GitHub login, Entra object ID and ClickUp ID. Phase 4 uses
+   it too. Somebody missing is skipped and logged. `node main.js people` shows what the app read.
+2. **Install the bot for everybody.** In the Teams admin centre: Teams apps, Setup policies, Global,
+   Installed apps, **Add apps**, `Uniques Comms`. Teams refuses a bot's message to a person it is
+   not installed for.
 
 **Build**
 1. The rules as plain functions - what happened, what GitHub says, what was already sent - and
    tests for every row above.
-2. A record of what was sent to whom, for which commit, so a person is never told the same thing
-   twice.
+2. A record of what was sent, claimed before sending, so two checks finishing together send one
+   message. A send that fails is released, and the next event tries again.
 
 **Done when** each row above has happened once for real, and the message read right.
 
@@ -128,17 +139,19 @@ When a pull request mentions a ClickUp task, the app comments on the task. When 
 merged or closed, it edits that comment to say so. It never changes a task's status.
 
 **Set up**
-1. Decide whose name the comments carry. A ClickUp user just for this, for example `CI`, keeps them
-   from looking like a colleague wrote them.
-2. Signed in to ClickUp as that user: Settings, Apps, **API Token**, Generate. 🔑 `CLICKUP_TOKEN`
-3. Note the workspace ID - the number after `app.clickup.com/` in any ClickUp address.
-   `CLICKUP_TEAM_ID`
-4. Check whether ClickUp's own GitHub integration is on. If it is, decide whether to keep both.
+1. Signed in to ClickUp as **System Bot**: Settings, Apps, **API Token**, Generate. The comments
+   carry its name, and the token does not expire. System Bot needs access to every space whose
+   tasks get mentioned. 🔑 `CLICKUP_TOKEN`
+2. Check whether ClickUp's own GitHub integration is on. If it is, decide whether to keep both.
 
 **Build**
-1. Find task IDs in the pull request title, body and branch: `CU-…`, ClickUp task links, and our
-   custom task IDs.
-2. One comment per pull request and task. Keep its ID, and edit it on merge or close.
+1. Find tasks in the pull request title, description and branch: every ClickUp task link, and bare
+   IDs with a prefix listed in `notifications.json` - `DV`, `SNTR`, `SUP`.
+2. One comment per pull request and task, edited when the pull request is merged, closed without
+   merging, reopened or renamed. The workspace a custom ID belongs to is the one System Bot is in.
+3. A switch in `notifications.json`: `clickup-comments`.
+
+Pull requests the harness opens link their issue, not the task, so they get no comment yet.
 
 **Done when** a pull request mentioning a task has commented on it, and the comment changed when it
 merged.
@@ -202,6 +215,5 @@ Each is its own phase, picked up when the ones above are in use.
 | `MICROSOFT_APP_ID`, `MICROSOFT_TENANT_ID` | 2 | The bot, and the Entra admin centre |
 | `MICROSOFT_APP_SECRET` 🔑 | 2 | The bot |
 | `TEAMS_COST_CHANNEL_ID` | 2 | `Administerial`'s link |
-| `CLICKUP_TOKEN` 🔑 | 4 | The ClickUp user's settings |
-| `CLICKUP_TEAM_ID` | 4 | Any ClickUp address |
+| `CLICKUP_TOKEN` 🔑 | 4 | System Bot's ClickUp settings |
 | `ANTHROPIC_API_KEY` 🔑 | 5 | The Claude Console |
