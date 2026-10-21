@@ -1533,3 +1533,8 @@
 
 * Fix: AI Implement posts workflow changes as a git apply command (663c21e by George Shestayev)
 * Update: added minimum restraint for php versions to fix security vulnerabilities (eb61b92 by George Shestayev)
+
+## v11.32.1
+
+* Fix: Docker images upgrade PEAR so PECL installs work on PHP 8.1 and 5.6 (ef224db by George Shestayev)
+* Fix: a failed PROD image no longer holds back the other DEV images (ef224db by George Shestayev)

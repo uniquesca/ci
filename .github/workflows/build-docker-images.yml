@@ -266,14 +266,29 @@ jobs:
 
           docker buildx imagetools create "${args[@]}"
 
-  # Every DEV image is its PROD image plus Xdebug, pulled by tag - so this waits for every PROD
-  # image to be published, and each runner pulls the architecture it runs on. It is a single layer
-  # over an image that was just built, so there is no cache here worth keeping: a fresh PROD digest
-  # invalidates it every time
+      # What `dev` looks for before building on this image. Without it, a DEV image whose PROD
+      # build failed would be built on whatever an earlier run published under the same tag
+      - name: Mark the image as published
+        env:
+          PHP_VERSION: ${{ matrix.php-version }}
+        run: echo "$PHP_VERSION" > published
+
+      - name: Upload the mark
+        uses: actions/upload-artifact@v7
+        with:
+          name: published-prod-${{ matrix.variant }}-${{ matrix.php-version }}
+          path: published
+          retention-days: 1
+
+  # Every DEV image is its PROD image plus Xdebug, pulled by tag, and each runner pulls the
+  # architecture it runs on. A matrix waits for the whole of `prod-merge`, so `!cancelled()` keeps
+  # one failed PROD image from holding back the others, and each build checks for its own. It is a
+  # single layer over an image that was just built, so there is no cache here worth keeping: a fresh
+  # PROD digest invalidates it every time
   dev:
     name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }}, ${{ matrix.arch }})
     needs: [ changes, prod-merge ]
-    if: needs.changes.outputs.build == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.build == 'true' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
@@ -293,6 +308,25 @@ jobs:
           - php-version: '5.6'
             arch: arm64
     steps:
+      # A pattern rather than a name, which fails on a missing artifact with a message that says
+      # nothing about why
+      - name: Download the PROD image's mark
+        uses: actions/download-artifact@v8
+        with:
+          pattern: published-prod-${{ matrix.variant }}-${{ matrix.php-version }}
+          path: mark
+          merge-multiple: true
+
+      - name: Check the PROD image was published
+        env:
+          PHP_VERSION: ${{ matrix.php-version }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          if [[ ! -f mark/published ]]; then
+            echo "::error::PROD $VARIANT (PHP $PHP_VERSION) was not published by this run - not building on the one an earlier run left"
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -369,7 +403,7 @@ jobs:
           path: image/
           retention-days: 1
 
-  # A failed PROD image skips every DEV build, and there is nothing then to publish
+  # `dev` is skipped only when nothing is being built
   dev-merge:
     name: DEV ${{ matrix.variant }} (PHP ${{ matrix.php-version }})
     needs: [ dev ]
