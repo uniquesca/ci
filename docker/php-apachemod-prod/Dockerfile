@@ -42,6 +42,13 @@ RUN \
     # Apache config \
     a2enmod ssl rewrite headers; \
     \
+    # PEAR before 1.10.18 cannot read the chunked responses some of PECL's CDN edges send, and \
+    # fails on any extension it downloads. It cannot fetch its own upgrade either, nor check the \
+    # upgrade's dependencies, so curl brings the package and --nodeps skips the check \
+    curl -fsSL https://pear.php.net/get/PEAR-1.10.18.tgz -o /tmp/pear.tgz; \
+    pear upgrade --nodeps /tmp/pear.tgz; \
+    rm /tmp/pear.tgz; \
+    \
     # PHP config \
 	chmod +x /usr/local/bin/install-php-extensions \
     && install-php-extensions \
