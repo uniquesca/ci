@@ -1528,3 +1528,8 @@
 * Update: measured AI harness costs for the roadmap (9e3cecf by George Shestayev)
 * Update: AI Implement writes a script when the same edit goes into many files (9e3cecf by George Shestayev)
 * Update: AI workflows give the agent only the tools it uses; sub-agents and web search are off (090de50 by George Shestayev)
+
+## v11.32.0
+
+* Fix: AI Implement posts workflow changes as a git apply command (663c21e by George Shestayev)
+* Update: added minimum restraint for php versions to fix security vulnerabilities (eb61b92 by George Shestayev)
