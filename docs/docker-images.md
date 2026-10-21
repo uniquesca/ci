@@ -77,6 +77,9 @@ To build everything regardless, run the **Build Docker images** workflow by hand
 tab. **That is the only way to recover a failed build**: if the run for the tag that changed a
 Dockerfile went red, no later tag rebuilds it, because by then nothing has changed.
 
+**A PROD build fails on a base image older than the release that fixes its PHP branch's latest
+critical hole.** The minimums are in `docker/php-minimum-version.sh`.
+
 ## Dig deeper
 
 ### Restarts
