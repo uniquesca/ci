@@ -92,7 +92,7 @@ on:
         default: 'ai:implementing'
         type: string
       allow_workflow_changes:
-        description: 'Let the agent change this repository''s own workflow files. Github refuses a push that creates or updates anything under `.github/workflows/` unless the identity behind it holds the `workflows` permission, so this is only ever half the answer - granting that permission to the AI Implement app is the other half, and it means an agent editing your CI. Off by default, and then the agent is told to describe such a change rather than make it: an edit it makes to one anyway is taken back out before the commit and reported as a patch on the pull request for somebody to apply by hand, which costs the change a person''s attention instead of costing the run a refused push'
+        description: 'Let the agent change this repository''s own workflow files. Github refuses a push that creates or updates anything under `.github/workflows/` unless the identity behind it holds the `workflows` permission, so this is only ever half the answer - granting that permission to the AI Implement app is the other half, and it means an agent editing your CI. Off by default, and then the agent''s edit to one is taken back out before the commit and posted on the pull request as a patch, with the command to apply it, which costs the change a person''s attention instead of costing the run a refused push'
         required: false
         default: false
         type: boolean
@@ -2372,13 +2372,12 @@ jobs:
       #
       # Github refuses a push that creates or updates anything under `.github/workflows/` from
       # an identity without the `workflows` permission, and the work is finished by the time the
-      # push finds that out. An hour of it is thrown away over a file a plan may have asked for
-      # in a single line, so the agent is asked to describe the change instead of making it, and
-      # its report is where the description goes - in front of the person who can apply it.
+      # push finds that out. So the agent makes the edit, and the step that holds it back posts
+      # it as a patch with the command to apply it. A description in the report is no substitute:
+      # `not_done` has room for a line or two, and YAML rebuilt from prose is a second guess.
       #
-      # It is told what happens to an edit it makes anyway, because the step below makes one:
-      # an agent that thinks the edit reached the branch writes a report saying it did. That
-      # part is left out where the app holds the permission and the caller wants CI edited.
+      # It is told the edit is held back, or it writes a report saying the edit reached the
+      # branch. Left out where the app holds the permission and the caller wants CI edited.
       - name: Tell the agent what to do about workflow files
         id: workflow_files
         if: ${{ success() && env.PROCEED == 'true' }}
@@ -2396,10 +2395,10 @@ jobs:
             fi
 
             if [[ "$ALLOW_WORKFLOW_CHANGES" != 'true' ]]; then
-              echo '- Do not change any file under `.github/workflows/`: the push cannot carry it.'
-              echo '  Where the work needs one, even when asked, do the rest and say in `not_done`'
-              echo '  which file, what it should say and why, for somebody to apply by hand. An'
-              echo '  edit there is taken out and reported as a patch, so do not report it as made.'
+              echo '- A change under `.github/workflows/` cannot be pushed from here. Make it anyway'
+              echo '  where the work needs it: it is taken out before the commit and posted as a'
+              echo '  patch for somebody to apply. In `not_done`, name the file and why; the patch'
+              echo '  shows what changed.'
             fi
 
             echo 'PROMPT'
@@ -2802,8 +2801,8 @@ jobs:
           # The first run's body goes under the status block, which holds the open decisions
           under_status: ${{ steps.event.outputs.mode == 'initial' }}
 
-      # The edit the agent was told not to make, taken back out of the working tree before it
-      # is committed - Github refuses a push carrying it, and a refusal here loses everything
+      # The agent's edit to a workflow file, taken back out of the working tree before it is
+      # committed - Github refuses a push carrying it, and a refusal here loses everything
       # else the run did as well. What the agent wanted is not lost with it: the patch is
       # appended to its own report, which is the body of the pull request on a first run and the
       # round comment on a round, so it arrives in front of the person who can apply it.
@@ -2830,7 +2829,7 @@ jobs:
           git add --intent-to-add -- .github/workflows/ 2> /dev/null || true
 
           if git diff HEAD --quiet -- .github/workflows/; then
-            # Which is the ordinary outcome: the agent read the rule and described the change
+            # Which is the ordinary outcome: the work needed no workflow change
             git reset --quiet -- .github/workflows/ 2> /dev/null || true
             echo "The workflow files are untouched"
             exit 0
@@ -2850,14 +2849,24 @@ jobs:
           git checkout --quiet -- .github/workflows/ 2> /dev/null || true
           git clean --quiet -fd -- .github/workflows/
 
-          echo "::warning title=Workflow changes held back::$held - the agent was told to describe a change to these rather than make one, so the edits are reported as a patch instead of being pushed"
+          echo "::warning title=Workflow changes held back::$held - Github refuses a push carrying these from this identity, so the edits are posted as a patch instead"
+
+          # A command rather than a bare diff, so applying it is one paste. Four backticks,
+          # because a workflow file may hold a three-backtick fence that would end the block
+          # early. Every line of a diff starts with a prefix, so none can end the heredoc.
+          apply_command() {
+            printf '````bash\n'
+            printf "git apply <<'WORKFLOW_PATCH'\n"
+            cat "$RUNNER_TEMP/held-workflow-changes.patch"
+            printf 'WORKFLOW_PATCH\n'
+            printf '````\n'
+          }
 
           # The full patch, whatever its size, in the one place with no length limit on it
           {
             printf '## The workflow changes were held back\n\n'
-            printf '````diff\n'
-            cat "$RUNNER_TEMP/held-workflow-changes.patch"
-            printf '````\n'
+            printf 'Run this from the root of a checkout of the branch, then commit and push:\n\n'
+            apply_command
           } >> "$GITHUB_STEP_SUMMARY"
 
           # A run that produced no final message has no file to append to, and gets one of its
@@ -2884,11 +2893,9 @@ jobs:
               printf 'The patch is too long to post here - it is under **The workflow changes '
               printf 'were held back** in the [run summary](%s).\n' "$RUN_URL"
             else
-              # Four backticks. A workflow file is allowed to contain a three-backtick fence,
-              # and one in the patch would end the block early and spill the rest as prose.
-              printf '````diff\n'
-              cat "$RUNNER_TEMP/held-workflow-changes.patch"
-              printf '````\n'
+              printf 'To apply them, run this from the root of a checkout of the branch, then '
+              printf 'commit and push:\n\n'
+              apply_command
             fi
           } >> "$report"
 

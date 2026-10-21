@@ -3,6 +3,10 @@ ARG PHP_BASE_IMAGE=php:${PHP_VERSION}-fpm-bookworm
 
 FROM ${PHP_BASE_IMAGE} AS php
 
+# First, so a base image missing a security fix fails the build before anything is spent on it
+RUN --mount=type=bind,source=docker/php-minimum-version.sh,target=/tmp/php-minimum-version.sh \
+    sh /tmp/php-minimum-version.sh
+
 ARG NODE_VERSION=20
 ENV NODE_VERSION=${NODE_VERSION}
 

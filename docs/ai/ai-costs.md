@@ -1,14 +1,14 @@
 # AI costs
 
 Every agent run records what it cost on the issue or pull request it worked on, as a hidden line
-that renders as nothing. `bin/ai-cost-report.sh` reads those back and adds them up, and a
-scheduled workflow emails the total once a month.
+that renders as nothing. `bin/ai-cost-report.sh` reads those back and adds them up, and the
+month's total is posted to Teams on the 1st.
 
 ## Getting a report
 
 ```bash
 bin/ai-cost-report.sh                       # this month so far, every repository with the harness
-bin/ai-cost-report.sh --last-month          # what the monthly email sends
+bin/ai-cost-report.sh --last-month          # the month that just ended
 bin/ai-cost-report.sh --month 2026-08       # one calendar month
 bin/ai-cost-report.sh --from 2026-08-15 --to 2026-09-02 officio bcpnp-frontend
 bin/ai-cost-report.sh --out /tmp/costs      # where the three files go
@@ -19,30 +19,19 @@ Three files land in `ai-cost-report/`, and the summary is printed as it is writt
 | File | What is in it |
 |---|---|
 | `ai-costs.md` | Spend by repository, by kind of run and by issue, and what the money went on |
-| `ai-costs.html` | The same summary as an email body, rendered by `bin/md-to-html.awk` |
+| `ai-costs.html` | The same summary as HTML, rendered by `bin/md-to-html.awk` |
 | `ai-costs-issues.csv` | One row per issue: plan, coding and review cost, and the total |
 | `ai-costs-runs.csv` | One row per agent run, for when a figure needs explaining |
 
 Needs `gh` authenticated against the organisation. `--to` is exclusive, so a run at midnight on
 that date belongs to the next report rather than to both.
 
-## The monthly email
+## The monthly report
 
-`self-ai-cost-report.yml` runs on the first of every month, reports the month that just ended,
-and emails the summary with both spreadsheets attached. It also takes a month and a set of
-addresses by hand, from **Actions → AI cost report → Run workflow**.
-
-| Secret | What it is for |
-|---|---|
-| `GHA_PRIVATE_ACCESS_TOKEN` | Reading issues across the organisation. Without it the run fails rather than reporting a total that is missing every private repository |
-| `AI_COST_REPORT_SENDER` | Mailbox the report is sent from, and the only one the app is allowed to send as |
-| `AI_COST_REPORT_RECIPIENTS` | Who it goes to, comma separated |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` | The app registration the mail is sent as, through Microsoft Graph. Organisation secrets already |
-
-Setting up the app registration and the mailbox it sends as is
-[AI cost report](../self/self-ai-cost-report.md). Without any of these secrets the report is still
-written to the run's summary and kept as an artifact, with a warning saying which ones are
-missing.
+`comms-api` in `uniquesca/infra-apps` records each line as it is posted, through an organisation
+webhook, and posts last month's total to the `Administerial` channel in Teams on the 1st. It only
+counts what was posted while it was running, and says so on the card. This script reads the
+issues themselves, so it is the one to use when a month has to add up exactly.
 
 ## Dig deeper
 
