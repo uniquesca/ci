@@ -1538,3 +1538,7 @@
 
 * Fix: Docker images upgrade PEAR so PECL installs work on PHP 8.1 and 5.6 (ef224db by George Shestayev)
 * Fix: a failed PROD image no longer holds back the other DEV images (ef224db by George Shestayev)
+
+## v11.32.2
+
+* Update: AI Plan stops asking about bugs outside the issue or work in another repository (b358384 by George Shestayev)
