@@ -85,6 +85,15 @@ started. It tags the issue author. Still to do:
 - Once a pull request records which plan version it was built from, use that instead of working it
   out from comment dates.
 
+### Act on bugs a plan finds
+
+A plan lists a bug it found outside the issue as an `R`, and leaves it alone. Nobody has to act on
+it, so it is forgotten once the pull request merges, like the 500 in officio#1268. Still to do:
+
+- Read what plans find for a while, to see whether the finds are usually real bugs.
+- If they are, give them their own place in the plan, and open an issue for each one nobody took
+  on by the time the pull request merges.
+
 ## For v12
 
 These are breaking changes, so they wait for the next major version.

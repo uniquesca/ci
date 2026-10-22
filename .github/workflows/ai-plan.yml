@@ -899,10 +899,13 @@ jobs:
               R2 no longer applies". Empty on a first plan.
             - `risks` - `R1` for what could really break, `U1` for an unknown or an assumption.
               `text` is one or two plain sentences. Leave out the routine, what a step handles,
-              and what the issue does not ask for. Set `ask` - one sentence somebody who has not
-              read the code can answer - only when the repository and the issue cannot settle it
-              and a wrong guess would waste the work. Otherwise decide, say so in the summary,
-              and never ask to confirm it.
+              and what the issue does not ask for - except a bug you found outside the issue,
+              which stays as an `R` saying this plan leaves it alone. Set `ask` - one sentence
+              somebody who has not read the code can answer - only when the repository and the
+              issue cannot settle it and a wrong guess would waste the work. Otherwise decide,
+              say so in the summary, and never ask to confirm it. Never ask whether to take on a
+              bug found outside the issue, nor about work that needs code from another
+              repository: say in the summary that such work is out of reach here, and why.
             - `steps` - in working order. `title` is a short imperative naming what it acts on:
               "Add `officio-common/src/Model` to psalm", not "Bring the model directory into
               scope". `scope` is one plain line on exactly what it touches. `detail` is what to do

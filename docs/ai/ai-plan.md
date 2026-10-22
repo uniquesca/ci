@@ -95,7 +95,7 @@ precisely without quoting a paragraph back:
 
 | Prefix | Section | What it is |
 |---|---|---|
-| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong, in one sentence. **Needs your decision:** follows when only you can settle it |
+| `R1`, `R2` | Risks, unknowns and assumptions | Something that could go wrong, or a bug found outside the issue that the plan leaves alone, in one sentence. **Needs your decision:** follows when only you can settle it |
 | `U1`, `U2` | Risks, unknowns and assumptions | Something the agent could not determine, or is assuming |
 | `S1`, `S2` | Steps | The work, in the order it should be done. The title and a line on what it touches are shown, the detail is folded |
 | `QA1`, `QA2` | QA acceptance criteria | What to test by hand, written for somebody who will not read the code: where in the interface to go and what should happen. Each names the steps it covers, as `QA1 (S2, S5)`. As much as the risk warrants: for code users run that is not meant to change - a refactor, real type changes, an upgrade - the flows to check still work. A flow an end-to-end test covers is a check instead. No section at all when no user can reach the change - formatting, type annotations, CI |
