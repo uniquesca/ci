@@ -1542,3 +1542,7 @@
 ## v11.32.2
 
 * Update: AI Plan stops asking about bugs outside the issue or work in another repository (b358384 by George Shestayev)
+
+## v11.33.0
+
+* New: introduced AI analytic tool to analyze CI failures (ad0638b by George Shestayev)
