@@ -156,41 +156,39 @@ Pull requests the harness opens link their issue, not the task, so they get no c
 **Done when** a pull request mentioning a task has commented on it, and the comment changed when it
 merged.
 
-## Phase 5: Standup summary
+## Phase 5: Meeting summaries
 
-The daily call is transcribed. A few minutes after it ends, the app reads the transcript, has the
-AI summarise it, posts the summary to `Dev`, and deletes the transcript.
+Each meeting in `docker-server/comms-api/meetings.json` in `devops-infra` - the standup first - has
+a join link, the channel its summary goes to, and how to summarise it. A few minutes after a
+transcript is ready, the app reads it as the meeting's organiser, has the AI summarise it, and posts
+the summary. The transcript is not kept.
 
 **Set up**
-1. **Agree it.** The team knows the call is transcribed and that the text goes to Anthropic, and
+1. **Agree it.** The team knows meetings are transcribed and that the text goes to Anthropic, and
    our client agreements allow it.
-2. **Organiser account.** Create `standup@` in Microsoft 365, with a Teams licence. Microsoft only
-   gives the transcript to the meeting's organiser.
+2. **Transcript access for the tenant.** In the Teams admin centre: Transcript API access, turn on
+   Microsoft Graph access and speaker attribution. It is off by default, and without it Graph
+   answers `GraphAccessToTranscriptsDisabled` whatever the permissions.
 3. **Permissions.** In the Microsoft Entra admin centre, App registrations, open the bot's
    registration (`MICROSOFT_APP_ID`):
    - Authentication, add a Web redirect URI: `https://comms-api.unqs.ca/auth/microsoft/callback`.
    - API permissions, Microsoft Graph, **Delegated**: `OnlineMeetings.Read`,
      `OnlineMeetingTranscript.Read.All`, `User.Read`, `offline_access`. **Grant admin consent**.
-4. **Check it works before building.** Hold a short test meeting as `standup@` with transcription
-   on. In [Graph Explorer](https://developer.microsoft.com/graph/graph-explorer), signed in as
-   `standup@`, fetch the meeting with `GET /me/onlineMeetings?$filter=JoinWebUrl eq '<join link>'`,
-   then `GET /me/onlineMeetings/{id}/transcripts`. A transcript in the answer means this phase will
-   work.
-5. **The meeting.** As `standup@`, schedule the recurring daily call and invite the team. In
-   Meeting options, turn on recording and transcribing automatically if it is offered. If not,
-   whoever opens the call clicks **Start transcription**.
-6. **Anthropic.** In the Claude Console, create a `comms` workspace with a monthly spend limit, and
+4. **Anthropic.** In the Claude Console, create a `comms` workspace with a monthly spend limit, and
    an API key in it. 🔑 `ANTHROPIC_API_KEY`
-7. **After deploying,** open `https://comms-api.unqs.ca/auth/microsoft` once and sign in as
-   `standup@`.
+5. **The meeting.** Add it to `meetings.json`. In its Teams meeting options, turn on transcribing
+   automatically if it is offered; if not, whoever opens the call clicks **Start transcription**.
+6. **After deploying,** the meeting's organiser opens
+   `https://comms-api.unqs.ca/auth/microsoft?meeting=<key>` once. Microsoft only gives a transcript
+   to its meeting's organiser, so only they can; one sign-in covers all their meetings.
 
 **Build**
-1. Microsoft sign-in for `standup@`: keep its refresh token. If the token stops working, post that
-   to `Dev`.
-2. After the call's end time, look for the transcript every two minutes, for up to an hour. If none
-   appears, post that to `Dev`.
-3. Summarise with one API call into fixed sections: decisions, blockers, action items per person.
-4. Post the card, and delete the transcript whether or not that worked.
+1. Sign-in per organiser, for people in the people map only; it keeps their refresh token. If the
+   sign-in stops working, the meeting's channel is told once.
+2. Every few minutes, look for transcripts made since the meeting was linked.
+3. One call to Claude with the meeting's instructions. In a room on one call, it works out who spoke
+   from hand-overs and introductions, and marks a name worked out that way "(probably)".
+4. Post the card. A summary that fails twice is reported in the channel.
 
 **Done when** a week of standups has been summarised, and the team finds the summaries right.
 

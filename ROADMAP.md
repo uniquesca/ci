@@ -72,6 +72,17 @@ end-to-end tests to add. Still to do:
   runs. The advice then has to wait for QA.
 - Save every verdict, including "no gap", and count how often people add the test it asked for.
 
+### Say why a run failed
+
+The `ai-failure-summary` action writes why a run failed into the run's summary page, and whether
+each failure is flaky, broken or new, counted from earlier runs. The QA, deployment and release
+workflows run it when given the federation inputs. Still to do:
+
+- Run it for real on a failing run in a repository, and read what it writes.
+- Turn it on in the QA callers, starting with officio.
+- Check how often flaky is called right. Failures with no test names match on the step alone,
+  which is weaker.
+
 ### Learn from issues that needed a lot of rounds
 
 `ai-retro.yml` comments on a merged harness pull request that took too many rounds: what would have
