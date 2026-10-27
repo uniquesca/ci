@@ -1,16 +1,40 @@
 # AI failure summary
 
-Summarises a failed run into the job's summary page: what failed, why, and what to do next, with a
-flaky or broken verdict from earlier runs. The step behind
-[`ai-failure-summary.yml`](../ai/ai-failure-summary.md), which is how a repository uses it.
+Writes into the run's summary page, for each failed job: **what failed**, **why**, with how sure
+it is (`certain`, `highly likely`, `likely`, `probably` or `maybe`), and **what to do next**. The
+why also says whether the failure is **flaky**, **broken**, **new** or **unknown**, going by the
+same job's earlier runs. The log lines that show it are folded underneath.
 
-The job needs `contents: read`, `actions: read` and `id-token: write`.
+The QA workflows, [`deploy`](../workflows/deploy.md), [`docker-deploy`](../workflows/docker-deploy.md),
+[`prepare-release`](../workflows/prepare-release.md) and [`publish-npm`](../workflows/publish-npm.md)
+run it when they are given the federation inputs. Any other workflow adds it as its last job:
+
+```yaml
+jobs:
+  # ... your jobs
+  failure-summary:
+    needs: [ build, test ]   # every job it should summarise
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read         # for the checkout the agent needs
+      actions: read          # to read the run's jobs, logs and history
+      id-token: write        # to authenticate the agent
+    steps:
+      - uses: uniquesca/ci/ai-failure-summary@v11
+        with:
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+```
+
+For the shared workflows, pass the same three as inputs and grant the calling job those three
+permissions.
 
 ## Inputs
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `run_id` | yes | | The failed run to summarise |
 | `anthropic_federation_rule_id` | yes | | Identity federation rule the job authenticates against |
 | `anthropic_organization_id` | yes | | Anthropic organization the federation rule belongs to |
 | `anthropic_service_account_id` | yes | | Service account the minted token acts as |
@@ -24,12 +48,27 @@ The job needs `contents: read`, `actions: read` and `id-token: write`.
 
 ## Outputs
 
-None.
+None. The summary goes to the run's summary page.
 
 ## Dig deeper
 
-### The agent needs an event it accepts
+### How flaky and broken are told apart
 
-claude-code-action refuses to start on `push`, tag and `create` events, which is what most failing
-runs start from. Called from a `workflow_run` workflow, as `ai-failure-summary.yml` does, it starts
-on every failure.
+The verdict is counted from the same job, by name, in earlier runs and attempts of the workflow,
+not guessed by the model. A failure matches an earlier one when the same step failed and, where
+the log names failed tests (PHPUnit, Jest, Vitest, Playwright), at least one of the same tests did.
+In order: passed on the same commit is **flaky**. Failed the same way in the last two runs on this
+branch or more is **broken**. Failing in the latest run on most other branches is **broken**, and
+not this branch's fault. Failed the same way on two other branches or more, while most of them
+pass, is **flaky**. Failed once before on this branch is **broken**. Passed last time on this branch
+is **new**, probably the latest change. Anything else is **unknown**. Runs of deleted branches still
+count, until Github's retention removes them.
+
+### When it says nothing
+
+Inside a reusable workflow the job summarises only its own workflow's jobs, so two calls in one run
+do not repeat each other. Without `actions: read` it warns and writes nothing. If the agent fails,
+the summary still has the verdicts, a next step that follows from them, and the end of each log.
+Runs started by `push` or `create` always get that short summary, because claude-code-action
+refuses those events. The agent reads only the staged logs and has no tools beyond reading them
+and writing its answer.

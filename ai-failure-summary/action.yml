@@ -1,6 +1,6 @@
 name: AI failure summary
 
-description: Writes why a run's failed jobs failed into the job summary, and whether each failure is flaky or broken going by the same job's earlier runs
+description: Writes why the run's failed jobs failed into the run summary, and whether each failure is flaky or broken going by the same job's earlier runs
 
 inputs:
   anthropic_federation_rule_id:
@@ -16,9 +16,6 @@ inputs:
     description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
     required: false
     default: ''
-  run_id:
-    description: 'The failed run to summarise'
-    required: true
   model:
     description: 'Model that explains the failures'
     required: false
@@ -47,11 +44,18 @@ inputs:
 runs:
   using: composite
   steps:
-    # claude-code-action needs a checkout with an `origin`: it configures git, and on a pull request
-    # restores its own config files from the base branch. The checkout goes first because it
-    # cleans the workspace the logs are staged in. Sparse, since only the git repository matters.
-    - uses: actions/checkout@v7
+    # claude-code-action refuses any other event, `push` and `create` among them. Those runs get
+    # the verdicts and logs without the agent.
+    - id: events
+      shell: bash
+      run: echo "agent=${{ contains(fromJSON('["pull_request","pull_request_target","pull_request_review","pull_request_review_comment","issues","issue_comment","workflow_dispatch","repository_dispatch","schedule","workflow_run"]'), github.event_name) }}" >> "$GITHUB_OUTPUT"
+
+    # The agent needs a checkout with an `origin`: it configures git, and on a pull request
+    # restores its own config files from the base branch. It goes first because it cleans the
+    # workspace the logs are staged in. Sparse, since only the git repository matters.
+    - if: steps.events.outputs.agent == 'true'
       continue-on-error: true
+      uses: actions/checkout@v7
       with:
         sparse-checkout: .github
         persist-credentials: false
@@ -61,7 +65,6 @@ runs:
       env:
         STAGE_DIR: ${{ github.workspace }}/.ai-failure-summary
         INPUT_TOKEN: ${{ inputs.github_token }}
-        INPUT_RUN_ID: ${{ inputs.run_id }}
         INPUT_HISTORY: ${{ inputs.history }}
         INPUT_MAX_HISTORY_LOGS: ${{ inputs.max_history_logs }}
         INPUT_MAX_JOBS: ${{ inputs.max_jobs }}
@@ -71,7 +74,7 @@ runs:
     # A summary is a courtesy on a run that already failed, so the agent failing never adds to it:
     # the step after this one still writes the verdicts and logs.
     - id: agent
-      if: steps.gather.outputs.count > 0
+      if: steps.gather.outputs.count > 0 && steps.events.outputs.agent == 'true'
       continue-on-error: true
       uses: anthropics/claude-code-action@v1
       with:

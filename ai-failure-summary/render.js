@@ -27,8 +27,7 @@ const fence = text => {
 };
 const oneLine = text => String(text ?? '').replace(/\s+/g, ' ').trim();
 
-const run = JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf8'));
-const out = [`## Why [${run.name}](${run.url}) failed`, ''];
+const out = ['## Why this run failed', ''];
 for (const [i, job] of jobs.entries()) {
     const answer = answers.find(a => a.job === job.name) ?? answers[i] ?? {};
     const tests = job.tests.length ? ` Tests: ${job.tests.slice(0, 10).map(t => `\`${t.replaceAll('`', "'")}\``).join(', ')}.` : '';

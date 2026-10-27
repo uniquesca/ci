@@ -114,6 +114,10 @@ jobs:
 | `db_migration_cmd` | string | `''` | Migration command, runs before the unit tests |
 | `env_variables` | string | `'{}'` | JSON object of environment variables |
 | `artifact_suffix` | string | `''` | Appended after the matrix leg to the name of the [check report artifact](ai/ai-implement.md#wiring-ci-into-the-loop). Give each leg its own where this workflow is called more than once in a workflow file |
+| `anthropic_federation_rule_id` | string | `''` | With the two below, turns on the [AI failure summary](actions/ai-failure-summary.md) of a failed run. The calling job needs `permissions:` `contents: read`, `actions: read` and `id-token: write` |
+| `anthropic_organization_id` | string | `''` | Anthropic organization the federation rule belongs to |
+| `anthropic_service_account_id` | string | `''` | Service account the AI failure summary acts as |
+| `anthropic_workspace_id` | string | `''` | Workspace the minted token is scoped to. Only needed when the rule covers more than one |
 
 ## NPM QA Checks workflow
 
@@ -168,6 +172,10 @@ registry. A repository depending only on public packages can leave the `secrets`
 | `setup_cmd` | string | `''` | Command to run before the checks execute |
 | `env_variables` | string | `'{}'` | JSON object of environment variables |
 | `artifact_suffix` | string | `''` | Appended to the name of the [check report artifact](ai/ai-implement.md#wiring-ci-into-the-loop). Give each leg its own where this workflow is called more than once in a workflow file |
+| `anthropic_federation_rule_id` | string | `''` | With the two below, turns on the [AI failure summary](actions/ai-failure-summary.md) of a failed run. The calling job needs `permissions:` `contents: read`, `actions: read` and `id-token: write` |
+| `anthropic_organization_id` | string | `''` | Anthropic organization the federation rule belongs to |
+| `anthropic_service_account_id` | string | `''` | Service account the AI failure summary acts as |
+| `anthropic_workspace_id` | string | `''` | Workspace the minted token is scoped to. Only needed when the rule covers more than one |
 
 ## Repositories with PHP and JavaScript
 

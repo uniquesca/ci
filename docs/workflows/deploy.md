@@ -51,6 +51,10 @@ jobs:
 | `clean_cache_cmd` | string | `''` | Cache-clearing command |
 | `post_cmd` | string | `''` | Command to run once the deployment is complete |
 | `timeout` | string | `5m` | Timeout for the connection and for the script |
+| `anthropic_federation_rule_id` | string | `''` | With the two below, turns on the [AI failure summary](../actions/ai-failure-summary.md) of a failed run. The calling job needs `permissions:` `contents: read`, `actions: read` and `id-token: write` |
+| `anthropic_organization_id` | string | `''` | Anthropic organization the federation rule belongs to |
+| `anthropic_service_account_id` | string | `''` | Service account the AI failure summary acts as |
+| `anthropic_workspace_id` | string | `''` | Workspace the minted token is scoped to. Only needed when the rule covers more than one |
 
 ## Outputs
 

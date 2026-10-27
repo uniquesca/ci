@@ -43,6 +43,10 @@ jobs:
 | `node_version` | number | `20` | Node version to build and publish with |
 | `cleanup_dependencies` | boolean | `false` | Strip `dependencies`, `devDependencies` and `scripts` from the published `package.json` |
 | `github_release` | boolean | `true` | Also publish a Github release, with the built folder zipped and attached |
+| `anthropic_federation_rule_id` | string | `''` | With the two below, turns on the [AI failure summary](../actions/ai-failure-summary.md) of a failed run. The calling job needs `permissions:` `contents: read`, `actions: read` and `id-token: write` |
+| `anthropic_organization_id` | string | `''` | Anthropic organization the federation rule belongs to |
+| `anthropic_service_account_id` | string | `''` | Service account the AI failure summary acts as |
+| `anthropic_workspace_id` | string | `''` | Workspace the minted token is scoped to. Only needed when the rule covers more than one |
 
 ## Outputs
 

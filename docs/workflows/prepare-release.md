@@ -57,6 +57,10 @@ jobs:
 | `coverage_badge_file` | string | `coverage.svg` | Badge path. Ignored unless `generate_coverage_badge` |
 | `generate_coverage_report` | boolean | `false` | Generate and commit a Markdown coverage report |
 | `coverage_report_file` | string | `docs/coverage.md` | Report path. Ignored unless `generate_coverage_report` |
+| `anthropic_federation_rule_id` | string | `''` | With the two below, turns on the [AI failure summary](../actions/ai-failure-summary.md) of a failed run. The calling job needs `permissions:` `contents: read`, `actions: read` and `id-token: write` |
+| `anthropic_organization_id` | string | `''` | Anthropic organization the federation rule belongs to |
+| `anthropic_service_account_id` | string | `''` | Service account the AI failure summary acts as |
+| `anthropic_workspace_id` | string | `''` | Workspace the minted token is scoped to. Only needed when the rule covers more than one |
 
 ## Outputs
 
