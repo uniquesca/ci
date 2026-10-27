@@ -92,7 +92,7 @@ runs:
             verdict into account: flaky means re-run, and fix the test if it keeps happening;
             broken on other branches too means it is not this branch's change.
           - `lines`: the few log lines, at most 20, that show the failure, copied exactly.
-      claude_args: |
+        claude_args: |
           --model ${{ inputs.model }}
           --max-turns 15
           --tools "Read,Write"
