@@ -1546,3 +1546,7 @@
 ## v11.33.0
 
 * New: introduced AI analytic tool to analyze CI failures (ad0638b by George Shestayev)
+
+## v11.33.1
+
+* Fix: fixed workflow syntax issue (736cb9c by George Shestayev)
