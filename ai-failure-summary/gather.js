@@ -10,11 +10,19 @@ const dir = env.STAGE_DIR;
 const headers = { Authorization: `Bearer ${env.INPUT_TOKEN}`, Accept: 'application/vnd.github+json' };
 
 async function get(url, as = 'json') {
-    const response = await fetch(url.startsWith('http') ? url : `${api}/${url}`, { headers });
-    if (!response.ok) {
-        throw new Error(`${response.status} from ${url}`);
+    // GitHub answers the odd request with a 5xx that goes away on a retry
+    for (let tries = 1; ; tries++) {
+        const response = await fetch(url.startsWith('http') ? url : `${api}/${url}`, { headers });
+        if (response.ok) {
+            return as === 'json' ? response.json() : response.text();
+        }
+        if (response.status < 500 || tries === 3) {
+            const error = new Error(`${response.status} from ${url}`);
+            error.status = response.status;
+            throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, tries * 2000));
     }
-    return as === 'json' ? response.json() : response.text();
 }
 
 async function jobs(url) {
@@ -57,7 +65,12 @@ async function main() {
     const runs = new Map([run, ...onBranch.workflow_runs, ...anywhere.workflow_runs].map(r => [r.id, r]));
     const earlier = [];
     for (const r of runs.values()) {
-        for (const job of await jobs(`actions/runs/${r.id}/jobs?filter=all`)) {
+        // An earlier run only adds history, so one that cannot be read is left out
+        const runJobs = await jobs(`actions/runs/${r.id}/jobs?filter=all`).catch(error => {
+            console.log(`::warning::Left run ${r.id} out of the history: ${error.message}`);
+            return [];
+        });
+        for (const job of runJobs) {
             if (r.id !== runId || job.run_attempt < attempt) {
                 earlier.push({ job, run: r });
             }
@@ -106,7 +119,8 @@ let staged = [];
 try {
     staged = await main();
 } catch (error) {
-    console.log(`::warning title=No failure summary::Could not read this run's jobs: ${error.message}. The job needs \`actions: read\`.`);
+    const hint = [401, 403, 404].includes(error.status) ? ' The job needs `actions: read`.' : '';
+    console.log(`::warning title=No failure summary::Could not read this run's jobs: ${error.message}.${hint}`);
 }
 fs.mkdirSync(dir, { recursive: true });
 fs.writeFileSync(path.join(dir, 'jobs.json'), JSON.stringify(staged, null, 2));
