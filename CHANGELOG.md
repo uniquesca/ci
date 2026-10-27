@@ -1550,3 +1550,7 @@
 ## v11.33.1
 
 * Fix: fixed workflow syntax issue (736cb9c by George Shestayev)
+
+## v11.33.2
+
+* Fix: fixed checking workflow history (0ce5f96 by George Shestayev)
