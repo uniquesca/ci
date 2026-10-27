@@ -1,0 +1,58 @@
+name: AI Failure Summary
+
+on:
+  workflow_call:
+    inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to. Found in the Claude Console under Settings, Organization'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as. Usage and rate limits are attributed to it'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
+        required: false
+        default: ''
+        type: string
+      model:
+        description: 'Model that explains the failures'
+        required: false
+        default: 'claude-haiku-5-5'
+        type: string
+      timeout_minutes:
+        description: 'How long the whole job may run'
+        required: false
+        default: 15
+        type: number
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  summarise:
+    name: Summarise the failure
+    # Called from a `workflow_run` workflow: that is an event claude-code-action accepts, where the
+    # push, tag and branch-creation events most failing runs start from are not
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: uniquesca/ci/ai-failure-summary@v11
+        with:
+          run_id: ${{ github.event.workflow_run.id }}
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          model: ${{ inputs.model }}
