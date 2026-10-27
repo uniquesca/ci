@@ -9,7 +9,7 @@ let answers = [];
 try {
     answers = JSON.parse(fs.readFileSync(path.join(dir, 'answer.json'), 'utf8')).jobs ?? [];
 } catch {
-    console.log('::warning title=No AI explanation::The agent wrote no answer, so the summary has the verdicts and logs only');
+    console.log('No AI explanation, so the summary has the verdicts and logs only');
 }
 
 const LABEL = {

@@ -76,18 +76,31 @@ end-to-end tests to add. Still to do:
 
 `failure-history` gives each failed job a verdict from earlier runs: flaky, broken on this branch,
 broken on other branches too, new or unknown. `ai-failure-summary` adds what failed, why and what
-to do next, in the run's summary. The QA, deployment and release workflows run it when given the
-federation inputs. Still to do:
+to do next, in the run's summary. It calls the API directly, so it works on every kind of run. The
+QA, deployment and release workflows run it when given the federation inputs. Still to do:
 
 - Run it for real on a failing run in a repository, and read what it writes.
-- Call the AI directly instead of through claude-code-action, which refuses `push` and `create`
-  runs. Those runs get the verdict and log only until then.
-- Count the verdicts in the CI Dashboard, from the uploaded `failure-history` results, together
-  with how often the AI workflows post a harness hint or test advice.
 - Re-run flaky jobs once, on strong evidence only, and pass the verdict to the implementing agent
   so it does not spend a round on a flaky or outside failure.
 - Check how often flaky is called right. Failures with no test names match on the step alone,
   which is weaker.
+
+### See what CI and the AI workflows do
+
+Nobody can see today how often CI fails and why, or how often the AI workflows say something and
+whether anyone acts on it. Add reports to the CI Dashboard in infra-apps. It already hears about
+every workflow run through the organisation webhook. Still to do:
+
+- When a run fails, fetch its `failure-history` result and store the verdict for each job and
+  test. The dashboard needs read access to the organisation's Actions for this.
+- Show which tests are flaky most often, and which failures are broken on other branches too.
+- Have every AI workflow that posts something add a hidden `<!-- ai-event {...} -->` line, the
+  same way `<!-- ai-cost -->` works for comms-api, and count them: harness hints, test advice,
+  retros, failure summaries.
+- For each, also count whether somebody acted on it: used the harness afterwards, added the test
+  before merging, or re-ran a job called flaky and saw it pass.
+- Keep all counts in one app, so there is one place to look. Decide whether the cost report moves
+  there from comms-api.
 
 ### Learn from issues that needed a lot of rounds
 

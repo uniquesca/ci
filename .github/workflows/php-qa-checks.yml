@@ -55,7 +55,7 @@ on:
         default: ''
         type: string
       anthropic_federation_rule_id:
-        description: 'Identity federation rule the AI failure summary authenticates against. Empty, the default, leaves the summary out. The calling job needs `permissions:` `contents: read`, `actions: read` and `id-token: write` for it'
+        description: 'Identity federation rule the AI failure summary authenticates against. Empty, the default, leaves the summary out. The calling job needs `permissions:` `actions: read` and `id-token: write` for it'
         required: false
         default: ''
         type: string
