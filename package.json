@@ -9,5 +9,5 @@
     "scripts": {
         "test": "node --test"
     },
-    "version": "11.34.0"
+    "version": "11.35.0"
 }
