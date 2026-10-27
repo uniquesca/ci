@@ -1554,3 +1554,7 @@
 ## v11.33.2
 
 * Fix: fixed checking workflow history (0ce5f96 by George Shestayev)
+
+## v11.34.0
+
+* Update: AI failure summary runs as its own workflow when a watched workflow fails (740d73d by George Shestayev)
