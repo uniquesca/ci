@@ -41,6 +41,26 @@ on:
         required: false
         type: string
         default: '.'
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the AI failure summary authenticates against. Empty, the default, leaves the summary out. The calling job needs `permissions:` `actions: read` and `id-token: write` for it'
+        required: false
+        default: ''
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to'
+        required: false
+        default: ''
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the AI failure summary acts as'
+        required: false
+        default: ''
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace the minted token is scoped to. Only needed when the federation rule covers more than one workspace'
+        required: false
+        default: ''
+        type: string
 
 defaults:
   run:
@@ -116,3 +136,19 @@ jobs:
           release_version: ${{ inputs.release_version }}
           attach_dist: true
           dist_folder: ../dist
+
+  # No `permissions:` here on purpose: a job asking for more than its caller grants stops the
+  # whole workflow from starting, for every caller. This one takes what the caller gives it.
+  failure-summary:
+    name: Summarise the failure
+    needs: [ publish-npm ]
+    if: failure() && inputs.anthropic_federation_rule_id != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: uniquesca/ci/ai-failure-summary@v11
+        with:
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
