@@ -1,0 +1,71 @@
+name: Failure history
+
+description: Checks each failed job of this run against the same job's earlier runs, and says whether it is flaky, broken by this branch, broken outside it, new or unknown. No AI
+
+inputs:
+  dir:
+    description: 'Directory the result and the trimmed logs are written to, relative to the workspace'
+    required: false
+    default: '.failure-history'
+  history:
+    description: 'How many earlier runs of the workflow to look back on, on this branch and on all branches each'
+    required: false
+    default: '20'
+  max_history_logs:
+    description: 'How many earlier failed logs to read, to check whether the same tests failed in them'
+    required: false
+    default: '10'
+  max_jobs:
+    description: 'How many failed jobs to check'
+    required: false
+    default: '5'
+  max_log_lines:
+    description: 'How many log lines before the first error to keep, per job'
+    required: false
+    default: '150'
+  upload:
+    description: 'Whether to upload the result as an artifact, for anything that reads it after the run'
+    required: false
+    default: 'true'
+  retention_days:
+    description: 'How long the uploaded result is kept'
+    required: false
+    default: '7'
+  github_token:
+    description: 'Token the run''s jobs and logs are read with. Needs `actions: read`'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  count:
+    description: 'How many failed jobs were checked'
+    value: ${{ steps.history.outputs.count }}
+  result:
+    description: 'The result as JSON. Each job in `jobs` has `name`, `url`, `step`, `tests`, `verdict`, `reason` and `log`'
+    value: ${{ steps.history.outputs.result }}
+  file:
+    description: 'Path of the same JSON in `dir`, as `result.json`. `log` paths are relative to `dir`'
+    value: ${{ steps.history.outputs.file }}
+
+runs:
+  using: composite
+  steps:
+    - id: history
+      shell: bash
+      env:
+        STAGE_DIR: ${{ github.workspace }}/${{ inputs.dir }}
+        INPUT_TOKEN: ${{ inputs.github_token }}
+        INPUT_HISTORY: ${{ inputs.history }}
+        INPUT_MAX_HISTORY_LOGS: ${{ inputs.max_history_logs }}
+        INPUT_MAX_JOBS: ${{ inputs.max_jobs }}
+        INPUT_MAX_LOG_LINES: ${{ inputs.max_log_lines }}
+      run: node "$GITHUB_ACTION_PATH/history.js"
+
+    # The logs stay out of it: they are for this job, and can carry what a test printed
+    - if: inputs.upload == 'true' && steps.history.outputs.count > 0
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.history.outputs.artifact }}
+        path: ${{ steps.history.outputs.file }}
+        retention-days: ${{ inputs.retention_days }}
+        include-hidden-files: true

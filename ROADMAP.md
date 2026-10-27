@@ -74,11 +74,18 @@ end-to-end tests to add. Still to do:
 
 ### Say why a run failed
 
-The `ai-failure-summary` action writes why a run failed into the run's summary page, and whether
-each failure is flaky, broken or new, counted from earlier runs. The QA, deployment and release
-workflows run it when given the federation inputs. Still to do:
+`failure-history` gives each failed job a verdict from earlier runs: flaky, broken on this branch,
+broken on other branches too, new or unknown. `ai-failure-summary` adds what failed, why and what
+to do next, in the run's summary. The QA, deployment and release workflows run it when given the
+federation inputs. Still to do:
 
 - Run it for real on a failing run in a repository, and read what it writes.
+- Call the AI directly instead of through claude-code-action, which refuses `push` and `create`
+  runs. Those runs get the verdict and log only until then.
+- Count the verdicts in the CI Dashboard, from the uploaded `failure-history` results, together
+  with how often the AI workflows post a harness hint or test advice.
+- Re-run flaky jobs once, on strong evidence only, and pass the verdict to the implementing agent
+  so it does not spend a round on a flaky or outside failure.
 - Check how often flaky is called right. Failures with no test names match on the step alone,
   which is weaker.
 

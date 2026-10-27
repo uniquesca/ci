@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { failedTests, trimLog, verdict } from '../src/ai-failure.js';
+import { failedTests, trimLog, verdict } from '../src/failure-history.js';
 
 const job = { step: 'Run PHPUnit', tests: ['FooTest::testBar'] };
 const at = { branch: 'feature/a', sha: 'new' };
@@ -54,7 +54,7 @@ test('failing the same way every run on the branch is broken, even when it is fl
     ];
 
     const result = verdict(job, history, at);
-    assert.equal(result.kind, 'broken');
+    assert.equal(result.kind, 'broken-here');
     assert.match(result.reason, /since run \[#\d+\].+, and passed in /);
 });
 
@@ -87,8 +87,14 @@ test('failing in the latest run on most other branches is broken, not this branc
     ];
 
     const result = verdict(job, history, at);
-    assert.equal(result.kind, 'broken');
+    assert.equal(result.kind, 'broken-elsewhere');
     assert.match(result.reason, /2 of 3 other branches/);
+});
+
+test('failing once before on this branch is broken here', () => {
+    const history = [run('feature/a', 'failure'), run('feature/a', 'success')];
+
+    assert.equal(verdict(job, history, at).kind, 'broken-here');
 });
 
 test('without earlier runs it cannot tell', () => {

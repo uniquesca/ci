@@ -1,8 +1,8 @@
-// Stages the failed jobs of this run for ai-failure-summary: a trimmed log of each, and a verdict
-// from the same job's earlier runs. Inputs come in as INPUT_* variables.
+// Writes failure-history's result: each failed job of this run with a verdict from the same job's
+// earlier runs, and a trimmed log of each. Inputs come in as INPUT_* variables.
 import fs from 'node:fs';
 import path from 'node:path';
-import { failedTests, trimLog, verdict } from '../src/ai-failure.js';
+import { failedTests, trimLog, verdict } from '../src/failure-history.js';
 
 const env = process.env;
 const api = `${env.GITHUB_API_URL}/repos/${env.GITHUB_REPOSITORY}`;
@@ -49,12 +49,21 @@ async function main() {
     // its own.
     const self = now.find(job => job.status === 'in_progress' && job.runner_name === env.RUNNER_NAME);
     const prefix = self?.name.includes(' / ') ? self.name.slice(0, self.name.lastIndexOf(' / ') + 3) : '';
+    // A failed earlier call of the same job, in a re-run, is not something to check
     const failed = now
-        .filter(job => job.conclusion === 'failure' && job.name.startsWith(prefix))
+        .filter(job => job.conclusion === 'failure' && job.name.startsWith(prefix) && job.name !== self?.name)
         .slice(0, Number(env.INPUT_MAX_JOBS));
+    const result = {
+        v: 1,
+        run: {
+            id: runId, attempt, name: run.name, url: run.html_url, event: run.event,
+            branch: run.head_branch, sha: run.head_sha,
+        },
+        jobs: [],
+    };
     if (!failed.length) {
-        console.log('No failed job to summarise');
-        return [];
+        console.log('No failed job to check');
+        return { result, self };
     }
 
     const query = `status=completed&exclude_pull_requests=true&per_page=${env.INPUT_HISTORY}`;
@@ -79,12 +88,13 @@ async function main() {
 
     let logsLeft = Number(env.INPUT_MAX_HISTORY_LOGS);
     fs.mkdirSync(path.join(dir, 'logs'), { recursive: true });
-    const staged = [];
     for (const [i, job] of failed.entries()) {
         const log = await get(`actions/jobs/${job.id}/logs`, 'text').catch(() => '');
         const current = { step: failedStep(job), tests: failedTests(log) };
         const history = [];
-        for (const { job: old, run: r } of earlier.filter(e => e.job.name === job.name)) {
+        // Only what ran before this job: a newer run on the branch says nothing about why this failed
+        const before = earlier.filter(e => e.job.name === job.name && (e.job.started_at ?? e.run.created_at) < job.started_at);
+        for (const { job: old, run: r } of before) {
             const entry = {
                 number: r.run_number, attempt: old.run_attempt, url: old.html_url, branch: r.head_branch,
                 sha: old.head_sha, conclusion: old.conclusion, step: failedStep(old), tests: [],
@@ -104,24 +114,38 @@ async function main() {
 
         const file = `logs/${i + 1}.log`;
         fs.writeFileSync(path.join(dir, file), trimLog(log, Number(env.INPUT_MAX_LOG_LINES)));
-        staged.push({
+        const { kind, reason } = verdict(current, history, { branch: run.head_branch, sha: run.head_sha });
+        result.jobs.push({
             name: prefix ? job.name.slice(prefix.length) : job.name,
             url: job.html_url,
             ...current,
-            verdict: verdict(current, history, { branch: run.head_branch, sha: run.head_sha }),
+            verdict: kind,
+            reason,
             log: file,
         });
     }
-    return staged;
+    return { result, self };
 }
 
-let staged = [];
+let result = { v: 1, run: null, jobs: [] };
+let self = null;
 try {
-    staged = await main();
+    ({ result, self } = await main());
 } catch (error) {
     const hint = [401, 403, 404].includes(error.status) ? ' The job needs `actions: read`.' : '';
-    console.log(`::warning title=No failure summary::Could not read this run's jobs: ${error.message}.${hint}`);
+    console.log(`::warning title=No failure history::Could not read this run's jobs: ${error.message}.${hint}`);
 }
 fs.mkdirSync(dir, { recursive: true });
-fs.writeFileSync(path.join(dir, 'jobs.json'), JSON.stringify(staged, null, 2));
-fs.appendFileSync(env.GITHUB_OUTPUT, `count=${staged.length}\n`);
+const file = path.join(dir, 'result.json');
+fs.writeFileSync(file, JSON.stringify(result, null, 2));
+for (const job of result.jobs) {
+    console.log(`${job.name}: ${job.verdict}. ${job.reason}`);
+}
+// Each call in a run uploads its own artifact, and their names have to differ
+fs.appendFileSync(env.GITHUB_OUTPUT, [
+    `count=${result.jobs.length}`,
+    `file=${file}`,
+    `result=${JSON.stringify(result)}`,
+    `artifact=failure-history-${env.GITHUB_RUN_ATTEMPT}-${self?.id ?? Date.now()}`,
+    '',
+].join('\n'));

@@ -1,4 +1,4 @@
-// What ai-failure-summary knows without the model: the part of a job log worth reading, the tests
+// What failure-history works out from a failed job: the part of its log worth reading, the tests
 // that failed in it, and whether the failure is flaky or broken going by earlier runs.
 
 const TIMESTAMP = /^\d{4}-\d\d-\d\dT[\d:.]+Z ?/;
@@ -39,7 +39,8 @@ function link(entry) {
 // failed tests (`null` when its log was not read).
 //
 // Flaky means it went both ways without a reason to: passed on the same commit, or fails now and
-// then on other branches. Failing every time is broken, never flaky.
+// then on other branches. Failing every time is broken, never flaky: `broken-elsewhere` when most
+// other branches fail the same way, so the cause is outside this branch, `broken-here` otherwise.
 export function verdict(failed, history, { branch, sha }) {
     const same = entry => entry.conclusion === 'failure' && entry.step === failed.step
         && (!failed.tests.length || entry.tests === null || entry.tests.some(t => failed.tests.includes(t)));
@@ -66,7 +67,7 @@ export function verdict(failed, history, { branch, sha }) {
             : `Failed the same way in every run on this branch, back to run ${link(oldest)}.`;
     };
     if (streak.length >= 2) {
-        return { kind: 'broken', reason: sinceText() };
+        return { kind: 'broken-here', reason: sinceText() };
     }
 
     const failedElsewhere = elsewhere.filter(same);
@@ -80,7 +81,7 @@ export function verdict(failed, history, { branch, sha }) {
     const stillFailing = [...latest.values()].filter(same);
     if (latest.size >= 2 && stillFailing.length * 2 > latest.size) {
         return {
-            kind: 'broken',
+            kind: 'broken-elsewhere',
             reason: `Fails the same way in the latest run on ${stillFailing.length} of ${latest.size} other branches too, so it is not this branch's change.`,
         };
     }
@@ -92,7 +93,7 @@ export function verdict(failed, history, { branch, sha }) {
     }
 
     if (streak.length === 1) {
-        return { kind: 'broken', reason: sinceText() };
+        return { kind: 'broken-here', reason: sinceText() };
     }
     if (here[0]?.conclusion === 'success') {
         return { kind: 'new', reason: `Passed in the previous run on this branch, ${link(here[0])}.` };

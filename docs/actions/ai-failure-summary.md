@@ -2,8 +2,9 @@
 
 Writes into the run's summary page, for each failed job: **what failed**, **why**, with how sure
 it is (`certain`, `highly likely`, `likely`, `probably` or `maybe`), and **what to do next**. The
-why also says whether the failure is **flaky**, **broken**, **new** or **unknown**, going by the
-same job's earlier runs. The log lines that show it are folded underneath.
+why also carries the verdict from [`failure-history`](failure-history.md): flaky, broken on this
+branch, broken on other branches too, new or unknown. The log lines that show it are folded
+underneath.
 
 The QA workflows, [`deploy`](../workflows/deploy.md), [`docker-deploy`](../workflows/docker-deploy.md),
 [`prepare-release`](../workflows/prepare-release.md) and [`publish-npm`](../workflows/publish-npm.md)
@@ -52,23 +53,10 @@ None. The summary goes to the run's summary page.
 
 ## Dig deeper
 
-### How flaky and broken are told apart
-
-The verdict is counted from the same job, by name, in earlier runs and attempts of the workflow,
-not guessed by the model. A failure matches an earlier one when the same step failed and, where
-the log names failed tests (PHPUnit, Jest, Vitest, Playwright), at least one of the same tests did.
-In order: passed on the same commit is **flaky**. Failed the same way in the last two runs on this
-branch or more is **broken**. Failing in the latest run on most other branches is **broken**, and
-not this branch's fault. Failed the same way on two other branches or more, while most of them
-pass, is **flaky**. Failed once before on this branch is **broken**. Passed last time on this branch
-is **new**, probably the latest change. Anything else is **unknown**. Runs of deleted branches still
-count, until Github's retention removes them.
-
 ### When it says nothing
 
-Inside a reusable workflow the job summarises only its own workflow's jobs, so two calls in one run
-do not repeat each other. Without `actions: read` it warns and writes nothing. If the agent fails,
-the summary still has the verdicts, a next step that follows from them, and the end of each log.
-Runs started by `push` or `create` always get that short summary, because claude-code-action
-refuses those events. The agent reads only the staged logs and has no tools beyond reading them
-and writing its answer.
+It summarises the jobs `failure-history` checks, so inside a reusable workflow only that workflow's
+own. Without `actions: read` it warns and writes nothing. If the agent fails, the summary still
+has the verdicts, a next step that follows from them, and the end of each log. Runs started by
+`push` or `create` always get that short summary, because claude-code-action refuses those events.
+The agent reads only the staged logs and has no tools beyond reading them and writing its answer.
