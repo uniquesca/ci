@@ -6,9 +6,8 @@ why also carries the verdict from [`failure-history`](failure-history.md): flaky
 branch, broken on other branches too, new or unknown. The log lines that show it are folded
 underneath.
 
-The QA workflows, [`deploy`](../workflows/deploy.md), [`docker-deploy`](../workflows/docker-deploy.md),
-[`prepare-release`](../workflows/prepare-release.md) and [`publish-npm`](../workflows/publish-npm.md)
-run it when they are given the federation inputs. Any other workflow adds it as its last job:
+The shared workflows do not run it themselves, since one can see only its own jobs and a run may
+call several. The calling workflow adds it as its last job:
 
 ```yaml
 jobs:
@@ -27,9 +26,6 @@ jobs:
           anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
           anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
 ```
-
-For the shared workflows, pass the same three as inputs and grant the calling job those two
-permissions.
 
 ## Inputs
 

@@ -55,10 +55,6 @@ jobs:
 | `pre_cmd` | string | `''` | Command to run on the server after the containers are up, before the dependencies |
 | `post_cmd` | string | `''` | Command to run on the server once the deployment is complete |
 | `timeout` | string | `5m` | Timeout for the deployment connection and script |
-| `anthropic_federation_rule_id` | string | `''` | With the two below, turns on the [AI failure summary](../actions/ai-failure-summary.md) of a failed run. The calling job needs `permissions:` `actions: read` and `id-token: write` |
-| `anthropic_organization_id` | string | `''` | Anthropic organization the federation rule belongs to |
-| `anthropic_service_account_id` | string | `''` | Service account the AI failure summary acts as |
-| `anthropic_workspace_id` | string | `''` | Workspace the minted token is scoped to. Only needed when the rule covers more than one |
 
 ## Outputs
 
