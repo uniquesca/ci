@@ -98,5 +98,22 @@ export function verdict(failed, history, { branch, sha }) {
     if (here[0]?.conclusion === 'success') {
         return { kind: 'new', reason: `Passed in the previous run on this branch, ${link(here[0])}.` };
     }
-    return { kind: 'unknown', reason: 'Not enough earlier runs of this job to tell.' };
+    if (here.length) {
+        const previous = here[0].conclusion === 'failure' ? 'failed another way' : `was ${here[0].conclusion}`;
+        return { kind: 'unknown', reason: `The previous run on this branch, ${link(here[0])}, ${previous}.` };
+    }
+    // A first push often carries the whole change, so passing elsewhere points at it
+    const passing = [...latest.values()].filter(entry => entry.conclusion === 'success');
+    if (latest.size >= 2 && passing.length * 2 > latest.size) {
+        return {
+            kind: 'broken-here',
+            reason: `First run on this branch, and the latest run on ${passing.length} of ${latest.size} other branches passes.`,
+        };
+    }
+    return {
+        kind: 'unknown',
+        reason: latest.size >= 2
+            ? 'First run on this branch, and the other branches do not agree.'
+            : 'First run on this branch, and too few other branches to compare with.',
+    };
 }

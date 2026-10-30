@@ -1568,3 +1568,8 @@
 ## v11.36.0
 
 * Update: the shared workflows no longer run the AI failure summary; the calling workflow adds it as its last job (8a9cf26 by George Shestayev)
+
+## v11.37.0
+
+* Fix: failure-history calls a failure on a branch's first run broken-here when other branches pass (8d65c9a by George Shestayev)
+* New: ai-affected-modules gives its summary as an output, and step_summary: false leaves it to the caller (8d65c9a by George Shestayev)
