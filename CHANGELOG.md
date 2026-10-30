@@ -1564,3 +1564,7 @@
 * New: failure-history action says whether a failed job is flaky or broken, as JSON (7cbc684 by George Shestayev)
 * Update: AI failure summary calls the API directly, so push and release runs get the explanation too (59e5ebd by George Shestayev)
 * Update: rolling back ai-failure-summary to be an action again (e88564d by George Shestayev)
+
+## v11.36.0
+
+* Update: the shared workflows no longer run the AI failure summary; the calling workflow adds it as its last job (8a9cf26 by George Shestayev)
