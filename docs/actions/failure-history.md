@@ -10,7 +10,7 @@ to know whether a failure is worth acting on.
 | `broken-here` | Fails on this branch, so probably its own change |
 | `broken-elsewhere` | Fails on most other branches too, so the cause is outside this branch |
 | `new` | First failure after passing on this branch |
-| `unknown` | Not enough earlier runs to tell |
+| `unknown` | Earlier runs do not point either way |
 
 Run it as the last job, after the jobs it should check:
 
@@ -60,7 +60,8 @@ failed tests (PHPUnit, Jest, Vitest, Playwright), at least one of the same tests
 passed on the same commit is `flaky`. Failed the same way in the last two runs on this branch or more
 is `broken-here`. Failing in the latest run on most other branches is `broken-elsewhere`. Failed the
 same way on two other branches or more, while most of them pass, is `flaky`. Failed once before on
-this branch is `broken-here`. Passed last time on this branch is `new`. Anything else is `unknown`.
+this branch is `broken-here`. Passed last time on this branch is `new`. Failing on the first run of this branch while the latest run on most
+other branches, two or more, passes is `broken-here`. Anything else is `unknown`.
 Runs of deleted branches still count, until Github's retention removes them.
 
 ### Which jobs it checks

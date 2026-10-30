@@ -97,6 +97,28 @@ test('failing once before on this branch is broken here', () => {
     assert.equal(verdict(job, history, at).kind, 'broken-here');
 });
 
+test('failing on the first run of a branch while other branches pass is broken here', () => {
+    const history = [run('feature/b', 'success'), run('feature/c', 'success'), run('feature/d', 'cancelled')];
+
+    const result = verdict(job, history, at);
+    assert.equal(result.kind, 'broken-here');
+    assert.match(result.reason, /First run on this branch.*2 of 3 other branches/);
+});
+
+test('a first run with one other branch to compare with cannot tell', () => {
+    const result = verdict(job, [run('feature/b', 'success')], at);
+    assert.equal(result.kind, 'unknown');
+    assert.match(result.reason, /too few other branches/);
+});
+
+test('a previous run on the branch that failed another way cannot tell', () => {
+    const history = [run('feature/a', 'failure', { step: 'Build' }), run('feature/b', 'success'), run('feature/c', 'success')];
+
+    const result = verdict(job, history, at);
+    assert.equal(result.kind, 'unknown');
+    assert.match(result.reason, /previous run on this branch.*failed another way/);
+});
+
 test('without earlier runs it cannot tell', () => {
     assert.equal(verdict(job, [], at).kind, 'unknown');
 });

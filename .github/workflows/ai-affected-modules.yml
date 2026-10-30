@@ -45,6 +45,11 @@ on:
         required: false
         default: 15
         type: number
+      step_summary:
+        description: 'Write the decision to the job summary. Turn off when the caller prints the `summary` output in its own'
+        required: false
+        default: true
+        type: boolean
     outputs:
       all:
         description: '`true` when the change may affect the whole application, or it could not be told'
@@ -52,6 +57,9 @@ on:
       modules:
         description: 'JSON array of the affected modules, each the lower-case, hyphenated name of the directory the module lives in'
         value: ${{ jobs.decide.outputs.modules }}
+      summary:
+        description: 'The decision as Markdown, the same as the job summary'
+        value: ${{ jobs.decide.outputs.summary }}
 
 defaults:
   run:
@@ -69,6 +77,7 @@ jobs:
     outputs:
       all: ${{ steps.answer.outputs.all }}
       modules: ${{ steps.answer.outputs.modules }}
+      summary: ${{ steps.answer.outputs.summary }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
@@ -171,13 +180,14 @@ jobs:
             --tools "Read,Grep,Glob,Write"
             --allowedTools "Read,Grep,Glob,Write"
 
-      # Printed to the log as well as the summary, so the job page shows the decision
+      # Always printed to the log, so the job page shows the decision wherever the summary goes
       - name: Read the answer
         id: answer
         if: always()
         env:
           FILES: ${{ env.PROCEED == 'true' && steps.diff.outcome == 'success' }}
           TRUNCATED: ${{ steps.diff.outputs.truncated }}
+          STEP_SUMMARY: ${{ inputs.step_summary }}
         run: |
           result=.ai-affected-modules/result.json
           summary="$RUNNER_TEMP/summary.md"
@@ -186,9 +196,18 @@ jobs:
           elif ! jq -e '(.all | type == "boolean") and (.modules | type == "array")' "$result" >/dev/null 2>&1; then
             reason='The agent gave no valid answer, so everything counts as affected. The step before this one has what went wrong.'
           fi
+          publish() {
+            if [[ "$STEP_SUMMARY" == true ]]; then
+              tee -a "$GITHUB_STEP_SUMMARY" < "$summary"
+            else
+              cat "$summary"
+            fi
+            { echo 'summary<<EOF_SUMMARY'; cat "$summary"; echo 'EOF_SUMMARY'; } >> "$GITHUB_OUTPUT"
+          }
           if [[ -n "${reason:-}" ]]; then
-            printf '### Affected modules: everything\n\n%s\n' "$reason" | tee -a "$GITHUB_STEP_SUMMARY"
+            printf '### Affected modules: everything\n\n%s\n' "$reason" > "$summary"
             { echo 'all=true'; echo 'modules=[]'; } >> "$GITHUB_OUTPUT"
+            publish
             exit 0
           fi
 
@@ -229,4 +248,4 @@ jobs:
               jq -r '.unaffected[] | "| `\(.path)` | \(.reason // "" | gsub("\\|"; "/")) |"' "$result"
             fi
           } > "$summary"
-          tee -a "$GITHUB_STEP_SUMMARY" < "$summary"
+          publish

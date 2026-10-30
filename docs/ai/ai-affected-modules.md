@@ -50,6 +50,7 @@ None.
 | `max_turns` | number | `40` | How many turns the agent may spend before it has to answer |
 | `max_diff_bytes` | number | `200000` | Longest diff to stage. A bigger change is truncated and the agent is told so |
 | `timeout_minutes` | number | `15` | How long the whole job may run |
+| `step_summary` | boolean | `true` | Write the decision to the job summary. Turn off when the caller prints `summary` in its own |
 
 ## Outputs
 
@@ -57,6 +58,7 @@ None.
 |---|---|
 | `all` | `true` when the change may affect the whole application, or it could not be told |
 | `modules` | JSON array of the affected modules |
+| `summary` | The decision as Markdown, the same as the job summary |
 
 ## Dig deeper
 
