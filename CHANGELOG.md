@@ -1573,3 +1573,7 @@
 
 * Fix: failure-history calls a failure on a branch's first run broken-here when other branches pass (8d65c9a by George Shestayev)
 * New: ai-affected-modules gives its summary as an output, and step_summary: false leaves it to the caller (8d65c9a by George Shestayev)
+
+## v11.38.0
+
+* New: send-event action sends an event about the job to the Events API (e777d1b by George Shestayev)
