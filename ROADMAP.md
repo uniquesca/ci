@@ -89,13 +89,14 @@ QA, deployment and release workflows run it when given the federation inputs. St
 
 The Events API in infra-apps stores every GitHub event in the organisation, and every event a job
 sends it with `send-event`. Grafana, at grafana.unqs.ca, shows how often runs, jobs and e2e jobs
-fail and how long they take. officio's e2e jobs send their Cypress results. Still to do:
+fail and how long they take, and which tests fail. officio, form-suite and bcpnp-frontend send
+their Cypress results. It also shows the test advice, harness hints and retros the AI posted and
+whom they were for, and who uses the harness in which repository, at what cost. Still to do:
 
-- Show which e2e tests fail most often, and which pass on a re-run, from officio's results.
-- Send the Cypress results from the other repositories with e2e tests.
-- Have every AI workflow that posts something send an event with `send-event`, and count them:
-  harness hints, test advice, retros, failure summaries. Include whether it found something, so
-  a "no gap" counts too.
+- Count the times an AI workflow checked and found nothing: test advice with no gap, a pull
+  request that was no fit for the harness. Those post no comment, so the workflows have to send
+  them with `send-event`. What they post is already counted, from the comments.
+- Count failure summaries. They go to the run's summary page, not a comment.
 - Store the `failure-history` verdict for each failed job and test the same way.
 - For each, also count whether somebody acted on it: used the harness afterwards, added the test
   before merging, or re-ran a job called flaky and saw it pass.
