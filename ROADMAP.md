@@ -49,8 +49,8 @@ first run or Copilot review took several rounds. Still to do:
 
 ### Measure how the harness is used
 
-A monthly report, next to the AI cost report, showing per person how many pull requests they
-opened, and how each was made:
+A report in Grafana, from the Events API, showing per person how many pull requests they opened,
+and how each was made:
 
 - **Harness:** the branch starts with `ai-feature/`.
 - **Local AI:** a commit has a `Co-Authored-By: Claude` line, or the description says it was
@@ -91,8 +91,12 @@ The Events API in infra-apps stores every GitHub event in the organisation, and 
 sends it with `send-event`. Grafana, at grafana.unqs.ca, shows how often runs, jobs and e2e jobs
 fail and how long they take, and which tests fail. officio, form-suite and bcpnp-frontend send
 their Cypress results. It also shows the test advice, harness hints and retros the AI posted and
-whom they were for, and who uses the harness in which repository, at what cost. Still to do:
+whom they were for, and who uses the harness in which repository, at what cost. Only the people
+listed in devops-infra's `grafana/users.json` can sign in. Still to do:
 
+- Switch on Cypress retries in the e2e repositories. Until then no test can pass on a retry, so
+  the dashboard cannot tell a flaky test from a broken one.
+- Send the Cypress results from any other repository with e2e tests.
 - Count the times an AI workflow checked and found nothing: test advice with no gap, a pull
   request that was no fit for the harness. Those post no comment, so the workflows have to send
   them with `send-event`. What they post is already counted, from the comments.
@@ -100,7 +104,8 @@ whom they were for, and who uses the harness in which repository, at what cost. 
 - Store the `failure-history` verdict for each failed job and test the same way.
 - For each, also count whether somebody acted on it: used the harness afterwards, added the test
   before merging, or re-ran a job called flaky and saw it pass.
-- Move the AI cost report from comms-api to the Events API, so there is one place to look.
+- Move the AI cost report from comms-api to the Events API, so there is one place to look. Wait
+  until the 2026-11-01 report has gone out; its data is only in comms-api.
 
 ### Learn from issues that needed a lot of rounds
 
