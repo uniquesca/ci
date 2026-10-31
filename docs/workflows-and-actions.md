@@ -125,6 +125,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | [`qa-report`](actions/qa-report.md) | Runs a check and keeps what it printed for an implementing agent, when it failed |
 | [`failure-history`](actions/failure-history.md) | Says whether each failed job of a run is flaky, broken by this branch or broken outside it, from earlier runs. No AI |
 | [`docker-qa-checks`](actions/docker-qa-checks.md) | Tests, code style and Psalm through `task.sh`, with the output uploaded as an artifact |
+| [`send-event`](actions/send-event.md) | Sends an event about the job, such as a test report, to the Events API for the CI reports in Grafana |
 
 ### Docker
 

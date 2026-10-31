@@ -1,0 +1,84 @@
+name: Send event
+
+description: Send an event about this job to the Events API, for the CI reports in Grafana. Never fails the job
+
+inputs:
+  type:
+    description: 'What the event is, such as `e2e-result`. Lower case, digits, `.`, `-` and `_`'
+    required: true
+  data_file:
+    description: 'JSON file holding an object, sent as the event''s data. A missing file sends nothing'
+    required: false
+    default: ''
+  data:
+    description: 'JSON object added to the data, over what `data_file` holds'
+    required: false
+    default: '{}'
+  version:
+    description: 'Version of the shape of `data`. Raise it when the shape changes'
+    required: false
+    default: '1'
+  token:
+    description: 'The Events API token, `EVENTS_API_TOKEN`. Empty sends nothing'
+    required: true
+  url:
+    description: 'Where to send it'
+    required: false
+    default: 'https://events.unqs.ca/events'
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TYPE: ${{ inputs.type }}
+        DATA_FILE: ${{ inputs.data_file }}
+        DATA: ${{ inputs.data }}
+        VERSION: ${{ inputs.version }}
+        TOKEN: ${{ inputs.token }}
+        URL: ${{ inputs.url }}
+        # The job's ID in GitHub's own events for it, and in the `ci_jobs` view
+        JOB_ID: ${{ job.check_run_id }}
+      run: |
+        if [[ -z "$TOKEN" ]]; then
+          echo "::notice title=Event not sent::No token, so the $TYPE event was not sent"
+          exit 0
+        fi
+        if [[ -n "$DATA_FILE" && ! -f "$DATA_FILE" ]]; then
+          echo "::notice title=Event not sent::$DATA_FILE does not exist, so the $TYPE event was not sent"
+          exit 0
+        fi
+
+        body=$(mktemp)
+        trap 'rm -f "$body"' EXIT
+
+        # The file is read by jq, not passed as an argument: a test report can be larger than the
+        # command line allows. A retry sends the same `id`, which the API stores only once.
+        if ! jq -n \
+          --arg type "$TYPE" --arg version "$VERSION" --argjson data "$DATA" \
+          --slurpfile file "${DATA_FILE:-/dev/null}" \
+          --arg repo "$GITHUB_REPOSITORY" --arg run_id "$GITHUB_RUN_ID" --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+          --arg job "$GITHUB_JOB" --arg job_id "$JOB_ID" '
+          {
+            id: "\($repo)/\($run_id)/\($run_attempt)/\(if $job_id == "" then $job else $job_id end)/\($type)",
+            type: $type,
+            version: ($version | tonumber),
+            repo: $repo,
+            run_id: ($run_id | tonumber),
+            run_attempt: ($run_attempt | tonumber),
+            job: $job,
+            job_id: (if $job_id == "" then null else $job_id | tonumber end),
+            data: (($file[0] // {}) + $data)
+          } | with_entries(select(.value != null))' > "$body"; then
+          echo "::warning title=Event not sent::Could not build the $TYPE event - is the data a JSON object?"
+          exit 0
+        fi
+
+        if ! response=$(curl --silent --show-error --fail-with-body --max-time 30 \
+          --retry 2 --retry-connrefused \
+          -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+          --data-binary "@$body" "$URL" 2>&1); then
+          echo "::warning title=Event not sent::The $TYPE event was not stored: $response"
+          exit 0
+        fi
+        echo "Sent the $TYPE event: $response"

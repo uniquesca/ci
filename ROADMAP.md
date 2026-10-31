@@ -87,20 +87,19 @@ QA, deployment and release workflows run it when given the federation inputs. St
 
 ### See what CI and the AI workflows do
 
-Nobody can see today how often CI fails and why, or how often the AI workflows say something and
-whether anyone acts on it. Add reports to the CI Dashboard in infra-apps. It already hears about
-every workflow run through the organisation webhook. Still to do:
+The Events API in infra-apps stores every GitHub event in the organisation, and every event a job
+sends it with `send-event`. Grafana, at grafana.unqs.ca, shows how often runs, jobs and e2e jobs
+fail and how long they take. officio's e2e jobs send their Cypress results. Still to do:
 
-- When a run fails, fetch its `failure-history` result and store the verdict for each job and
-  test. The dashboard needs read access to the organisation's Actions for this.
-- Show which tests are flaky most often, and which failures are broken on other branches too.
-- Have every AI workflow that posts something add a hidden `<!-- ai-event {...} -->` line, the
-  same way `<!-- ai-cost -->` works for comms-api, and count them: harness hints, test advice,
-  retros, failure summaries.
+- Show which e2e tests fail most often, and which pass on a re-run, from officio's results.
+- Send the Cypress results from the other repositories with e2e tests.
+- Have every AI workflow that posts something send an event with `send-event`, and count them:
+  harness hints, test advice, retros, failure summaries. Include whether it found something, so
+  a "no gap" counts too.
+- Store the `failure-history` verdict for each failed job and test the same way.
 - For each, also count whether somebody acted on it: used the harness afterwards, added the test
   before merging, or re-ran a job called flaky and saw it pass.
-- Keep all counts in one app, so there is one place to look. Decide whether the cost report moves
-  there from comms-api.
+- Move the AI cost report from comms-api to the Events API, so there is one place to look.
 
 ### Learn from issues that needed a lot of rounds
 
