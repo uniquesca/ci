@@ -1577,3 +1577,8 @@
 ## v11.38.0
 
 * New: send-event action sends an event about the job to the Events API (e777d1b by George Shestayev)
+
+## v11.39.0
+
+* Update: added ability to run prepare-release on a specified ref (7f77bd0 by George Shestayev)
+* QA: roadmap shows the AI activity reports in Grafana (8e674ac by George Shestayev)
