@@ -57,10 +57,11 @@ jobs:
 | `coverage_badge_file` | string | `coverage.svg` | Badge path. Ignored unless `generate_coverage_badge` |
 | `generate_coverage_report` | boolean | `false` | Generate and commit a Markdown coverage report |
 | `coverage_report_file` | string | `docs/coverage.md` | Report path. Ignored unless `generate_coverage_report` |
+| `ref` | string | `''` | Branch to check out and push the release commit to. Empty means the branch the run is on |
 
 ## Outputs
 
-None. The result is a commit on the branch the run is on.
+None. The result is a commit on `ref`, or on the branch the run is on.
 
 ## Dig deeper
 

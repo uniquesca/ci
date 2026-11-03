@@ -97,6 +97,11 @@ on:
         required: false
         default: 'docs/coverage.md'
         type: string
+      ref:
+        description: 'Branch to check out and push the release commit to. Defaults to the branch the run is on'
+        required: false
+        default: ''
+        type: string
 
 defaults:
   run:
@@ -114,6 +119,7 @@ jobs:
       # directory prefix
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.ref }}
           sparse-checkout: _ci_environment.json
           sparse-checkout-cone-mode: false
 
@@ -131,6 +137,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          # A branch, not a tag or SHA - the push at the end goes to whatever is checked out here
+          ref: ${{ inputs.ref }}
           # Full history, because the changelog is generated from the log between two tags
           fetch-depth: 0
           # None of the file contents that history is made of, though - the changelog is built
