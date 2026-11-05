@@ -43,6 +43,7 @@ jobs:
 | `node_version` | number | `20` | Node version to build and publish with |
 | `cleanup_dependencies` | boolean | `false` | Strip `dependencies`, `devDependencies` and `scripts` from the published `package.json` |
 | `github_release` | boolean | `true` | Also publish a Github release, with the built folder zipped and attached |
+| `ref` | string | `''` | Ref to build from, usually the release tag. Empty means the ref the run is on. Set it when the caller is not running on the tag, as a release workflow started on `develop` is not |
 
 ## Outputs
 
