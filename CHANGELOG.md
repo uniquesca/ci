@@ -1590,3 +1590,7 @@
 ## v11.41.0
 
 * New: introduced release-flow workflow (ea500f1 by George Shestayev)
+
+## v11.42.0
+
+* Update: improving release flow to cover all the scenarios (37e75fa by George Shestayev)
