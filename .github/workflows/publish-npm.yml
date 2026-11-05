@@ -41,6 +41,11 @@ on:
         required: false
         type: string
         default: '.'
+      ref:
+        description: 'Ref to build the package from, usually the release tag. Defaults to the ref the run is on'
+        required: false
+        type: string
+        default: ''
 
 defaults:
   run:
@@ -62,6 +67,10 @@ jobs:
 
       - name: Checkout application repository
         uses: actions/checkout@v6
+        with:
+          # A caller that is not running on the tag - a release workflow started on develop -
+          # passes the tag here, so what is built is what was released and not develop since
+          ref: ${{ inputs.ref }}
 
       - name: Install dependencies
         uses: uniquesca/ci/install-packages@v11
