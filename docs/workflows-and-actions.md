@@ -67,6 +67,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 |---|---|
 | [`get-version.yml`](workflows/get-version.md) | Works out the version from a `release/**` or `hotfix/**` branch, or a tag |
 | [`prepare-release.yml`](workflows/prepare-release.md) | Writes the version and changelog, optionally migrates the DB dump and builds a coverage badge and report, and commits it all |
+| [`release-flow.yml`](workflows/release-flow.md) | Releases a version from one button: creates and prepares the release branch, merges it into the main branch and `develop`, and tags it |
 | [`publish-npm.yml`](workflows/publish-npm.md) | Builds and publishes the package to the Github registry, and publishes a Github release |
 
 ### Deployment
