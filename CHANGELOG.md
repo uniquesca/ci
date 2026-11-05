@@ -1586,3 +1586,7 @@
 ## v11.40.0
 
 * Update: added ability to run publish npm on a specified ref (93e074b by George Shestayev)
+
+## v11.41.0
+
+* New: introduced release-flow workflow (ea500f1 by George Shestayev)
