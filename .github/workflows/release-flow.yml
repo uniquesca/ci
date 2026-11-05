@@ -54,6 +54,76 @@ on:
         required: false
         default: false
         type: boolean
+      changelog_dir:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: '.'
+        type: string
+      coverage_badge_file:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: 'coverage.svg'
+        type: string
+      coverage_report_file:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: 'docs/coverage.md'
+        type: string
+      use_db:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: false
+        type: boolean
+      update_db:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: false
+        type: boolean
+      sql_command:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: ''
+        type: string
+      mysql_version:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: '8.0'
+        type: string
+      mysql_config:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: ''
+        type: string
+      db_dump_path:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: ''
+        type: string
+      migration_command:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: './vendor/bin/phinx migrate'
+        type: string
+      pre_cmd:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: ''
+        type: string
+      post_cmd:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: ''
+        type: string
+      node_version:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: 20
+        type: number
+      env_variables:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: '{}'
+        type: string
 
 defaults:
   run:
@@ -159,6 +229,20 @@ jobs:
       generate_changelog: ${{ inputs.generate_changelog }}
       generate_coverage_badge: ${{ inputs.generate_coverage_badge }}
       generate_coverage_report: ${{ inputs.generate_coverage_report }}
+      changelog_dir: ${{ inputs.changelog_dir }}
+      coverage_badge_file: ${{ inputs.coverage_badge_file }}
+      coverage_report_file: ${{ inputs.coverage_report_file }}
+      use_db: ${{ inputs.use_db }}
+      update_db: ${{ inputs.update_db }}
+      sql_command: ${{ inputs.sql_command }}
+      mysql_version: ${{ inputs.mysql_version }}
+      mysql_config: ${{ inputs.mysql_config }}
+      db_dump_path: ${{ inputs.db_dump_path }}
+      migration_command: ${{ inputs.migration_command }}
+      pre_cmd: ${{ inputs.pre_cmd }}
+      post_cmd: ${{ inputs.post_cmd }}
+      node_version: ${{ inputs.node_version }}
+      env_variables: ${{ inputs.env_variables }}
 
   close:
     name: Merge and tag

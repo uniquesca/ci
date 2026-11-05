@@ -65,6 +65,7 @@ jobs:
 | `generate_changelog` | boolean | `true` | Passed to `prepare-release.yml` |
 | `generate_coverage_badge` | boolean | `false` | Passed to `prepare-release.yml` |
 | `generate_coverage_report` | boolean | `false` | Passed to `prepare-release.yml` |
+| `changelog_dir`, `coverage_badge_file`, `coverage_report_file`, `use_db`, `update_db`, `sql_command`, `mysql_version`, `mysql_config`, `db_dump_path`, `migration_command`, `pre_cmd`, `post_cmd`, `node_version`, `env_variables` | | as in [`prepare-release.yml`](prepare-release.md) | Passed to `prepare-release.yml` |
 
 ## Outputs
 
