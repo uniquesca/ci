@@ -1,0 +1,240 @@
+name: Release flow
+
+# Starts `release/<version>` from develop, prepares it, then does what `git flow release finish`
+# would. Each job needs the one before it, so nothing is merged or tagged unless the preparation
+# succeeded. Publishing is left to the caller, as a job that needs this one.
+#
+# The branch and the tag are made with GITHUB_TOKEN, so they start no workflows: a caller's own
+# prepare-release (on create or push) and publish (on tags) workflows do not run a second time.
+# Only the pushes to the main branch and develop use a token of the release GitHub App, which the
+# branch rules have to let through.
+on:
+  workflow_call:
+    secrets:
+      RELEASE_APP_PRIVATE_KEY:
+        description: 'Private key of the release GitHub App'
+        required: true
+      COMPOSER_ACCESS_TOKEN:
+        description: 'Access token for cloning Uniques private repositories, for the preparation'
+        required: false
+      NPM_ACCESS_TOKEN:
+        description: 'Access token for authentication with the NPM registry, for the preparation'
+        required: false
+    inputs:
+      version:
+        description: 'Version to release, x.y.z'
+        required: true
+        type: string
+      release_app_id:
+        description: 'App ID or client ID of the release GitHub App'
+        required: true
+        type: string
+      main_branch:
+        description: 'Branch the release is merged into besides develop'
+        required: false
+        default: 'main'
+        type: string
+      qa_workflow:
+        description: 'File name of the QA workflow that has to have passed on the develop commit being released'
+        required: false
+        default: 'qa-checks.yml'
+        type: string
+      generate_changelog:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: true
+        type: boolean
+      generate_coverage_badge:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: false
+        type: boolean
+      generate_coverage_report:
+        description: 'Passed to prepare-release.yml'
+        required: false
+        default: false
+        type: boolean
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  VERSION: ${{ inputs.version }}
+  BRANCH: release/${{ inputs.version }}
+  MAIN: ${{ inputs.main_branch }}
+
+jobs:
+  start:
+    name: Start the release branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      # Anyone with write access can run a workflow by hand. `role_name`, not `permission`: the
+      # latter reports a maintainer as "write"
+      - name: Check the user is a maintainer or an admin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" --jq .role_name)
+          if [ "$role" != "admin" ] && [ "$role" != "maintain" ]; then
+            echo "Only repository maintainers and admins can release, and $GITHUB_ACTOR is '$role'"
+            exit 1
+          fi
+
+      # Only to fail before a branch exists if the app's key is wrong or the app is not installed
+      # here; the token itself is not used in this job
+      - name: Check the release app can get a token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.release_app_id }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          ref: develop
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Check the version and develop
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_WORKFLOW: ${{ inputs.qa_workflow }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "The version must look like 1.2.3, got '$VERSION'"
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
+            echo "Tag $VERSION already exists"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "Branch $BRANCH already exists. Finish or delete it first"
+            exit 1
+          fi
+
+          latest=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "$VERSION is not above the latest release, $latest"
+            exit 1
+          fi
+
+          # The preparation runs PHPUnit on one PHP version at most; the full QA matrix is what
+          # already ran on develop
+          sha=$(git rev-parse HEAD)
+          qa=$(gh run list --workflow "$QA_WORKFLOW" --commit "$sha" --event push --limit 1 \
+            --json conclusion,url --jq '.[0] // empty')
+          if [ "$(jq -r '.conclusion // empty' <<< "$qa")" != "success" ]; then
+            echo "$QA_WORKFLOW has not passed on develop at ${sha:0:7}: ${qa:-no run found}"
+            exit 1
+          fi
+
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION from develop at \`${sha:0:7}\`, previous release $latest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.check.outputs.sha }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$SHA" > /dev/null
+
+  prepare:
+    name: Prepare release
+    needs: [ start ]
+    permissions:
+      contents: write
+    uses: uniquesca/ci/.github/workflows/prepare-release.yml@v11
+    secrets:
+      COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+      NPM_ACCESS_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+    with:
+      version: ${{ inputs.version }}
+      ref: release/${{ inputs.version }}
+      generate_changelog: ${{ inputs.generate_changelog }}
+      generate_coverage_badge: ${{ inputs.generate_coverage_badge }}
+      generate_coverage_report: ${{ inputs.generate_coverage_report }}
+
+  close:
+    name: Merge and tag
+    needs: [ prepare ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get a release app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.release_app_id }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: develop
+          fetch-depth: 0
+
+      - name: Merge into the main branch and develop
+        id: merge
+        run: |
+          git config user.email "gha@uniques.ca"
+          git config user.name "GitHub Actions"
+
+          git fetch origin "$BRANCH"
+
+          git checkout -B "$MAIN" "origin/$MAIN"
+          git merge --no-ff "origin/$BRANCH" -m "Merge branch '$BRANCH'"
+
+          # Under the tag's name, as `git flow release finish` records it. The tag itself is made
+          # in the next step
+          git checkout -B develop origin/develop
+          git merge --no-ff "$MAIN" -m "Merge tag '$VERSION' into develop"
+
+          # All or nothing, so a rejected push cannot leave the main branch released and develop
+          # behind
+          git push --atomic origin "$MAIN" develop
+
+          echo "main_sha=$(git rev-parse "$MAIN")" >> "$GITHUB_OUTPUT"
+          echo "Merged into \`$MAIN\` at \`$(git rev-parse --short "$MAIN")\` and \`develop\` at \`$(git rev-parse --short develop)\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.merge.outputs.main_sha }}
+        run: |
+          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="$VERSION" -f message="$VERSION" -f object="$SHA" -f type=commit --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$tag_sha" > /dev/null
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$BRANCH"
+          echo "Tagged $VERSION and deleted \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          echo "**Closing the release failed.** If \`$MAIN\` and \`develop\` were pushed, finish by hand: tag \`$MAIN\` as $VERSION (the tag push publishes it)." >> "$GITHUB_STEP_SUMMARY"
+
+  # A failed or cancelled release leaves nothing behind, so running it again starts clean from
+  # develop - which is also where the fix for a failed preparation goes. Only after `start`
+  # succeeded: that is when the branch is this run's own, not one that already existed
+  clean-up:
+    name: Delete the release branch
+    needs: [ start, prepare, close ]
+    if: always() && needs.start.result == 'success' && needs.close.result != 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete the release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" > /dev/null 2>&1; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$BRANCH"
+            echo "The release failed, so \`$BRANCH\` was deleted. Fix the cause and run the release again." >> "$GITHUB_STEP_SUMMARY"
+          fi
