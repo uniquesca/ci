@@ -1582,3 +1582,7 @@
 
 * Update: added ability to run prepare-release on a specified ref (7f77bd0 by George Shestayev)
 * QA: roadmap shows the AI activity reports in Grafana (8e674ac by George Shestayev)
+
+## v11.40.0
+
+* Update: added ability to run publish npm on a specified ref (93e074b by George Shestayev)
