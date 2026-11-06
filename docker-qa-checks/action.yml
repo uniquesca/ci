@@ -16,6 +16,11 @@ inputs:
     required: false
     default: 'true'
     type: string
+  run_tests:
+    description: 'Whether to run the test suite. Turn it off when the caller runs the tests in a job of its own, for instance once per variant of the application'
+    required: false
+    default: 'true'
+    type: string
   autofix_token:
     description: 'Access token the automatic code style fixes are pushed with. Supply one and the fix commit starts its own checks, so a fixable problem is fixed and reported green without anybody touching it. Without it the fixes are pushed with the run''s own `GITHUB_TOKEN`, which needs `permissions: contents: write` and leaves the run for the fix commit waiting on "Approve workflows to run"'
     required: false
@@ -83,6 +88,7 @@ runs:
         "$AI_REPORT" run cs-check.log ./task.sh cs-check
 
     - name: Run tests
+      if: ${{ inputs.run_tests == 'true' }}
       shell: bash
       run: |
         if ./task.sh supports test > /dev/null; then
