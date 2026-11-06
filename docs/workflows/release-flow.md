@@ -79,6 +79,8 @@ None. The result is the release merged into the main branch and `develop`, and t
    get a token, the version is `x.y.z` and above the latest tag, neither the tag nor the branch exists,
    and every `qa_workflow` passed on the push of the current `develop` commit. Nothing runs on the
    release branch itself, so a repository with e2e tests lists them here.
+   A failed check puts its reason in the job summary and as an error annotation; a QA run that is
+   still in progress fails the check too, so wait for it to pass and run the release again.
 2. `release/<version>` is created from that commit, and `prepare-release.yml` commits the version,
    changelog and coverage files to it.
 3. The branch is merged into `main_branch` as `Merge branch 'release/<version>'`, and that into
