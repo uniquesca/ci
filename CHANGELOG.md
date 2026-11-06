@@ -1607,4 +1607,8 @@
 
 * New: added github authentication for packages installation to avoid throttling (a07ebe8 by George Shestayev)
 * Fix: fixed bad deafult composer_cache_dir in setup-app action
-* Fix: fixed composer folder creation in install-packages action 
+* Fix: fixed composer folder creation in install-packages action
+
+## v11.44.1
+
+* Update: improved release-flow to post a summary with the reason of failure (02dce49 by George Shestayev)
