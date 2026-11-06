@@ -35,7 +35,7 @@ on:
         default: 'main'
         type: string
       qa_workflow:
-        description: 'File name of the QA workflow that has to have passed on the develop commit being released'
+        description: 'File name(s) of the workflow(s) that have to have passed on the develop commit being released, separated by spaces'
         required: false
         default: 'qa-checks.yml'
         type: string
@@ -195,15 +195,18 @@ jobs:
             exit 1
           fi
 
-          # The preparation runs PHPUnit on one PHP version at most; the full QA matrix is what
-          # already ran on develop
+          # The preparation runs PHPUnit on one PHP version at most; the full QA matrix, and e2e
+          # tests where a repository lists them, are what already ran on develop. No workflow runs
+          # on the release branch
           sha=$(git rev-parse HEAD)
-          qa=$(gh run list --workflow "$QA_WORKFLOW" --commit "$sha" --event push --limit 1 \
-            --json conclusion,url --jq '.[0] // empty')
-          if [ "$(jq -r '.conclusion // empty' <<< "$qa")" != "success" ]; then
-            echo "$QA_WORKFLOW has not passed on develop at ${sha:0:7}: ${qa:-no run found}"
-            exit 1
-          fi
+          for workflow in $QA_WORKFLOW; do
+            qa=$(gh run list --workflow "$workflow" --commit "$sha" --event push --limit 1 \
+              --json conclusion,url --jq '.[0] // empty')
+            if [ "$(jq -r '.conclusion // empty' <<< "$qa")" != "success" ]; then
+              echo "$workflow has not passed on develop at ${sha:0:7}: ${qa:-no run found}"
+              exit 1
+            fi
+          done
 
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "Releasing $VERSION from develop at \`${sha:0:7}\`, previous release $latest" >> "$GITHUB_STEP_SUMMARY"
