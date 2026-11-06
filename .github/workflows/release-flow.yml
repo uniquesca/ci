@@ -148,10 +148,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          fail() {
+            echo "::error::$1"
+            echo "**The release did not start.** $1" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+
           role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" --jq .role_name)
           if [ "$role" != "admin" ] && [ "$role" != "maintain" ]; then
-            echo "Only repository maintainers and admins can release, and $GITHUB_ACTOR is '$role'"
-            exit 1
+            fail "Only repository maintainers and admins can release, and $GITHUB_ACTOR is '$role'"
           fi
 
       # Only to fail before a branch exists if the app's key is wrong or the app is not installed
@@ -174,25 +179,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QA_WORKFLOW: ${{ inputs.qa_workflow }}
         run: |
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "The version must look like 1.2.3, got '$VERSION'"
+          fail() {
+            echo "::error::$1"
+            echo "**The release did not start.** $1" >> "$GITHUB_STEP_SUMMARY"
             exit 1
+          }
+
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            fail "The version must look like 1.2.3, got '$VERSION'"
           fi
 
           if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
-            echo "Tag $VERSION already exists"
-            exit 1
+            fail "Tag $VERSION already exists"
           fi
 
           if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
-            echo "Branch $BRANCH already exists. Finish or delete it first"
-            exit 1
+            fail "Branch \`$BRANCH\` already exists. Finish or delete it first"
           fi
 
           latest=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
           if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
-            echo "$VERSION is not above the latest release, $latest"
-            exit 1
+            fail "$VERSION is not above the latest release, $latest"
           fi
 
           # The preparation runs PHPUnit on one PHP version at most; the full QA matrix, and e2e
@@ -201,10 +208,17 @@ jobs:
           sha=$(git rev-parse HEAD)
           for workflow in $QA_WORKFLOW; do
             qa=$(gh run list --workflow "$workflow" --commit "$sha" --event push --limit 1 \
-              --json conclusion,url --jq '.[0] // empty')
-            if [ "$(jq -r '.conclusion // empty' <<< "$qa")" != "success" ]; then
-              echo "$workflow has not passed on develop at ${sha:0:7}: ${qa:-no run found}"
-              exit 1
+              --json status,conclusion,url --jq '.[0] // empty')
+            at="on develop at \`${sha:0:7}\`"
+            if [ -z "$qa" ]; then
+              fail "No $workflow run found $at. Push develop or rerun QA, then release again"
+            fi
+            url=$(jq -r .url <<< "$qa")
+            conclusion=$(jq -r '.conclusion // empty' <<< "$qa")
+            if [ "$(jq -r .status <<< "$qa")" != "completed" ]; then
+              fail "$workflow is still running $at ([run]($url)). Release again once it passes"
+            elif [ "$conclusion" != "success" ]; then
+              fail "$workflow ended with '$conclusion' $at ([run]($url)). Fix develop, then release again"
             fi
           done
 
