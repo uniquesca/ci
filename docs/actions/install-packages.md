@@ -23,6 +23,7 @@ one call covers a PHP repository, a JavaScript one, and one that is both.
 | `composer_lock` | no | `composer.lock` | Alternative lock file to install from |
 | `composer_cache_dir` | no | `false` | Cache directory. Asks Composer when unset or missing |
 | `composer_access_token` | no | | Token for `satis.unqs.ca`, the Uniques Composer registry |
+| `github_token` | no | `github.token` | Token Composer downloads GitHub dist archives with. Empty to download anonymously |
 | `skip_npm_yarn` | no | `false` | Skip NPM and Yarn entirely |
 | `npm_install_cmd` | no | `npm install` | Command that installs, when NPM is the package manager |
 | `npm_cache_dir` | no | `false` | Cache directory. Asks NPM when unset or missing |
@@ -61,9 +62,13 @@ so a changed lock file still starts from a warm cache.
 version matrix, say, where an unlocked leg resolves different packages. Give them different
 fragments and neither restores the other's cache.
 
+A `composer_cmd` with `--no-dev` gets its own Composer key, so it never saves a cache that a dev
+install then hits exactly and keeps re-downloading the dev packages around.
+
 ### Credentials, and where they are written
 
-Composer's token goes in with `composer config --auth`, and any `auth.json` in the working
+Composer's tokens go in with `composer config --auth` - the satis one, and `github_token` for
+GitHub dist archives, which GitHub refuses to serve anonymously at CI volumes - and any `auth.json` in the working
 directory is deleted before and after. NPM and Yarn get a generated `.npmrc` pointing `@uniquesca`
 at `npm.pkg.github.com`, and it is deleted at the end of the step for the same reason: a token
 written into the working tree is a token a later step could commit. **Neither file belongs in a
