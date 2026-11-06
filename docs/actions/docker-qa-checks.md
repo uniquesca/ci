@@ -22,6 +22,7 @@ For a repository that sets up PHP on the runner instead, use the
 | `setup_cmd` | no | `''` | Command to run before the checks |
 | `auto_fix` | no | `'true'` | Run `cs-fix` and commit what it fixed when the code style check reports something |
 | `autofix_token` | no | `''` | Token the fixes are pushed with. Empty falls back to the run's own `GITHUB_TOKEN` |
+| `run_tests` | no | `'true'` | Run the test suite. Turn it off when a job of your own runs the tests |
 | `report_name` | no | `ai-report-qa-checks` | Artifact name the check output is uploaded as |
 
 ## Outputs

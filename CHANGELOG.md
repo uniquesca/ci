@@ -1598,3 +1598,7 @@
 ## v11.42.1
 
 * Update: added an ability to pass multiple qa workflows to the release flow (b8e9a25 by George Shestayev)
+
+## v11.43.0
+
+* Update: added a toggle for running tests in docker-qa-checks (6e82357 by George Shestayev)
