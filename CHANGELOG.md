@@ -1602,3 +1602,9 @@
 ## v11.43.0
 
 * Update: added a toggle for running tests in docker-qa-checks (6e82357 by George Shestayev)
+
+## v11.44.0
+
+* New: added github authentication for packages installation to avoid throttling (a07ebe8 by George Shestayev)
+* Fix: fixed bad deafult composer_cache_dir in setup-app action
+* Fix: fixed composer folder creation in install-packages action 

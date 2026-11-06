@@ -24,6 +24,10 @@ inputs:
   composer_access_token:
     description: 'Composer access token'
     required: false
+  github_token:
+    description: 'Token Composer downloads GitHub dist archives with'
+    required: false
+    default: ${{ github.token }}
   skip_npm_yarn:
     description: 'Skip NPM/Yarn installation'
     required: false
@@ -90,8 +94,11 @@ runs:
       if: steps.composer.outputs.detected == 1
       run: |
         composer_cache_dir="${{ inputs.composer_cache_dir }}"
-        if [ -z "$composer_cache_dir" ] || [ ! -d "$composer_cache_dir" ]; then
+        if [ -z "$composer_cache_dir" ] || [ "$composer_cache_dir" == "false" ]; then
           composer_cache_dir=$(composer config cache-files-dir)
+        else
+          # Created up front: the cache is restored into it before Composer ever runs
+          mkdir -p "$composer_cache_dir"
         fi
         echo "Composer cache dir: $composer_cache_dir"
         echo "path=$composer_cache_dir" >> $GITHUB_OUTPUT
@@ -113,7 +120,9 @@ runs:
       uses: actions/cache@v5
       with:
         path: ${{ steps.composer_cache_dir.outputs.path }}
-        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.composer_cache_key_file.outputs.file)) }}
+        # A --no-dev install saves a cache without the dev packages. On an exact key hit the cache
+        # is never saved again, so a shared key would make every dev install download them anew.
+        key: ${{ runner.os }}-${{ inputs.cache_key}}-composer-${{ contains(inputs.composer_cmd, '--no-dev') && 'no-dev-' || '' }}${{ hashFiles(format('{0}/{1}', inputs.working_directory, steps.composer_cache_key_file.outputs.file)) }}
         restore-keys: |
           ${{ runner.os }}-${{ inputs.cache_key}}-composer-
 
@@ -124,6 +133,10 @@ runs:
       run: |
         rm -f auth.json
         composer config --auth bearer.satis.unqs.ca ${{ steps.access_tokens.outputs.composer_access_token }}
+        # Anonymous downloads from api.github.com get refused on shared runner IPs
+        if [[ -n "${{ inputs.github_token }}" ]]; then
+          composer config --auth github-oauth.github.com ${{ inputs.github_token }}
+        fi
         echo "Installing dependencies via Composer using command: ${{ inputs.composer_cmd }}"
         if [[ "${{ inputs.composer_lock }}" != "composer.lock" ]]; then
           mv composer.lock composer.lock_
