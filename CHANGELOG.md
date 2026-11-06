@@ -1594,3 +1594,7 @@
 ## v11.42.0
 
 * Update: improving release flow to cover all the scenarios (37e75fa by George Shestayev)
+
+## v11.42.1
+
+* Update: added an ability to pass multiple qa workflows to the release flow (b8e9a25 by George Shestayev)
