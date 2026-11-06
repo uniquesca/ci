@@ -35,7 +35,7 @@ inputs:
   composer_cache_dir:
     description: 'Composer cache directory'
     required: false
-    default: 'var/docker/.composer-cache/files/'
+    default: false
   composer_access_token:
     description: 'Token for satis.unqs.ca, the Uniques Composer registry'
     required: false

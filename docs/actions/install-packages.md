@@ -21,7 +21,7 @@ one call covers a PHP repository, a JavaScript one, and one that is both.
 | `skip_composer` | no | `false` | Skip Composer entirely |
 | `composer_cmd` | no | `composer install --no-scripts` | Command that installs. `composer update` for an unlocked job |
 | `composer_lock` | no | `composer.lock` | Alternative lock file to install from |
-| `composer_cache_dir` | no | `false` | Cache directory. Asks Composer when unset or missing |
+| `composer_cache_dir` | no | `false` | Cache directory, created if missing. Asks Composer when unset |
 | `composer_access_token` | no | | Token for `satis.unqs.ca`, the Uniques Composer registry |
 | `github_token` | no | `github.token` | Token Composer downloads GitHub dist archives with. Empty to download anonymously |
 | `skip_npm_yarn` | no | `false` | Skip NPM and Yarn entirely |
