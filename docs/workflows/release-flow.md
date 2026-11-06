@@ -61,7 +61,7 @@ jobs:
 | `version` | string | | **Required.** Version to release, `x.y.z` |
 | `release_app_id` | string | | **Required.** App ID or client ID of the release GitHub App |
 | `main_branch` | string | `main` | Branch the release is merged into besides `develop` |
-| `qa_workflow` | string | `qa-checks.yml` | QA workflow that has to have passed on the `develop` commit being released |
+| `qa_workflow` | string | `qa-checks.yml` | Workflow(s) that have to have passed on the `develop` commit being released, separated by spaces, e.g. `qa-checks.yml e2e.yml` |
 | `generate_changelog` | boolean | `true` | Passed to `prepare-release.yml` |
 | `generate_coverage_badge` | boolean | `false` | Passed to `prepare-release.yml` |
 | `generate_coverage_report` | boolean | `false` | Passed to `prepare-release.yml` |
@@ -77,7 +77,8 @@ None. The result is the release merged into the main branch and `develop`, and t
 
 1. **Checks, before anything is created.** The user is a maintainer or an admin, the release app can
    get a token, the version is `x.y.z` and above the latest tag, neither the tag nor the branch exists,
-   and `qa_workflow` passed on the push of the current `develop` commit.
+   and every `qa_workflow` passed on the push of the current `develop` commit. Nothing runs on the
+   release branch itself, so a repository with e2e tests lists them here.
 2. `release/<version>` is created from that commit, and `prepare-release.yml` commits the version,
    changelog and coverage files to it.
 3. The branch is merged into `main_branch` as `Merge branch 'release/<version>'`, and that into
@@ -95,7 +96,7 @@ how to finish by hand.
   `release_app_id`, and the app must be allowed to bypass any ruleset on the main branch and `develop`.
 * **`permissions: contents: write, actions: read`** on the calling job, and a `concurrency` group so
   two releases do not run at once.
-* **QA on pushes to `develop`.** A repository whose `qa_workflow` runs only on pull requests never
+* **QA on pushes to `develop`.** A repository whose `qa_workflow` workflows run only on pull requests never
   passes the first check.
 
 ### Why the caller's own release workflows do not run twice
