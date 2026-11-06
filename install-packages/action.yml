@@ -94,8 +94,11 @@ runs:
       if: steps.composer.outputs.detected == 1
       run: |
         composer_cache_dir="${{ inputs.composer_cache_dir }}"
-        if [ -z "$composer_cache_dir" ] || [ ! -d "$composer_cache_dir" ]; then
+        if [ -z "$composer_cache_dir" ] || [ "$composer_cache_dir" == "false" ]; then
           composer_cache_dir=$(composer config cache-files-dir)
+        else
+          # Created up front: the cache is restored into it before Composer ever runs
+          mkdir -p "$composer_cache_dir"
         fi
         echo "Composer cache dir: $composer_cache_dir"
         echo "path=$composer_cache_dir" >> $GITHUB_OUTPUT

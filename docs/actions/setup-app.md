@@ -29,7 +29,7 @@ Composer and Yarn dependencies installed, the database migrated and the cache cl
 | `docker_username` | no | | Registry username. Falls back to the `USERNAME_GITHUB` variable |
 | `docker_password` | no | | Registry password or access token |
 | `composer_cmd` | no | `./task.sh composer install --prefer-dist --no-interaction` | Command that installs the Composer dependencies |
-| `composer_cache_dir` | no | `var/docker/.composer-cache/files/` | Composer cache directory |
+| `composer_cache_dir` | no | `false` | Composer cache directory. Asks Composer when unset |
 | `composer_access_token` | no | | Token for `satis.unqs.ca`, the Uniques Composer registry |
 | `skip_composer` | no | `false` | Skip Composer entirely |
 | `yarn_install_cmd` | no | `./task.sh yarn install` | Command that installs the Yarn dependencies |
