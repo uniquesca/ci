@@ -61,6 +61,12 @@ How the three fit together, and the setup they share: [AI assisted development](
 | [`php-qa-checks.yml`](qa-checks.md#php-qa-checks-workflow) | PHPUnit, PHP_CodeSniffer and Psalm across the repository's PHP version matrix, with an optional MySQL. Fixes the code style and commits it |
 | [`npm-qa-checks.yml`](qa-checks.md#npm-qa-checks-workflow) | The `lint` and `test` scripts from `package.json`, run by NPM or Yarn |
 
+### Dependencies
+
+| Workflow | What it does |
+|---|---|
+| [`bump-dependencies.yml`](workflows/bump-dependencies.md) | Bumps Composer or Yarn packages to given versions, updates the lock files and opens a pull request |
+
 ### Release
 
 | Workflow | What it does |

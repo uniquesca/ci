@@ -1,0 +1,268 @@
+name: Bump dependencies
+
+on:
+  workflow_call:
+    secrets:
+      PR_TOKEN:
+        description: 'Token the branch is pushed and the pull request opened with. Not `GITHUB_TOKEN`: a pull request it opens starts no checks'
+        required: true
+      COMPOSER_ACCESS_TOKEN:
+        description: 'Access token for the private Composer repository. Needed only to bump Composer packages'
+        required: false
+      NPM_ACCESS_TOKEN:
+        description: 'Access token for the Github NPM registry. Needed only to bump Yarn packages'
+        required: false
+    inputs:
+      packages:
+        description: 'Packages to bump, one `name@version` per line. A name starting with `@` is a Yarn package, anything else a Composer one'
+        required: true
+        type: string
+      base_branch:
+        description: 'Branch the pull request is opened against'
+        required: false
+        default: 'develop'
+        type: string
+      allowed_prefixes:
+        description: 'Space-separated name prefixes that may be bumped'
+        required: false
+        default: 'uniquesca/ @uniquesca/'
+        type: string
+      php_version:
+        description: 'PHP version Composer resolves the lock file for'
+        required: false
+        default: '8.2'
+        type: string
+      node_version:
+        description: 'Node version Yarn runs on'
+        required: false
+        default: '20'
+        type: string
+
+defaults:
+  run:
+    shell: bash
+
+# Two bumps at once would both rewrite the lock files and conflict
+concurrency:
+  group: bump-dependencies-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump dependencies
+    runs-on: ubuntu-latest
+    steps:
+      # A manual run already needs write access, but a caller can be started by other triggers
+      - name: Check the person running it can write to the repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          permission=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ACTOR/permission" --jq .permission)
+          case "$permission" in
+            admin|maintain|write) ;;
+            *) echo "::error::$ACTOR has $permission access to $GITHUB_REPOSITORY, write is needed"; exit 1 ;;
+          esac
+
+      - name: Read the package list
+        id: list
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          ALLOWED_PREFIXES: ${{ inputs.allowed_prefixes }}
+        run: |
+          : > "$RUNNER_TEMP/composer.txt"
+          : > "$RUNNER_TEMP/yarn.txt"
+          errors=0
+          count=0
+          while IFS= read -r line; do
+            line="${line//[[:space:]]/}"
+            [[ -z "$line" ]] && continue
+            # The last @ splits name and version, since a Yarn scope starts with one
+            name="${line%@*}"
+            version="${line##*@}"
+            if [[ "$name" == "$line" || -z "$name" ]]; then
+              echo "::error::'$line' is not name@version"; errors=1; continue
+            fi
+            if ! [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::'$version' in '$line' is not a version like 1.2.3"; errors=1; continue
+            fi
+            if ! [[ "$name" =~ ^@?[a-z0-9._-]+/[a-z0-9._-]+$ ]]; then
+              echo "::error::'$name' is not a package name"; errors=1; continue
+            fi
+            allowed=0
+            for prefix in $ALLOWED_PREFIXES; do
+              [[ "$name" == "$prefix"* ]] && allowed=1
+            done
+            if [[ $allowed -eq 0 ]]; then
+              echo "::error::'$name' does not start with one of: $ALLOWED_PREFIXES"; errors=1; continue
+            fi
+            if [[ "$name" == @* ]]; then
+              echo "$name ${version#v}" >> "$RUNNER_TEMP/yarn.txt"
+            else
+              echo "$name ${version#v}" >> "$RUNNER_TEMP/composer.txt"
+            fi
+            count=$((count + 1))
+          done <<< "$PACKAGES"
+          [[ $errors -eq 0 ]] || exit 1
+          if [[ $count -eq 0 ]]; then
+            echo "::error::No packages given"; exit 1
+          fi
+          echo "composer=$([[ -s "$RUNNER_TEMP/composer.txt" ]] && echo 1 || echo 0)" >> "$GITHUB_OUTPUT"
+          echo "yarn=$([[ -s "$RUNNER_TEMP/yarn.txt" ]] && echo 1 || echo 0)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.base_branch }}
+          token: ${{ secrets.PR_TOKEN }}
+
+      # Every manifest that lists a package gets the new constraint, not only the root one. In a
+      # monorepo the root composer.json is merged from the packages' own, and
+      # `monorepo-builder validate` fails when they disagree. The constraint keeps its operator,
+      # and the text is replaced in place so the file keeps its formatting.
+      - name: Update the constraints
+        run: |
+          errors=0
+          for list in composer yarn; do
+            if [[ $list == composer ]]; then manifest=composer.json; else manifest=package.json; fi
+            while read -r name version; do
+              # A monorepo's own packages match the prefix too, and are versioned with the repo
+              # shellcheck disable=SC2016
+              own=$(git ls-files "$manifest" "*/$manifest" | xargs -r jq -r --arg n "$name" 'select(.name == $n) | .name' | head -1)
+              if [[ -n "$own" ]]; then
+                echo "::error::$name is part of this repository, not a dependency"; errors=1; continue
+              fi
+              found=0
+              while IFS= read -r file; do
+                current=$(jq -r --arg n "$name" '[.require, ."require-dev", .dependencies, .devDependencies]
+                  | map(select(. != null) | .[$n]) | map(select(. != null)) | first // empty' "$file")
+                [[ -z "$current" ]] && continue
+                found=1
+                if ! [[ "$current" =~ ^(\^|~|>=)?v?[0-9][0-9.]*$ ]]; then
+                  echo "::error file=$file::$name is '$current' here. Only a plain version with ^, ~ or >= can be bumped, change this one by hand"
+                  errors=1; continue
+                fi
+                operator="${BASH_REMATCH[1]}"
+                NAME="$name" CONSTRAINT="$operator$version" perl -0pi -e \
+                  's/("\Q$ENV{NAME}\E"\s*:\s*")[^"]*(")/$1$ENV{CONSTRAINT}$2/g' "$file"
+                echo "$file: $name $current -> $operator$version"
+              done < <(git ls-files "$manifest" "*/$manifest")
+              if [[ $found -eq 0 ]]; then
+                echo "::error::$name is not in any $manifest"; errors=1
+              fi
+            done < "$RUNNER_TEMP/$list.txt"
+          done
+          exit $errors
+
+      - name: Set up PHP
+        if: steps.list.outputs.composer == '1'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer
+
+      - name: Update composer.lock
+        if: steps.list.outputs.composer == '1'
+        env:
+          COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+          GITHUB_DIST_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t names < <(cut -d' ' -f1 "$RUNNER_TEMP/composer.txt")
+          composer config --global --auth bearer.satis.unqs.ca "$COMPOSER_ACCESS_TOKEN"
+          composer config --global --auth github-oauth.github.com "$GITHUB_DIST_TOKEN"
+          while IFS= read -r lock; do
+            dir=$(dirname "$lock")
+            changed=0
+            for name in "${names[@]}"; do
+              grep -q "\"$name\"" "$dir/composer.json" && changed=1
+            done
+            [[ $changed -eq 0 ]] && continue
+            echo "Updating $lock"
+            # Only the lock file is written, nothing is installed, so the runner's extensions do
+            # not decide what gets locked
+            (cd "$dir" && composer update "${names[@]}" --with-dependencies --no-install --no-scripts \
+              --no-interaction --ignore-platform-req='ext-*')
+          done < <(git ls-files composer.lock "*/composer.lock")
+
+      - name: Set up Node
+        if: steps.list.outputs.yarn == '1'
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node_version }}
+          package-manager-cache: false
+
+      - name: Update yarn.lock
+        if: steps.list.outputs.yarn == '1'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+        run: |
+          mapfile -t names < <(cut -d' ' -f1 "$RUNNER_TEMP/yarn.txt")
+          while IFS= read -r lock; do
+            dir=$(dirname "$lock")
+            changed=0
+            for name in "${names[@]}"; do
+              grep -q "\"$name\"" "$dir/package.json" && changed=1
+            done
+            [[ $changed -eq 0 ]] && continue
+            echo "Updating $lock"
+            # Outside the repository, so it cannot be committed
+            npmrc="$RUNNER_TEMP/npmrc"
+            {
+              echo "@uniquesca:registry=https://npm.pkg.github.com/"
+              echo "//npm.pkg.github.com/:_authToken=$NODE_AUTH_TOKEN"
+            } > "$npmrc"
+            (cd "$dir" && NPM_CONFIG_USERCONFIG="$npmrc" yarn install --production=false --ignore-scripts \
+              --non-interactive)
+          done < <(git ls-files yarn.lock "*/yarn.lock")
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ secrets.PR_TOKEN }}
+          BASE: ${{ inputs.base_branch }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          # Only the manifests and lock files: the installs above leave other files behind
+          git ls-files -m -z -- composer.json '*/composer.json' composer.lock '*/composer.lock' \
+            package.json '*/package.json' yarn.lock '*/yarn.lock' | xargs -0 -r git add --
+          if git diff --cached --quiet; then
+            echo "::notice::Already at these versions, nothing to do"
+            exit 0
+          fi
+
+          cat "$RUNNER_TEMP/composer.txt" "$RUNNER_TEMP/yarn.txt" > "$RUNNER_TEMP/all.txt"
+          count=$(wc -l < "$RUNNER_TEMP/all.txt")
+          if [[ $count -eq 1 ]]; then
+            read -r name version < "$RUNNER_TEMP/all.txt"
+            title="Update: bump $name to $version"
+            slug="${name#@}"
+            branch="deps/${slug//\//-}-$version"
+          else
+            title="Update: bump $count dependencies"
+            branch="deps/bump-$GITHUB_RUN_ID"
+          fi
+
+          {
+            echo "Requested by @$ACTOR in [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            echo
+            echo "| Package | Version |"
+            echo "|---|---|"
+            while read -r name version; do echo "| \`$name\` | $version |"; done < "$RUNNER_TEMP/all.txt"
+            echo
+            echo "Changed files:"
+            echo
+            git diff --cached --stat | sed 's/^/    /'
+          } > "$RUNNER_TEMP/body.md"
+
+          git config user.email "service@uniques.ca"
+          git config user.name "CI"
+          git checkout -B "$branch"
+          git commit -m "$title" --quiet
+          # Running the same bump again replaces the branch, and the open pull request with it
+          git push --force origin "$branch"
+
+          existing=$(gh pr list --head "$branch" --base "$BASE" --state open --json url --jq '.[0].url')
+          if [[ -n "$existing" ]]; then
+            echo "::notice::Updated $existing"
+          else
+            gh pr create --base "$BASE" --head "$branch" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi

@@ -1612,3 +1612,7 @@
 ## v11.44.1
 
 * Update: improved release-flow to post a summary with the reason of failure (02dce49 by George Shestayev)
+
+## v11.45.0
+
+* New: introduced bump-dependencies workflow (d81f7ce by George Shestayev)
