@@ -454,6 +454,9 @@ Bigger ideas, for after the steps above.
 - **More specialised AIs** (security, migrations, docs, release notes). Only once the basics are
   solid: more AIs means more noise.
 - **Version every prompt and rule,** so any past run can be explained and repeated.
+- **Merge dependency bumps without a person.** `bump-dependencies.yml` opens the pull request, and
+  a person still approves and merges it. Next: require green checks on `develop`, then let a bot
+  merge a pull request that only bumps versions, bypassing only the review.
 - **Track the numbers:** rounds per pull request, time to the first pull request and to green
   checks, cost per pull request, how often a person had to step in. And set limits: cost per issue,
   rounds without a person, run time, files changed without a review.
