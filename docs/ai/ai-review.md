@@ -82,7 +82,7 @@ thread, reply to overrule either side, or take over with `/ai-do`.
 
 **Each finding is to fix or recommended.** One to fix requests changes, which blocks the merge and,
 on a branch AI Implement pushed, starts the next round. A recommendation is yours to decide: resolve
-the threads you do not want, then comment `/ai-do` and the agent does the rest. It never approves -
+the threads you do not want, then comment `/ai-do` and the agent does the rest. A reply in the thread is a decision too, and the next round follows it. It never approves -
 merging is a person's decision. It will sometimes find nothing, which ends the loop there. And it cannot test the
 QA criteria - what it can say is that the code cannot satisfy one as written, or that nothing in the
 diff addresses the steps a criterion covers.
@@ -135,7 +135,8 @@ None. The result is a Github review on the pull request.
 ### What the review is built from
 
 The agent gets the diff of the branch against its base (three dots, so it is what this branch
-changed rather than everything on the base since), the **plan and the issue** - a review that does
+changed rather than everything on the base since), the **plan, the issue and its comments since the plan** (a person's request there wins over the
+plan) - a review that does
 not know what the change was *meant* to do is a style check, and the plan's
 [ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff against - and the review
 history with **answered threads included**, so it can read the reply where its own last concern was

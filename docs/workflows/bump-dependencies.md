@@ -42,6 +42,7 @@ jobs:
 | `allowed_prefixes` | string | `uniquesca/ @uniquesca/` | Space-separated name prefixes that may be bumped |
 | `php_version` | string | `8.2` | PHP version Composer resolves the lock file for |
 | `node_version` | string | `20` | Node version Yarn runs on |
+| `commit_installed` | boolean | `false` | Set where `vendor/` or Yarn's modules folder is committed, so the bump commits them too |
 
 ## Dig deeper
 
@@ -56,7 +57,17 @@ Then every `composer.lock` or `yarn.lock` next to a changed manifest is updated.
 the bumped packages with their own dependencies and installs nothing. Yarn runs a full install with
 scripts off, because Yarn 1 cannot update a lock file without installing.
 
-Only manifests and lock files are committed.
+Only manifests and lock files are committed, unless `commit_installed` is set.
+
+### Repositories that commit their packages
+
+Manifests inside `vendor/`, any `node_modules/` and a `--modules-folder` named in a `.yarnrc` are
+never touched, whether tracked or not: they belong to installed packages.
+
+With `commit_installed`, the packages are installed and the result is committed along with the
+lock file. Composer installs **without dev packages**, Yarn installs as `.yarnrc` says (usually
+`--production true`). Scripts do not run, so anything a post-install script would add is missing.
+Check the first such pull request in a repository against what a local install produces.
 
 ### What it refuses
 
@@ -67,8 +78,9 @@ The run fails, and opens nothing, when:
 | The person who started it has less than write access | Checked even though a manual run already needs it, in case a caller adds another trigger |
 | A name does not start with one of `allowed_prefixes` | Anyone who can run it chooses the package |
 | A name is a package of this repository | A monorepo's own packages match `uniquesca/` too |
+| The new version is lower than the one a manifest already has | A typo is likelier than a wanted downgrade |
 | A package is in no manifest | Most likely a typo. Adding a new dependency is not a bump |
-| A constraint is not a plain version with `^`, `~`, `>=` or nothing | `^1.0 \|\| ^2.0` or `self.version` has no single right answer |
+| A constraint is not a plain version with `^`, `~`, `>=` or nothing | `^1.0 \|\| ^2.0`, `self.version` or an `npm:` alias has no single right answer |
 
 Nothing is changed if one entry in the list is wrong.
 

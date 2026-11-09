@@ -29,7 +29,7 @@ Used by [`ai-implement`](../ai/ai-implement.md), which acts on the feedback, and
 | `round_marker` | no | `<!-- ai-implement-round -->` | First line of the round comment the caller posts. Used to count rounds and find the watermark |
 | `reply_marker` | no | `<!-- ai-implement-reply -->` | First line of a reply the implementing agent already posted |
 | `include_answered_threads` | no | `false` | Keep threads the implementing agent has already answered |
-| `hold_recommendations` | no | `false` | Leave out the open threads a reviewing agent only recommended, which wait for a round a person asked for |
+| `hold_recommendations` | no | `false` | Leave out the open threads a reviewing agent only recommended, which wait for a round a person asked for. One a person replied to last is decided and not held |
 | `recommendation_marker` | no | `<!-- ai-review-recommendation -->` | First line of an inline comment a reviewing agent only recommended. Has to match what [`ai-post-review`](ai-post-review.md) writes |
 | `review_marker` | no | | First line of a review a reviewing agent submitted. Empty leaves `reviewed_at` and `reviewed_sha` empty |
 | `settled_record` | no | `false` | Also write `settled.json` - the decisions already taken, where `feedback.json` is what is still open |
@@ -93,7 +93,7 @@ round, or from the pull request's creation on the first round.
 from a review whose state is `changes_requested`. A review that only commented is staged but not
 counted, so a caller can tell a recommendation from a request before starting a round nobody asked
 for. `hold_recommendations` goes further for a reviewing agent's recommendations, whatever review
-they were in: an open one is left out of both files, since only a person resolving it decides it.
+they were in: an open one is left out of both files, until a person resolves it or replies to it last.
 
 A thread whose newest comment carries `reply_marker` has been answered and is left out, or every
 round would re-address the same comment forever. A human replying after the bot puts the thread back
