@@ -4,10 +4,13 @@ name: Release flow
 # would. Each job needs the one before it, so nothing is merged or tagged unless the preparation
 # succeeded. Publishing is left to the caller, as a job that needs this one.
 #
-# The branch and the tag are made with GITHUB_TOKEN, so they start no workflows: a caller's own
-# prepare-release (on create or push) and publish (on tags) workflows do not run a second time.
-# Only the pushes to the main branch and develop use a token of the release GitHub App, which the
-# branch rules have to let through.
+# The branch, the pushes to the main branch and develop, and the tag are made with a token of the
+# release GitHub App: the rulesets let only the app create release branches and tags, so nobody
+# releases by hand. What the app makes starts workflows, so a caller must not prepare on branch
+# creation or publish on tags itself - this run does both.
+#
+# What is merged is the commit the preparation left, never a later push to the branch: changes to
+# a release go to develop, and the release runs again.
 on:
   workflow_call:
     secrets:
@@ -159,9 +162,9 @@ jobs:
             fail "Only repository maintainers and admins can release, and $GITHUB_ACTOR is '$role'"
           fi
 
-      # Only to fail before a branch exists if the app's key is wrong or the app is not installed
-      # here; the token itself is not used in this job
-      - name: Check the release app can get a token
+      # Before anything else, so a wrong key or an app not installed here fails before a branch exists
+      - name: Get a release app token
+        id: app-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ inputs.release_app_id }}
@@ -227,7 +230,7 @@ jobs:
 
       - name: Create the release branch
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SHA: ${{ steps.check.outputs.sha }}
         run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/heads/$BRANCH" -f sha="$SHA" > /dev/null
 
@@ -283,14 +286,20 @@ jobs:
 
       - name: Merge into the main branch and develop
         id: merge
+        env:
+          PREPARED: ${{ needs.prepare.outputs.sha }}
         run: |
           git config user.email "gha@uniques.ca"
           git config user.name "GitHub Actions"
 
           git fetch origin "$BRANCH"
+          if [ -z "$PREPARED" ] || [ "$(git rev-parse "origin/$BRANCH")" != "$PREPARED" ]; then
+            echo "::error::$BRANCH is not at the commit the preparation left. Changes to a release go to develop; release again"
+            exit 1
+          fi
 
           git checkout -B "$MAIN" "origin/$MAIN"
-          git merge --no-ff "origin/$BRANCH" -m "Merge branch '$BRANCH'"
+          git merge --no-ff "$PREPARED" -m "Merge branch '$BRANCH'"
 
           # Under the tag's name, as `git flow release finish` records it. The tag itself is made
           # in the next step
@@ -306,19 +315,20 @@ jobs:
 
       - name: Tag the release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SHA: ${{ steps.merge.outputs.main_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
             -f tag="$VERSION" -f message="$VERSION" -f object="$SHA" -f type=commit --jq .sha)
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$tag_sha" > /dev/null
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$BRANCH"
+          GH_TOKEN="$GITHUB_TOKEN" gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$BRANCH"
           echo "Tagged $VERSION and deleted \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Explain a failure
         if: failure()
         run: |
-          echo "**Closing the release failed.** If \`$MAIN\` and \`develop\` were pushed, finish by hand: tag \`$MAIN\` as $VERSION (the tag push publishes it)." >> "$GITHUB_STEP_SUMMARY"
+          echo "**Closing the release failed.** If \`$MAIN\` and \`develop\` were pushed but no tag was made, ask an org admin to finish it: only the release app can create the tag, and the caller's publish job has to run after it." >> "$GITHUB_STEP_SUMMARY"
 
   # A failed or cancelled release leaves nothing behind, so running it again starts clean from
   # develop - which is also where the fix for a failed preparation goes. Only after `start`

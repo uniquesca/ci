@@ -2,6 +2,10 @@ name: Prepare release
 
 on:
   workflow_call:
+    outputs:
+      sha:
+        description: 'The commit the branch is at after the preparation, its own commit or the one it started from'
+        value: ${{ jobs.prepare-release.outputs.sha }}
     secrets:
       COMPOSER_ACCESS_TOKEN:
         description: 'Access token for cloning Uniques private repositories'
@@ -133,6 +137,8 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.get-environment.outputs.env) }}
     runs-on: ${{ matrix.env.os }}
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -312,6 +318,7 @@ jobs:
         run: ${{ inputs.post_cmd }}
 
       - name: Commit changes
+        id: commit
         run: |
           git config --local user.email "service@uniques.ca"
           git config --local user.name "CI"
@@ -343,3 +350,4 @@ jobs:
           git clean -fd
           
           git diff --staged --quiet || (git commit -m "CI: automatic commit for the new release: #${GITHUB_SHA} [skip ci]" && git push)
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

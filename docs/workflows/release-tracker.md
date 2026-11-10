@@ -19,9 +19,10 @@ action:
 Comment one on the release issue. All but `/status` are for maintainers and admins only.
 
 - `/release` - merges the branch into the main branch and `develop`, tags the version and deletes the
-  branch. Needs the latest run of every check in the `release` phase passed, and the checklist
-  ticked if there is one. The tag is pushed with the release token, so it starts the repository's
-  publishing workflow.
+  branch. Needs every check in the `release` phase passed on the branch's head commit, or on the
+  commit under it when the head is a `[skip ci]` preparation commit, and the checklist ticked if
+  there is one. A push after the checks were read stops the merge. The tag is pushed with the
+  release token, so it starts the repository's publishing workflow.
 - `/sync` - merges `develop` into the branch.
 - `/abandon` - deletes the branch and closes the issue as not planned.
 - `/version 1.2.3` - renames the branch and the issue. Only with `versionCommand`.
@@ -72,6 +73,20 @@ All but `phases` are optional; the defaults are shown. `checklist` is left out w
   `/release`, `{main_sha}` and `{develop_sha}`.
 - **`releaseNotes`** leaves room in the issue for notes the repository writes itself, through the
   action's `notes` command.
+
+## Changing a release
+
+The branch stays open until `/release`, so a fix can be pushed to it, or merged into it through a
+pull request. The checks run again on the new commit, and the status comment shows the older runs as
+not on the latest commit until they do. Run the preparation on pushes to the branch as well as on
+its creation, so the changelog section takes in the fix; its `[skip ci]` commit does not start it
+again. `/release` merges the fix back into `develop`.
+
+## Rulesets
+
+The release app should be the only one that can create `release/**` and `hotfix/**` branches and
+tags, and push to the main branch, so nobody releases by hand. It also has to bypass the rules on
+`develop`.
 
 ## Tokens
 

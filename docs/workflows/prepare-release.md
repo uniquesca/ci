@@ -61,7 +61,9 @@ jobs:
 
 ## Outputs
 
-None. The result is a commit on `ref`, or on the branch the run is on.
+| Output | Description |
+|---|---|
+| `sha` | The commit the branch is at after the preparation: its own commit, or the one it started from when there was nothing to commit |
 
 ## Dig deeper
 
