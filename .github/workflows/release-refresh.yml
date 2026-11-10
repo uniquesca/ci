@@ -1,0 +1,32 @@
+name: Refresh the release issues
+
+# Brings the status comments on every open release issue up to date, and opens the issue of a
+# release branch made by hand. Called when a tracked workflow completes. See
+# docs/workflows/release-tracker.md.
+on:
+  workflow_call:
+    secrets:
+      GITHUB_API_TOKEN:
+        description: 'Token for the issues and for reading checks. Defaults to GITHUB_TOKEN'
+        required: false
+
+jobs:
+  refresh:
+    name: Refresh the release issues
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.event != 'schedule')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      packages: read
+    # Every refresh rebuilds every open issue from scratch, so a pending one that a newer one
+    # replaces is no loss
+    concurrency:
+      group: release-tracker-refresh
+    steps:
+      - uses: uniquesca/ci/release-tracker@v11
+        with:
+          command: refresh
+          branch: ${{ github.event.workflow_run.head_branch }}
+          github_token: ${{ secrets.GITHUB_API_TOKEN || github.token }}

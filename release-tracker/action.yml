@@ -1,0 +1,62 @@
+name: Release tracker
+
+description: Keeps one issue per release or hotfix branch with the status of its checks, and runs the commands posted on it. Used by the release-*.yml workflows
+
+inputs:
+  command:
+    description: 'start, refresh, command, report-sync, post-released or notes'
+    required: true
+  github_token:
+    description: 'Token for the issues, runs, releases and packages. Needs `issues: write` and `actions: read`, and more for checks on other repositories or on packages'
+    required: false
+    default: ${{ github.token }}
+  release_token:
+    description: 'Token branches are created and deleted with. Not GITHUB_TOKEN: a branch it creates starts no workflows. Defaults to `github_token`'
+    required: false
+    default: ''
+  config_file:
+    description: 'Path of the settings in the repository, read from its default branch'
+    required: false
+    default: '.github/release-tracker.json'
+  type:
+    description: 'start: release or hotfix'
+    required: false
+  version:
+    description: 'start: the version, x.y.z'
+    required: false
+  branch:
+    description: 'refresh: the branch a finished run was on, to open its issue if it has none. report-sync and notes: the release branch'
+    required: false
+  result:
+    description: 'report-sync: merged, up-to-date or conflict'
+    required: false
+  detail:
+    description: 'report-sync: the merge commit, or the conflicting files separated by spaces'
+    required: false
+  main_sha:
+    description: 'post-released: the main branch commit the release was merged as'
+    required: false
+  develop_sha:
+    description: 'post-released: the develop commit the release was merged as'
+    required: false
+  notes_dir:
+    description: 'notes: directory with meta.json (previousTag, head, commits), changelog.md and an optional overview.md'
+    required: false
+
+outputs:
+  command:
+    description: 'command: the command posted, empty when the comment holds none'
+  refused:
+    description: 'command: `true` when the command was refused, with the reasons posted on the issue'
+  branch:
+    description: 'start: the branch created. command: the release branch, for /release and /sync'
+  version:
+    description: 'command: the version, for /release and /sync'
+  type:
+    description: 'command: release or hotfix, for /release and /sync'
+  issue:
+    description: 'start: the number of the release issue'
+
+runs:
+  using: 'node24'
+  main: 'index.js'

@@ -74,6 +74,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | [`get-version.yml`](workflows/get-version.md) | Works out the version from a `release/**` or `hotfix/**` branch, or a tag |
 | [`prepare-release.yml`](workflows/prepare-release.md) | Writes the version and changelog, optionally migrates the DB dump and builds a coverage badge and report, and commits it all |
 | [`release-flow.yml`](workflows/release-flow.md) | Releases a version from one button: creates and prepares the release branch, merges it into the main branch and `develop`, and tags it |
+| [`release-start.yml`, `release-commands.yml`, `release-refresh.yml`](workflows/release-tracker.md) | A release that stays open while it is tested: an issue tracks its checks, `/release` on it merges and tags, and it follows the publication |
 | [`publish-npm.yml`](workflows/publish-npm.md) | Builds and publishes the package to the Github registry, and publishes a Github release |
 
 ### Deployment
@@ -120,6 +121,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | Action | What it does |
 |---|---|
 | [`update-changelog`](actions/update-changelog.md) | Generates a changelog section for a version out of the git log |
+| [`release-tracker`](actions/release-tracker.md) | The release issue behind the release-tracker workflows, and posting release notes into it |
 | [`github-release`](actions/github-release.md) | Publishes a Github release with the changelog as its body |
 | [`docker-prepare-release`](actions/docker-prepare-release.md) | The release bookkeeping for a Docker-based repository, committed |
 | [`coverage-report`](actions/coverage-report.md) | Writes a Markdown coverage report from PHPUnit's Clover output |

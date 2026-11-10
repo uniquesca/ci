@@ -1,0 +1,68 @@
+name: Start a release
+
+# Creates `release/<version>` from develop or `hotfix/<version>` from the main branch, and opens
+# the release issue that tracks it. See docs/workflows/release-tracker.md.
+on:
+  workflow_call:
+    secrets:
+      RELEASE_APP_PRIVATE_KEY:
+        description: 'Private key of the release GitHub App. With `release_app_id`, the branch is created with its token'
+        required: false
+      RELEASE_TOKEN:
+        description: 'Token the branch is created with when there is no release app. Not GITHUB_TOKEN: its branch would start no workflows'
+        required: false
+      GITHUB_API_TOKEN:
+        description: 'Token for the issue and for reading checks. Defaults to GITHUB_TOKEN'
+        required: false
+    inputs:
+      type:
+        description: 'release or hotfix'
+        required: true
+        type: string
+      version:
+        description: 'Version, x.y.z'
+        required: true
+        type: string
+      release_app_id:
+        description: 'App ID or client ID of the release GitHub App'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  start:
+    name: Start the ${{ inputs.type }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      packages: read
+    # Shared with the refresh, which also opens a missing issue
+    concurrency:
+      group: release-tracker-refresh
+    steps:
+      - name: Get a release app token
+        id: app-token
+        if: inputs.release_app_id != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.release_app_id }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Check the token
+        env:
+          RELEASE_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Pass release_app_id with RELEASE_APP_PRIVATE_KEY, or RELEASE_TOKEN"
+            exit 1
+          fi
+
+      - uses: uniquesca/ci/release-tracker@v11
+        with:
+          command: start
+          type: ${{ inputs.type }}
+          version: ${{ inputs.version }}
+          github_token: ${{ secrets.GITHUB_API_TOKEN || github.token }}
+          release_token: ${{ steps.app-token.outputs.token || secrets.RELEASE_TOKEN }}
