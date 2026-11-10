@@ -510,7 +510,9 @@ jobs:
           issue: ${{ steps.pull_request.outputs.issue }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          comments: none
+          # A person's comment after the plan, such as `/ai-do S10 - put it in X`, changes it
+          # without a new plan. Without these the review flags the change as a plan mismatch.
+          comments: since-plan
 
       # What has already been said on this pull request, and what CI already thinks. Answered
       # threads are kept here, unlike for the implementing agent: a thread where the previous
@@ -658,6 +660,9 @@ jobs:
               acceptance criterion. Check the diff against them and cite them; use step titles
               where a plan has no ids.
             - `.ai-plan/issue.json` - why the work was wanted, when there is an issue.
+            - `.ai-plan/comments.json` - the issue comments since the plan, oldest first, with their
+              author and an `is_bot` flag. What a person asked for there wins over the plan: code
+              that follows it is not a plan mismatch.
             - `.ai-review/feedback.json` - what is open on this pull request: `source` is
               `thread`, `review`, `comment` or `check` (a failing check), with an `anchor`, a
               `state`, and for a thread an `answered` flag.

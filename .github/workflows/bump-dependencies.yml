@@ -37,6 +37,11 @@ on:
         required: false
         default: '20'
         type: string
+      commit_installed:
+        description: 'Whether the repository commits its installed packages (`vendor/`, Yarn''s modules folder). If so they are installed and committed too: Composer without dev packages, Yarn as `.yarnrc` says'
+        required: false
+        default: false
+        type: boolean
 
 defaults:
   run:
@@ -116,6 +121,27 @@ jobs:
           ref: ${{ inputs.base_branch }}
           token: ${{ secrets.PR_TOKEN }}
 
+      # Repositories that commit vendor/ or Yarn's modules folder track the manifests of every
+      # installed package too. Those are not the project's own and must not be touched
+      - name: Find the project's manifests and lock files
+        run: |
+          folders=()
+          while IFS= read -r rc; do
+            folder=$(sed -nE 's/^--modules-folder[[:space:]]+"?([^"]*)"?[[:space:]]*$/\1/p' "$rc")
+            [[ -z "$folder" ]] && continue
+            dir=$(dirname "$rc")
+            if [[ $dir == . ]]; then folders+=("$folder"); else folders+=("$dir/$folder"); fi
+          done < <(git ls-files .yarnrc '*/.yarnrc')
+          git ls-files composer.json '*/composer.json' composer.lock '*/composer.lock' \
+            package.json '*/package.json' yarn.lock '*/yarn.lock' | while IFS= read -r file; do
+            [[ "/$file" == */vendor/* || "/$file" == */node_modules/* ]] && continue
+            for folder in "${folders[@]}"; do
+              [[ "$file" == "$folder"/* ]] && continue 2
+            done
+            echo "$file"
+          done > "$RUNNER_TEMP/files.txt"
+          : > "$RUNNER_TEMP/commit.txt"
+
       # Every manifest that lists a package gets the new constraint, not only the root one. In a
       # monorepo the root composer.json is merged from the packages' own, and
       # `monorepo-builder validate` fails when they disagree. The constraint keeps its operator,
@@ -125,15 +151,16 @@ jobs:
           errors=0
           for list in composer yarn; do
             if [[ $list == composer ]]; then manifest=composer.json; else manifest=package.json; fi
+            mapfile -t manifests < <(grep -E "(^|/)$manifest\$" "$RUNNER_TEMP/files.txt")
             while read -r name version; do
               # A monorepo's own packages match the prefix too, and are versioned with the repo
               # shellcheck disable=SC2016
-              own=$(git ls-files "$manifest" "*/$manifest" | xargs -r jq -r --arg n "$name" 'select(.name == $n) | .name' | head -1)
+              own=$(jq -r --arg n "$name" 'select(.name == $n) | .name' "${manifests[@]}" | head -1)
               if [[ -n "$own" ]]; then
                 echo "::error::$name is part of this repository, not a dependency"; errors=1; continue
               fi
               found=0
-              while IFS= read -r file; do
+              for file in "${manifests[@]}"; do
                 current=$(jq -r --arg n "$name" '[.require, ."require-dev", .dependencies, .devDependencies]
                   | map(select(. != null) | .[$n]) | map(select(. != null)) | first // empty' "$file")
                 [[ -z "$current" ]] && continue
@@ -143,10 +170,17 @@ jobs:
                   errors=1; continue
                 fi
                 operator="${BASH_REMATCH[1]}"
+                floor="${current#"$operator"}"
+                floor="${floor#v}"
+                if [[ "$(printf '%s\n' "$floor" "$version" | sort -V | head -1)" != "$floor" ]]; then
+                  echo "::error file=$file::$name is already at $current, $version would be a downgrade"
+                  errors=1; continue
+                fi
                 NAME="$name" CONSTRAINT="$operator$version" perl -0pi -e \
                   's/("\Q$ENV{NAME}\E"\s*:\s*")[^"]*(")/$1$ENV{CONSTRAINT}$2/g' "$file"
+                echo "$file" >> "$RUNNER_TEMP/commit.txt"
                 echo "$file: $name $current -> $operator$version"
-              done < <(git ls-files "$manifest" "*/$manifest")
+              done
               if [[ $found -eq 0 ]]; then
                 echo "::error::$name is not in any $manifest"; errors=1
               fi
@@ -166,23 +200,26 @@ jobs:
         env:
           COMPOSER_ACCESS_TOKEN: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
           GITHUB_DIST_TOKEN: ${{ github.token }}
+          COMMIT_INSTALLED: ${{ inputs.commit_installed }}
         run: |
           mapfile -t names < <(cut -d' ' -f1 "$RUNNER_TEMP/composer.txt")
           composer config --global --auth bearer.satis.unqs.ca "$COMPOSER_ACCESS_TOKEN"
           composer config --global --auth github-oauth.github.com "$GITHUB_DIST_TOKEN"
+          # Without committed packages only the lock file is written, so the runner's extensions
+          # do not decide what gets locked
+          if [[ $COMMIT_INSTALLED == true ]]; then mode=--no-dev; else mode=--no-install; fi
           while IFS= read -r lock; do
             dir=$(dirname "$lock")
-            changed=0
-            for name in "${names[@]}"; do
-              grep -q "\"$name\"" "$dir/composer.json" && changed=1
-            done
-            [[ $changed -eq 0 ]] && continue
+            if [[ $dir == . ]]; then manifest=composer.json; else manifest="$dir/composer.json"; fi
+            grep -qxF "$manifest" "$RUNNER_TEMP/commit.txt" || continue
             echo "Updating $lock"
-            # Only the lock file is written, nothing is installed, so the runner's extensions do
-            # not decide what gets locked
-            (cd "$dir" && composer update "${names[@]}" --with-dependencies --no-install --no-scripts \
+            (cd "$dir" && composer update "${names[@]}" --with-dependencies "$mode" --no-scripts \
               --no-interaction --ignore-platform-req='ext-*')
-          done < <(git ls-files composer.lock "*/composer.lock")
+            echo "$lock" >> "$RUNNER_TEMP/commit.txt"
+            if [[ $COMMIT_INSTALLED == true ]]; then
+              if [[ $dir == . ]]; then echo vendor; else echo "$dir/vendor"; fi >> "$RUNNER_TEMP/commit.txt"
+            fi
+          done < <(grep -E '(^|/)composer\.lock$' "$RUNNER_TEMP/files.txt")
 
       - name: Set up Node
         if: steps.list.outputs.yarn == '1'
@@ -195,25 +232,30 @@ jobs:
         if: steps.list.outputs.yarn == '1'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+          COMMIT_INSTALLED: ${{ inputs.commit_installed }}
         run: |
-          mapfile -t names < <(cut -d' ' -f1 "$RUNNER_TEMP/yarn.txt")
+          # Outside the repository, so it cannot be committed
+          npmrc="$RUNNER_TEMP/npmrc"
+          {
+            echo "@uniquesca:registry=https://npm.pkg.github.com/"
+            echo "//npm.pkg.github.com/:_authToken=$NODE_AUTH_TOKEN"
+          } > "$npmrc"
+          # Committed packages are installed the way .yarnrc says, so production-only stays that way
+          if [[ $COMMIT_INSTALLED == true ]]; then production=(); else production=(--production=false); fi
           while IFS= read -r lock; do
             dir=$(dirname "$lock")
-            changed=0
-            for name in "${names[@]}"; do
-              grep -q "\"$name\"" "$dir/package.json" && changed=1
-            done
-            [[ $changed -eq 0 ]] && continue
+            if [[ $dir == . ]]; then manifest=package.json; else manifest="$dir/package.json"; fi
+            grep -qxF "$manifest" "$RUNNER_TEMP/commit.txt" || continue
             echo "Updating $lock"
-            # Outside the repository, so it cannot be committed
-            npmrc="$RUNNER_TEMP/npmrc"
-            {
-              echo "@uniquesca:registry=https://npm.pkg.github.com/"
-              echo "//npm.pkg.github.com/:_authToken=$NODE_AUTH_TOKEN"
-            } > "$npmrc"
-            (cd "$dir" && NPM_CONFIG_USERCONFIG="$npmrc" yarn install --production=false --ignore-scripts \
+            (cd "$dir" && NPM_CONFIG_USERCONFIG="$npmrc" yarn install "${production[@]}" --ignore-scripts \
               --non-interactive)
-          done < <(git ls-files yarn.lock "*/yarn.lock")
+            echo "$lock" >> "$RUNNER_TEMP/commit.txt"
+            if [[ $COMMIT_INSTALLED == true ]]; then
+              folder=$(sed -nE 's/^--modules-folder[[:space:]]+"?([^"]*)"?[[:space:]]*$/\1/p' "$dir/.yarnrc" 2>/dev/null)
+              folder="${folder:-node_modules}"
+              if [[ $dir == . ]]; then echo "$folder"; else echo "$dir/$folder"; fi >> "$RUNNER_TEMP/commit.txt"
+            fi
+          done < <(grep -E '(^|/)yarn\.lock$' "$RUNNER_TEMP/files.txt")
 
       - name: Open the pull request
         env:
@@ -221,9 +263,8 @@ jobs:
           BASE: ${{ inputs.base_branch }}
           ACTOR: ${{ github.triggering_actor }}
         run: |
-          # Only the manifests and lock files: the installs above leave other files behind
-          git ls-files -m -z -- composer.json '*/composer.json' composer.lock '*/composer.lock' \
-            package.json '*/package.json' yarn.lock '*/yarn.lock' | xargs -0 -r git add --
+          # Only what the steps above meant to change: an install leaves other files behind
+          sort -u "$RUNNER_TEMP/commit.txt" | xargs -d '\n' -r git add -A --
           if git diff --cached --quiet; then
             echo "::notice::Already at these versions, nothing to do"
             exit 0

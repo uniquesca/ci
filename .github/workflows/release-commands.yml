@@ -1,0 +1,187 @@
+name: Release commands
+
+# The commands posted on a release issue: /release, /sync, /abandon, /version and /status. Called
+# on `issue_comment`. See docs/workflows/release-tracker.md.
+on:
+  workflow_call:
+    secrets:
+      RELEASE_APP_PRIVATE_KEY:
+        description: 'Private key of the release GitHub App. With `release_app_id`, merges, tags and branches are pushed with its token'
+        required: false
+      RELEASE_TOKEN:
+        description: 'Token to push with when there is no release app. Not GITHUB_TOKEN: its pushes start no workflows, and the tag has to start the publishing'
+        required: false
+      GITHUB_API_TOKEN:
+        description: 'Token for the issue and for reading checks. Defaults to GITHUB_TOKEN'
+        required: false
+    inputs:
+      release_app_id:
+        description: 'App ID or client ID of the release GitHub App'
+        required: false
+        default: ''
+        type: string
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  status:
+    name: Refresh the release issue
+    if: >-
+      !github.event.issue.pull_request && contains(github.event.issue.labels.*.name, 'release')
+      && startsWith(github.event.comment.body, '/status')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      packages: read
+    concurrency:
+      group: release-tracker-refresh
+    steps:
+      - uses: uniquesca/ci/release-tracker@v11
+        with:
+          command: command
+          github_token: ${{ secrets.GITHUB_API_TOKEN || github.token }}
+
+  command:
+    name: Run the release command
+    if: >-
+      !github.event.issue.pull_request && github.event.issue.state == 'open'
+      && contains(github.event.issue.labels.*.name, 'release')
+      && (startsWith(github.event.comment.body, '/release') || startsWith(github.event.comment.body, '/sync')
+        || startsWith(github.event.comment.body, '/abandon') || startsWith(github.event.comment.body, '/version'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+      packages: read
+    # Two commands on one release never run at once
+    concurrency:
+      group: release-command-${{ github.event.issue.number }}
+    env:
+      API_TOKEN: ${{ secrets.GITHUB_API_TOKEN || github.token }}
+    steps:
+      - name: Get a release app token
+        id: app-token
+        if: inputs.release_app_id != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.release_app_id }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Check the token
+        env:
+          RELEASE_TOKEN: ${{ steps.app-token.outputs.token || secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Pass release_app_id with RELEASE_APP_PRIVATE_KEY, or RELEASE_TOKEN"
+            exit 1
+          fi
+
+      - name: Check the command
+        id: command
+        uses: uniquesca/ci/release-tracker@v11
+        with:
+          command: command
+          github_token: ${{ env.API_TOKEN }}
+          release_token: ${{ steps.app-token.outputs.token || secrets.RELEASE_TOKEN }}
+
+      - uses: actions/checkout@v6
+        if: steps.command.outputs.branch != ''
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.RELEASE_TOKEN }}
+          ref: develop
+          fetch-depth: 0
+
+      - name: Merge develop into the branch
+        id: sync
+        if: steps.command.outputs.command == 'sync'
+        env:
+          BRANCH: ${{ steps.command.outputs.branch }}
+        run: |
+          git config user.email "gha@uniques.ca"
+          git config user.name "GitHub Actions"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+
+          if ! git merge --no-ff origin/develop -m "Merge branch 'develop' into $BRANCH"; then
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            echo "detail=$(git diff --name-only --diff-filter=U | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+            git merge --abort
+            exit 0
+          fi
+
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ]; then
+            echo "result=up-to-date" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git push origin "$BRANCH"
+          echo "result=merged" >> "$GITHUB_OUTPUT"
+          echo "detail=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Report the merge
+        if: steps.sync.outputs.result != ''
+        uses: uniquesca/ci/release-tracker@v11
+        with:
+          command: report-sync
+          branch: ${{ steps.command.outputs.branch }}
+          result: ${{ steps.sync.outputs.result }}
+          detail: ${{ steps.sync.outputs.detail }}
+          github_token: ${{ env.API_TOKEN }}
+
+      # What `git flow release finish` does. The tag is pushed with the release token, so it starts
+      # the repository's publishing workflow
+      - name: Merge, tag and push
+        id: release
+        if: steps.command.outputs.command == 'release'
+        env:
+          BRANCH: ${{ steps.command.outputs.branch }}
+          VERSION: ${{ steps.command.outputs.version }}
+        run: |
+          main=$(jq -r '.mainBranch // "main"' .github/release-tracker.json)
+          git config user.email "gha@uniques.ca"
+          git config user.name "GitHub Actions"
+
+          git checkout -B "$main" "origin/$main"
+          git merge --no-ff "origin/$BRANCH" -m "Merge branch '$BRANCH'"
+          git tag -a "$VERSION" -m "$VERSION"
+
+          git checkout -B develop origin/develop
+          git merge --no-ff "$VERSION" -m "Merge tag '$VERSION' into develop"
+
+          # All or nothing, so a rejected push cannot leave the main branch released and develop
+          # behind. The tag goes separately and last: GitHub rejects a push that updates more than
+          # two protected refs, and the tag should only publish once both branches are in
+          git push --atomic origin "$main" develop
+          git push origin "refs/tags/$VERSION"
+          git push origin --delete "$BRANCH"
+
+          echo "main_sha=$(git rev-parse "$main")" >> "$GITHUB_OUTPUT"
+          echo "develop_sha=$(git rev-parse develop)" >> "$GITHUB_OUTPUT"
+
+      - name: Post the post-release status
+        if: steps.release.outcome == 'success'
+        uses: uniquesca/ci/release-tracker@v11
+        with:
+          command: post-released
+          main_sha: ${{ steps.release.outputs.main_sha }}
+          develop_sha: ${{ steps.release.outputs.develop_sha }}
+          github_token: ${{ env.API_TOKEN }}
+
+      - name: Report a failure
+        if: failure() && steps.command.outputs.command != '' && steps.command.outputs.refused != 'true'
+        env:
+          GH_TOKEN: ${{ env.API_TOKEN }}
+          COMMAND: ${{ steps.command.outputs.command }}
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="\`/$COMMAND\` failed - see [the run]($run)."
+          if [ "$RELEASE_OUTCOME" = "failure" ]; then
+            body="$body If the push step got as far as the tag, the release is out. Otherwise check whether the main branch and \`develop\` were pushed without the tag before running \`/release\` again."
+          fi
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"

@@ -1616,3 +1616,9 @@
 ## v11.45.0
 
 * New: introduced bump-dependencies workflow (d81f7ce by George Shestayev)
+
+## v11.46.0
+
+* Fix: ai-review reads issue comments since the plan, so an /ai-do override is not flagged as a plan mismatch (55a8131 by George Shestayev)
+* Fix: replying in ai plan counts as decision (55a8131 by George Shestayev)
+* New: adding release workflow and tracker to promote improved release process across all repos (0524c6b by George Shestayev)

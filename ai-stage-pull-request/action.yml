@@ -32,7 +32,7 @@ inputs:
     required: false
     default: false
   hold_recommendations:
-    description: 'Leave out the open threads a reviewing agent only recommended. Those are a person''s to decide, so they wait for a round somebody asked for - on for a round nobody did. A held thread is in neither file: nobody has decided it yet'
+    description: 'Leave out the open threads a reviewing agent only recommended. Those are a person''s to decide, so they wait for a round somebody asked for - on for a round nobody did. A thread a person replied to last is decided and not held. A held thread is in neither file: nobody has decided it yet'
     required: false
     default: false
   recommendation_marker:
@@ -281,6 +281,7 @@ runs:
         #
         # Except an open recommendation held back for a person. It is not this round's work and
         # nothing has settled it, so it is in neither - and a person resolving it is what settles it.
+        # A person replying last has decided it, so that thread is not held.
         jq --arg reply_marker "$REPLY_MARKER" --argjson include_answered "$INCLUDE_ANSWERED" \
            --arg rec_marker "$RECOMMENDATION_MARKER" --argjson hold "$HOLD_RECOMMENDATIONS" '
           def normalise:
@@ -311,7 +312,8 @@ runs:
           | map(select((.comments.nodes | length) > 0))
           | map(. + {answered: (.comments.nodes | last | .body | startswith($reply_marker)),
                      held: ($hold and (.isResolved | not)
-                            and (.comments.nodes[0].body // "" | startswith($rec_marker)))})
+                            and (.comments.nodes[0].body // "" | startswith($rec_marker))
+                            and ((.comments.nodes | last | .author.__typename // "") == "Bot"))})
           | {
               held: (map(select(.held)) | length),
               open: (map(select((.isResolved | not)

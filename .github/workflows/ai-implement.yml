@@ -2620,7 +2620,7 @@ jobs:
             was settled is not done again: reply that it was settled, and where.
 
             A reviewing agent's summary has findings **to fix** and ones only **recommended**. A
-            recommendation is a person's to decide. ${{ steps.event.outputs.attended == 'true' && 'A person asked for this round: a recommendation whose thread is still open in the feedback is one they kept, so do it. One with no thread only if they asked for it.' || 'Nobody asked for this round, so leave every recommendation alone - their threads are held back until a person has looked.' }}
+            recommendation is a person's to decide. ${{ steps.event.outputs.attended == 'true' && 'A person asked for this round: a recommendation whose thread is still open in the feedback is one they kept, so do it. One with no thread only if they asked for it.' || 'Nobody asked for this round, so leave every recommendation alone - their threads are held back until a person has looked. A recommendation thread in the feedback has a person''s reply last: that reply is the decision, so follow it and do not list it as needing one.' }}
 
             ${{ steps.revision.outputs.instruction }}
 
