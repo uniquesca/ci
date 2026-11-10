@@ -1622,3 +1622,10 @@
 * Fix: ai-review reads issue comments since the plan, so an /ai-do override is not flagged as a plan mismatch (55a8131 by George Shestayev)
 * Fix: replying in ai plan counts as decision (55a8131 by George Shestayev)
 * New: adding release workflow and tracker to promote improved release process across all repos (0524c6b by George Shestayev)
+
+## v11.47.0
+
+* Fix: release-flow merges only the prepared commit (494720e by George Shestayev)
+* Fix: release tracker requires checks on the branch head and merges exactly that commit (494720e by George Shestayev)
+* Update: release-flow creates the release branch and tag with the release app (494720e by George Shestayev)
+* Update: prepare-release outputs the commit it leaves the branch at (494720e by George Shestayev)
