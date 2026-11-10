@@ -148,6 +148,9 @@ const conclusionText = {
 // A check's result: state is passed, pending or failed
 const result = (check, state, text, link = '') => ({ name: check.name, state, text, link });
 
+// A commit the workflows skip, like the one a preparation pushes
+export const skipsCi = message => /\[(skip ci|ci skip)\]/i.test(message || '');
+
 export function runResult(check, run) {
     if (!run) {
         return result(check, 'pending', '⏸️ Not started');
@@ -208,9 +211,35 @@ export function createTracker({ api, refs = api, repo, config, core, log = () =>
 
     const comment = (issueNumber, body) => api.rest.issues.createComment({ ...repo, issue_number: issueNumber, body });
 
-    async function workflowCheck(check, vars) {
+    // The commits a check on the branch has to have run on: its head and, while the head is a commit
+    // the workflows skip, the one under it. Null once the branch is gone.
+    async function checkedCommits(branch) {
+        let sha;
+        try {
+            ({ data: { commit: { sha } } } = await api.rest.repos.getBranch({ ...repo, branch }));
+        } catch (error) {
+            if (error.status === 404) {
+                return null;
+            }
+            throw error;
+        }
+        const commits = new Set([sha]);
+        for (let depth = 0; depth < 10; depth++) {
+            const { data } = await api.rest.git.getCommit({ ...repo, commit_sha: sha });
+            if (!skipsCi(data.message) || data.parents.length !== 1) {
+                break;
+            }
+            sha = data.parents[0].sha;
+            commits.add(sha);
+        }
+        return commits;
+    }
+
+    // `commits`, when given, are the only commits a run on the branch counts for
+    async function workflowCheck(check, vars, commits = null) {
         const [owner, name] = (check.repo || `${repo.owner}/${repo.repo}`).split('/');
-        const query = { owner, repo: name, workflow_id: check.workflow, per_page: check.title ? 100 : 1 };
+        const onBranch = commits !== null && check.branch && !check.repo;
+        const query = { owner, repo: name, workflow_id: check.workflow, per_page: check.title || onBranch ? 100 : 1 };
         if (check.branch) {
             query.branch = fill(check.branch, vars);
         }
@@ -225,6 +254,14 @@ export function createTracker({ api, refs = api, repo, config, core, log = () =>
             const runs = check.title
                 ? data.workflow_runs.filter(run => run.display_title === fill(check.title, vars))
                 : data.workflow_runs;
+            if (onBranch) {
+                const current = runs.find(run => commits.has(run.head_sha));
+                if (!current && runs[0]) {
+                    const link = `[#${runs[0].run_number}](${runs[0].html_url})`;
+                    return result(check, 'pending', '⏸️ Not run on the latest commit', link);
+                }
+                return runResult(check, current);
+            }
             return runResult(check, runs[0]);
         } catch (error) {
             return result(check, 'failed', `⚠️ Cannot read the runs (${errorText(error)})`);
@@ -263,11 +300,15 @@ export function createTracker({ api, refs = api, repo, config, core, log = () =>
         }
     }
 
-    async function phaseStatus(target, vars) {
+    // The release checks count only for the commit the branch is at, until it is released
+    async function phaseStatus(target, vars, released = false, commits = undefined) {
+        if (commits === undefined) {
+            commits = target.id === 'release' && !released ? await checkedCommits(vars.branch) : null;
+        }
         const results = [];
         for (const check of target.checks) {
             if (check.workflow) {
-                results.push(await workflowCheck(check, vars));
+                results.push(await workflowCheck(check, vars, commits));
             } else if (check.githubRelease) {
                 results.push(await githubReleaseCheck(check, vars));
             } else {
@@ -313,7 +354,7 @@ export function createTracker({ api, refs = api, repo, config, core, log = () =>
                 continue;
             }
             const existing = comments[target.id];
-            const status = await phaseStatus(target, vars);
+            const status = await phaseStatus(target, vars, released);
             allPassed = allPassed && status.passed;
             if (!existing && !status.started) {
                 continue;
@@ -522,9 +563,17 @@ export function createTracker({ api, refs = api, repo, config, core, log = () =>
                     problems.push(`Checklist item not ticked: ${item}`);
                 }
             }
-            // Only the latest run on the branch counts, whatever commit it ran on: a preparation
-            // can push a [skip ci] commit that no other workflow runs for
-            const status = await phaseStatus(phase('release'), meta);
+            // Each check has to have passed on the commit /release merges, or on the one under a
+            // [skip ci] commit a preparation pushed: a push that has not started its runs yet must
+            // not ride on the runs of the commit before it
+            const commits = await checkedCommits(meta.branch);
+            if (commits === null) {
+                problems.push(`Branch \`${meta.branch}\` does not exist.`);
+            } else {
+                // The workflow merges this commit, and stops if the branch has moved on since
+                core.setOutput('sha', [...commits][0]);
+            }
+            const status = await phaseStatus(phase('release'), meta, false, commits);
             for (const item of status.results.filter(entry => entry.state !== 'passed')) {
                 problems.push(`${item.name}: ${item.text}`);
             }

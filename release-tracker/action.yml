@@ -54,6 +54,8 @@ outputs:
     description: 'command: the version, for /release and /sync'
   type:
     description: 'command: release or hotfix, for /release and /sync'
+  sha:
+    description: 'command: for /release, the branch commit the checks passed on'
   issue:
     description: 'start: the number of the release issue'
 

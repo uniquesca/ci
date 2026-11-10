@@ -83,28 +83,34 @@ None. The result is the release merged into the main branch and `develop`, and t
    still in progress fails the check too, so wait for it to pass and run the release again.
 2. `release/<version>` is created from that commit, and `prepare-release.yml` commits the version,
    changelog and coverage files to it.
-3. The branch is merged into `main_branch` as `Merge branch 'release/<version>'`, and that into
-   `develop` as `Merge tag '<version>' into develop`. Both are pushed atomically.
+3. The commit the preparation left is merged into `main_branch` as `Merge branch 'release/<version>'`, and that into
+   `develop` as `Merge tag '<version>' into develop`. Both are pushed atomically. If anything was
+   pushed to the release branch since the preparation, the run stops instead: changes to a release
+   go to `develop`, and the release runs again.
 4. An annotated tag is created on the main branch, and the release branch is deleted.
 
 If any job fails or the run is cancelled after the branch was created, the branch is deleted, so a
 new run starts clean from `develop`. When the merge pushed but tagging failed, the job summary says
-how to finish by hand.
+who has to finish it.
 
 ### What it needs from the caller
 
 * **A GitHub App** installed on the repository with *Contents* and *Workflows* write access. *Workflows*
   is needed because a release that changes `.github/workflows` is otherwise rejected. Its ID goes in
   `release_app_id`, and the app must be allowed to bypass any ruleset on the main branch and `develop`.
+* **Rulesets that keep releases off people's machines**: creating `release/**` and `hotfix/**`
+  branches, and creating, moving or deleting tags, allowed to the release app only. The app creates
+  both here.
 * **`permissions: contents: write, actions: read`** on the calling job, and a `concurrency` group so
   two releases do not run at once.
 * **QA on pushes to `develop`.** A repository whose `qa_workflow` workflows run only on pull requests never
   passes the first check.
 
-### Why the caller's own release workflows do not run twice
+### No release workflows of the caller's own
 
-The release branch and the tag are created with `GITHUB_TOKEN`, which starts no workflows. A
-repository can keep its `prepare-release.yml` on `create` and its publish workflow on tags for
-releases done by hand, and this workflow does not set them off. That is also why publishing has to
-be called explicitly after it, and why a publish workflow that builds something should pass the tag
-as `ref` to [`publish-npm.yml`](publish-npm.md): a call runs on `develop`, not on the tag.
+The release branch and the tag are created with the release app's token, so they start workflows
+like any push. A caller must not prepare on `create` or publish on tag pushes, or both would run a
+second time: this workflow prepares, and the caller's publish job runs after it through `needs`.
+That is also why a publish workflow that builds something should pass the tag as `ref` to
+[`publish-npm.yml`](publish-npm.md): a call runs on `develop`, not on the tag. QA on `release/*`
+pushes is not needed either: what is released is what passed QA on `develop`.

@@ -140,13 +140,21 @@ jobs:
         env:
           BRANCH: ${{ steps.command.outputs.branch }}
           VERSION: ${{ steps.command.outputs.version }}
+          SHA: ${{ steps.command.outputs.sha }}
         run: |
+          # The checks passed on SHA. A push since then has not been checked, and deleting the branch
+          # at the end would lose it
+          if [ "$(git rev-parse "origin/$BRANCH")" != "$SHA" ]; then
+            echo "::error::$BRANCH has moved on since its checks were read. Wait for the checks on the new commit, then /release again"
+            exit 1
+          fi
+
           main=$(jq -r '.mainBranch // "main"' .github/release-tracker.json)
           git config user.email "gha@uniques.ca"
           git config user.name "GitHub Actions"
 
           git checkout -B "$main" "origin/$main"
-          git merge --no-ff "origin/$BRANCH" -m "Merge branch '$BRANCH'"
+          git merge --no-ff "$SHA" -m "Merge branch '$BRANCH'"
           git tag -a "$VERSION" -m "$VERSION"
 
           git checkout -B develop origin/develop
@@ -157,7 +165,9 @@ jobs:
           # two protected refs, and the tag should only publish once both branches are in
           git push --atomic origin "$main" develop
           git push origin "refs/tags/$VERSION"
-          git push origin --delete "$BRANCH"
+          # Only if nobody pushed to it meanwhile
+          git push --force-with-lease="refs/heads/$BRANCH:$SHA" origin --delete "$BRANCH" \
+            || echo "::warning::$BRANCH got a new commit during the release and was kept. Merge it into develop by hand"
 
           echo "main_sha=$(git rev-parse "$main")" >> "$GITHUB_OUTPUT"
           echo "develop_sha=$(git rev-parse develop)" >> "$GITHUB_OUTPUT"

@@ -74,7 +74,8 @@ test('runResult maps a run to a state', () => {
 });
 
 // A fake Octokit holding just what the command needs
-function fakeApi({ role = 'admin', runs = [], comments = [] }) {
+// `commits` maps a SHA to its message and parent; the branch is at `head`
+function fakeApi({ role = 'admin', runs = [], comments = [], head = 'h1', commits = { h1: { message: 'Fix: x', parent: 'h0' } } }) {
     const calls = [];
     const record = name => async params => {
         calls.push({ name, params });
@@ -89,9 +90,17 @@ function fakeApi({ role = 'admin', runs = [], comments = [] }) {
                 createComment: record('createComment'),
                 update: record('update'),
             },
-            repos: { getCollaboratorPermissionLevel: async () => ({ data: { role_name: role } }) },
+            repos: {
+                getCollaboratorPermissionLevel: async () => ({ data: { role_name: role } }),
+                getBranch: async () => ({ data: { commit: { sha: head } } }),
+            },
             actions: { listWorkflowRuns: async () => ({ data: { workflow_runs: runs } }) },
-            git: { deleteRef: record('deleteRef') },
+            git: {
+                deleteRef: record('deleteRef'),
+                getCommit: async ({ commit_sha: sha }) => ({
+                    data: { message: commits[sha]?.message || '', parents: [{ sha: commits[sha]?.parent || 'none' }] },
+                }),
+            },
         },
     };
 }
@@ -104,7 +113,7 @@ function fakeCore() {
 const issue = { number: 7, body: issueBody(meta, normaliseConfig({ phases })) };
 
 test('/release is refused while a check has not passed', async () => {
-    const api = fakeApi({ runs: [{ status: 'completed', conclusion: 'failure', run_number: 3, html_url: 'u' }] });
+    const api = fakeApi({ runs: [{ status: 'completed', conclusion: 'failure', run_number: 3, html_url: 'u', head_sha: 'h1' }] });
     const core = fakeCore();
     const tracker = createTracker({ api, repo: { owner: 'o', repo: 'r' }, config: normaliseConfig({ phases }), core });
     await tracker.command({ issue, commentBody: '/release', login: 'someone' });
@@ -114,7 +123,7 @@ test('/release is refused while a check has not passed', async () => {
 });
 
 test('/release goes ahead for a maintainer when every check passed', async () => {
-    const api = fakeApi({ role: 'maintain', runs: [{ status: 'completed', conclusion: 'success', run_number: 3, html_url: 'u' }] });
+    const api = fakeApi({ role: 'maintain', runs: [{ status: 'completed', conclusion: 'success', run_number: 3, html_url: 'u', head_sha: 'h1' }] });
     const core = fakeCore();
     const tracker = createTracker({ api, repo: { owner: 'o', repo: 'r' }, config: normaliseConfig({ phases }), core });
     await tracker.command({ issue, commentBody: '/release', login: 'someone' });
@@ -147,4 +156,28 @@ test('nothing runs on a released issue', async () => {
     const tracker = createTracker({ api, repo: { owner: 'o', repo: 'r' }, config: normaliseConfig({ phases }), core });
     await tracker.command({ issue, commentBody: '/sync', login: 'someone' });
     assert.equal(core.outputs.refused, 'true');
+});
+
+const passedOn = sha => ({ status: 'completed', conclusion: 'success', run_number: 3, html_url: 'u', head_sha: sha });
+
+test('/release is refused when the checks passed only on an older commit', async () => {
+    const api = fakeApi({ head: 'h2', commits: { h2: { message: 'Fix: late fix', parent: 'h1' } }, runs: [passedOn('h1')] });
+    const core = fakeCore();
+    const tracker = createTracker({ api, repo: { owner: 'o', repo: 'r' }, config: normaliseConfig({ phases }), core });
+    await tracker.command({ issue, commentBody: '/release', login: 'someone' });
+    assert.equal(core.outputs.refused, 'true');
+    assert.match(api.calls.find(call => call.name === 'createComment').params.body, /QA: ⏸️ Not run on the latest commit/);
+});
+
+test('/release counts the runs on the commit under a [skip ci] preparation commit', async () => {
+    const api = fakeApi({
+        head: 'p1',
+        commits: { p1: { message: 'CI: automatic commit for the new release [skip ci]', parent: 'h1' }, h1: { message: 'Fix: x', parent: 'h0' } },
+        runs: [passedOn('h1')],
+    });
+    const core = fakeCore();
+    const tracker = createTracker({ api, repo: { owner: 'o', repo: 'r' }, config: normaliseConfig({ phases }), core });
+    await tracker.command({ issue, commentBody: '/release', login: 'someone' });
+    assert.equal(core.failed, null);
+    assert.equal(core.outputs.branch, 'release/1.2.0');
 });
