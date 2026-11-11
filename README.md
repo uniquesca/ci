@@ -6,6 +6,7 @@ This repository is Uniques CI framework. It is heavily based on Github Actions p
 * Base docker images for Uniques projects
 
 Start here:
+* [How we release](docs/release-process.md)
 * [AI assisted development](docs/ai.md)
 * [QA Checks](docs/qa-checks.md)
 * [Prepare Environment](docs/actions/prepare-environment.md)
