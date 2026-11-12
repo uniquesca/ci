@@ -66,6 +66,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | Workflow | What it does |
 |---|---|
 | [`bump-dependencies.yml`](workflows/bump-dependencies.md) | Bumps Composer or Yarn packages to given versions, updates the lock files and opens a pull request |
+| [`auto-merge.yml`](workflows/auto-merge.md) | Merges a pull request without a review when the repository's merge policy allows it, once the required checks pass |
 
 ### Release
 
