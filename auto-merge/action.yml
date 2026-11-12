@@ -1,0 +1,30 @@
+name: Auto-merge
+
+description: Merges a pull request without a review when a rule of the repository's .github/merge-policy.json allows it and the required checks passed. Used by the auto-merge.yml workflow, not meant to be called directly
+
+inputs:
+  pull_number:
+    description: 'The pull request to consider. Empty to take the open pull requests of `branch`'
+    required: false
+  branch:
+    description: 'Head branch of a finished workflow run, whose open pull requests to consider'
+    required: false
+  github_token:
+    description: 'Token that reads the pull request, its checks and the policy, and comments on it. Needs `pull-requests: write`, `checks: read` and `contents: read`'
+    required: false
+    default: ${{ github.token }}
+  merge_token:
+    description: 'Token of the app that merges. It has to be allowed to skip the review rule of the base branch, never the required checks'
+    required: true
+  policy_file:
+    description: 'Path of the merge policy, read from the base branch of the pull request'
+    required: false
+    default: '.github/merge-policy.json'
+
+outputs:
+  result:
+    description: 'What was decided, per pull request, e.g. `#12 merged`'
+
+runs:
+  using: 'node24'
+  main: 'index.js'

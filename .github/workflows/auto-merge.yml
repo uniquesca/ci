@@ -1,0 +1,53 @@
+name: Auto-merge
+
+# Merges a pull request without waiting for a review when a rule of the repository's merge policy
+# allows it and the required checks pass. Called on `pull_request` and on `workflow_run` of every
+# workflow behind a required check. See docs/workflows/auto-merge.md.
+on:
+  workflow_call:
+    secrets:
+      MERGE_APP_PRIVATE_KEY:
+        description: 'Private key of the merge GitHub App'
+        required: true
+    inputs:
+      merge_app_id:
+        description: 'App ID or client ID of the merge GitHub App. It must bypass the review rule of the base branch and nothing else'
+        required: true
+        type: string
+      policy_file:
+        description: 'Path of the merge policy, read from the base branch of each pull request'
+        required: false
+        default: '.github/merge-policy.json'
+        type: string
+
+jobs:
+  auto-merge:
+    name: Auto-merge
+    # Which pull requests a rule is about is in the policy, so every pull request is looked at
+    if: >-
+      github.event_name == 'pull_request'
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+      issues: write
+      pull-requests: write
+    # Several workflows finish at about the same time; one decision at a time per branch
+    concurrency:
+      group: auto-merge-${{ github.head_ref || github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Get a merge app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs.merge_app_id }}
+          private-key: ${{ secrets.MERGE_APP_PRIVATE_KEY }}
+
+      - uses: uniquesca/ci/auto-merge@v11
+        with:
+          pull_number: ${{ github.event.pull_request.number }}
+          branch: ${{ github.event.workflow_run.head_branch }}
+          merge_token: ${{ steps.app-token.outputs.token }}
+          policy_file: ${{ inputs.policy_file }}
