@@ -1629,3 +1629,7 @@
 * Fix: release tracker requires checks on the branch head and merges exactly that commit (494720e by George Shestayev)
 * Update: release-flow creates the release branch and tag with the release app (494720e by George Shestayev)
 * Update: prepare-release outputs the commit it leaves the branch at (494720e by George Shestayev)
+
+## v11.48.0
+
+* New: auto-merge workflow merging dependency bumps once the required checks pass (bebb614 by George Shestayev)
