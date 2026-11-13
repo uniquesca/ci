@@ -12,6 +12,7 @@ Start here:
 * [Prepare Environment](docs/actions/prepare-environment.md)
 
 More information:
+* [Task runner (`task.sh`)](docs/task-runner.md)
 * [Docker Images](docs/docker-images.md)
 * [Uniques Coding Standard](https://github.com/uniquesca/coding-standard)
 * [CI Framework documentation](https://uniques.atlassian.net/wiki/spaces/DEV/folder/264772?atlOrigin=eyJpIjoiZjViZGZiNmNkMGVmNDFkZTg1Nzk4MjRiMjAxOTk1NjgiLCJwIjoiYyJ9) (might be not up to date)
