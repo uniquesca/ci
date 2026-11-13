@@ -1633,3 +1633,9 @@
 ## v11.48.0
 
 * New: auto-merge workflow merging dependency bumps once the required checks pass (bebb614 by George Shestayev)
+
+## v11.49.0
+
+* New: introduced task runner engine (435437d by George Shestayev)
+* Update: AI harness supports clickup links (435437d by George Shestayev)
+* Update: made possible to attach files to github release (435437d by George Shestayev)
