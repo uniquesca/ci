@@ -12,6 +12,10 @@ inputs:
     description: 'Dist folder to use for publishing. Ignored if attach_dist input is not set to `true`'
     required: false
     default: 'dist'
+  files:
+    description: 'Extra files to attach to the release, one path per line'
+    required: false
+    default: ''
   rescan_satis:
     description: 'Whether to rescan Satis repo after publishing'
     required: false
@@ -47,6 +51,19 @@ runs:
       run: |
         zip -qq -r dist.zip ${{ inputs.dist_folder }}
         echo "FILES=dist.zip" >> "$GITHUB_ENV"
+
+    - name: Add extra files
+      if: ${{ inputs.files != '' }}
+      shell: bash
+      env:
+        EXTRA_FILES: ${{ inputs.files }}
+      run: |
+        {
+          echo 'FILES<<__FILES_EOF__'
+          [[ -n "$FILES" ]] && echo "$FILES"
+          echo "$EXTRA_FILES"
+          echo '__FILES_EOF__'
+        } >> "$GITHUB_ENV"
 
     - name: Prep dir for the changelog
       shell: bash

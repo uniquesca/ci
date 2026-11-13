@@ -23,6 +23,7 @@ jobs:
 | `release_version` | yes | | Version being published, `x.y.z`. Also the tag the release is attached to |
 | `attach_dist` | no | `'false'` | Attach a zipped dist folder to the release |
 | `dist_folder` | no | `dist` | Folder to zip. Ignored unless `attach_dist` is `'true'` |
+| `files` | no | `''` | Extra files to attach, one path per line |
 | `rescan_satis` | no | `'false'` | Ask Satis to reindex this package afterwards |
 | `satis_base_url` | no | `https://satis.unqs.ca` | Satis base URL, no trailing slash |
 | `satis_rebuild_token` | no | `''` | Bearer token for the Satis rebuild endpoint |

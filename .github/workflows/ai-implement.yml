@@ -3241,6 +3241,12 @@ jobs:
           fi
 
           if [[ -z "$url" ]]; then
+            # ClickUp tasks named in the issue body, so the pull request links them too. Only the
+            # body: comments mention tasks in passing. Missing links are fine, and so is failing
+            # to read the issue.
+            clickup=$(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '.body // ""' 2> /dev/null \
+              | grep -oE 'https://app\.clickup\.com/t/[A-Za-z0-9/_-]+' | awk '!seen[$0]++' || true)
+
             # Written to RUNNER_TEMP rather than the checkout - this workflow commits its
             # working tree, so nothing scratch belongs in it.
             #
@@ -3249,6 +3255,9 @@ jobs:
             {
               printf 'Closes #%s' "$ISSUE"
               [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
+              while IFS= read -r link; do
+                [[ -n "$link" ]] && printf ' · [ClickUp %s](%s)' "${link##*/}" "$link"
+              done <<< "$clickup"
               printf '\n\n'
               [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then

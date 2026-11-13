@@ -18,6 +18,19 @@ jobs:
       - id: get_version
         run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.get_version.outputs.version }}
+
+      # Gives projects one link per version: releases/download/<version>/task.sh
+      - name: Pin task.sh to this version
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          sed "s/^TASK_RUNNER_VERSION=.*/TASK_RUNNER_VERSION=$VERSION/" task-runner/task.sh > "$RUNNER_TEMP/task.sh"
+          grep -qx "TASK_RUNNER_VERSION=$VERSION" "$RUNNER_TEMP/task.sh"
+
       - uses: uniquesca/ci/github-release@main # pin-ci-version: skip
         with:
           release_version: ${{ steps.get_version.outputs.version }}
+          files: ${{ runner.temp }}/task.sh
