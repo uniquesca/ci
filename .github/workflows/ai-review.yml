@@ -731,6 +731,9 @@ jobs:
               they do.
 
             A missing `CHANGELOG.md` entry is never a finding; a pull request editing it is.
+            Neither are commit messages or the pull request title, whatever this repository's
+            conventions say about them: the person merging writes the message, and nothing that
+            acts on a finding can. Where the change breaks callers, say so in the headline.
 
             The plan's `QA` criteria are for a person, and not being able to verify one is not a
             finding. Raise it where the code cannot satisfy one, or nothing in the diff addresses

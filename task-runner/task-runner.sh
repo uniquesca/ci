@@ -131,9 +131,15 @@ compose() {
     docker compose --profile "$compose_profile" "$@"
 }
 
-# Runs a command in the app container as the current user
+# Runs a command in the app container as the current user. A TTY only when there is one:
+# deployments run task.sh over a non-interactive SSH session, where `exec --tty` fails with
+# "the input device is not a TTY"
 app() {
-  compose exec --tty -u "$uid:$gid" "$app_service" "$@"
+  local tty_flag=-T
+  if [[ -t 0 && -t 1 ]]; then
+    tty_flag=--tty
+  fi
+  compose exec "$tty_flag" -u "$uid:$gid" "$app_service" "$@"
 }
 
 # Same as app, with no TTY - for piping input in, like a SQL script

@@ -87,7 +87,13 @@ docker_compose="\
   XDEBUG_MODE=$xdebug_mode \
   docker compose --profile $compose_profile \
 "
-app="$docker_compose exec --tty -u $(id -u):$(id -g) $app_service"
+# A TTY only when there is one: deployments run task.sh over a non-interactive SSH session
+if [ -t 0 ] && [ -t 1 ]; then
+  tty_flag="--tty"
+else
+  tty_flag="-T"
+fi
+app="$docker_compose exec $tty_flag -u $(id -u):$(id -g) $app_service"
 
 ### COMMANDS #######################################################################
 # Below are commands that this task.sh file provides. Make sure to adjust them to  #
