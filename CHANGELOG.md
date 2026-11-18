@@ -1639,3 +1639,8 @@
 * New: introduced task runner engine (435437d by George Shestayev)
 * Update: AI harness supports clickup links (435437d by George Shestayev)
 * Update: made possible to attach files to github release (435437d by George Shestayev)
+
+## v1.49.1
+
+* Fix: fixed task runner terminal (de8aaf6 by George Shestayev)
+* Fix: fixed AI review complaining about commit message notation (de8aaf6 by George Shestayev)
