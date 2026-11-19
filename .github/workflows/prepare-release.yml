@@ -308,11 +308,10 @@ jobs:
           coverage_badge_path: ${{ inputs.coverage_badge_file }}
           push_badge: false
 
-      - name: Update package version
-        run: |
-          if [ -f "package.json" ]; then
-            npm pkg set version=${{ inputs.version }}
-          fi
+      - name: Set package versions
+        uses: uniquesca/ci/set-package-versions@v11
+        with:
+          version: ${{ inputs.version }}
 
       - name: Run additional release preparation comand
         run: ${{ inputs.post_cmd }}

@@ -88,7 +88,8 @@ jobs:
    [`update-changelog`](../actions/update-changelog.md).
 8. PHPUnit runs if the repository has a configuration, and the coverage badge and the report are
    generated when asked for.
-9. `version` is written into `package.json` with `npm pkg set`, `post_cmd` runs, and everything the
+9. `version` is written into the root `package.json` and the packages listed in
+   `_ci_environment.json` ([`set-package-versions`](../actions/set-package-versions.md)), `post_cmd` runs, and everything the
    above touched is committed as `CI: automatic commit for the new release: #<sha> [skip ci]` and
    pushed. Nothing is committed when nothing changed.
 
@@ -128,7 +129,7 @@ plain `git add` - **a path in `.gitignore` fails the commit step**.
 
 ### The commit
 
-Staged explicitly: `package.json`, `composer.json`, the dump, `CHANGELOG.md`, the badge and the
+Staged explicitly: the `package.json` files, `composer.json`, the dump, `CHANGELOG.md`, the badge and the
 report, each only if the corresponding input asked for it. Then `git clean -fd`, which
 **removes untracked files a `pre_cmd`, `post_cmd` or the dependency install left behind** - build
 output, in other words, does not end up in the release commit.

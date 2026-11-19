@@ -50,7 +50,8 @@ This action produces no outputs - it commits to the current branch and pushes.
 3. Writes the changelog section with [`update-changelog`](update-changelog.md).
 4. Runs `./task.sh test`, if `generate_coverage_badge` or `generate_coverage_report`, and generates
    the badge and the report with [`coverage-report`](coverage-report.md) from what it reports.
-5. Sets `version` in `package.json` with `npm pkg set`. Skipped when there is no `package.json`.
+5. Sets `version` in the root `package.json` and the packages listed in `_ci_environment.json` with
+   [`set-package-versions`](set-package-versions.md).
 6. Stages whatever the above touched, runs `git clean -fd`, and commits as
    `CI: automatic commit for the new release: #<sha> [skip ci]` - then pushes. Nothing is committed
    when nothing changed.
