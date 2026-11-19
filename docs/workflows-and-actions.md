@@ -122,6 +122,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 | Action | What it does |
 |---|---|
 | [`update-changelog`](actions/update-changelog.md) | Generates a changelog section for a version out of the git log |
+| [`set-package-versions`](actions/set-package-versions.md) | Sets the release version in `package.json` files and on dependencies between them |
 | [`release-tracker`](actions/release-tracker.md) | The release issue behind the release-tracker workflows, and posting release notes into it |
 | [`github-release`](actions/github-release.md) | Publishes a Github release with the changelog as its body |
 | [`docker-prepare-release`](actions/docker-prepare-release.md) | The release bookkeeping for a Docker-based repository, committed |

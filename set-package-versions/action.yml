@@ -1,0 +1,16 @@
+name: Set package versions
+
+inputs:
+  version:
+    description: 'Version being released, has to be in x.y.z format'
+    required: true
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: Set package versions
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: node "$GITHUB_ACTION_PATH/index.js" "$VERSION"

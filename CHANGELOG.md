@@ -1644,3 +1644,7 @@
 
 * Fix: fixed task runner terminal (de8aaf6 by George Shestayev)
 * Fix: fixed AI review complaining about commit message notation (de8aaf6 by George Shestayev)
+
+## v11.50.0
+
+* New: prepare-release sets the version in package.json files listed under release.npm_packages in _ci_environment.json, and on dependencies between them (c151f47 by George Shestayev)
