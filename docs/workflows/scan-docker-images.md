@@ -27,13 +27,16 @@ the Teams Alerts channel.
 
 ## Secrets
 
-None.
+| Secret | Description |
+|---|---|
+| `REGISTRY_TOKEN` | Token that can read the images. Defaults to the run's `GITHUB_TOKEN` |
 
 ## Inputs
 
 | Input | Type | Default | Description |
 |---|---|---|---|
 | `images` | string | | **Required.** Images to scan, one per line |
+| `registry_username` | string | `''` | User `REGISTRY_TOKEN` belongs to. Defaults to the actor of the run |
 
 ## Outputs
 
@@ -43,6 +46,7 @@ None.
 
 ### Registry access
 
-The images are pulled with the calling run's `GITHUB_TOKEN`, so they have to be on ghcr.io, and
-each image's package has to give the calling repository read access. An image that cannot be
+The images are pulled from ghcr.io with the calling run's `GITHUB_TOKEN`, so each image's package
+has to give the calling repository read access, or `REGISTRY_TOKEN` has to be a token that can
+read it. An image that cannot be
 pulled shows as "scan failed" in the summary and a warning on the run.

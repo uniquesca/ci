@@ -7,6 +7,14 @@ on:
         description: Images to scan, one per line
         type: string
         required: true
+      registry_username:
+        description: User the token below belongs to
+        type: string
+        default: ''
+    secrets:
+      REGISTRY_TOKEN:
+        description: Token that can read the images. Defaults to the run's `GITHUB_TOKEN`
+        required: false
 
 defaults:
   run:
@@ -38,8 +46,8 @@ jobs:
 
       - name: Scan
         env:
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          TRIVY_USERNAME: ${{ inputs.registry_username || github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
           IMAGES: ${{ inputs.images }}
         run: |
           set -u
