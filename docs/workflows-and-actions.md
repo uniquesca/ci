@@ -60,6 +60,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 |---|---|
 | [`php-qa-checks.yml`](qa-checks.md#php-qa-checks-workflow) | PHPUnit, PHP_CodeSniffer and Psalm across the repository's PHP version matrix, with an optional MySQL. Fixes the code style and commits it |
 | [`npm-qa-checks.yml`](qa-checks.md#npm-qa-checks-workflow) | The `lint` and `test` scripts from `package.json`, run by NPM or Yarn |
+| [`scan-docker-images.yml`](workflows/scan-docker-images.md) | Scans Docker images for vulnerabilities with Trivy, and alerts Teams on a critical one |
 
 ### Dependencies
 

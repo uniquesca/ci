@@ -1,0 +1,64 @@
+name: Scan the Docker images
+
+# This repository's images. Called by the daily scan, the QA checks, the release preparation and
+# the image build
+on:
+  workflow_call:
+    inputs:
+      fail_on_critical:
+        type: boolean
+        default: false
+      alert:
+        type: boolean
+        default: true
+    outputs:
+      critical:
+        value: ${{ jobs.scan.outputs.critical }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  images:
+    name: List the images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+      report_only: ${{ steps.list.outputs.report_only }}
+    steps:
+      # Keep in step with the matrix in build-docker-images.yml. The old `php-prod` and `php-dev`
+      # names are the apachemod images under another tag, so they are not scanned twice
+      - name: List the images
+        id: list
+        run: |
+          images=()
+          for stage in prod dev; do
+            for variant in apachemod fpm apachefpm; do
+              for php in 5.6 8.1 8.2 8.3 8.4; do
+                [[ "$variant" == apachefpm && "$php" == 5.6 ]] && continue
+                images+=( "ghcr.io/uniquesca/php-${variant}-${stage}:${php}" )
+              done
+            done
+          done
+          {
+            echo 'images<<EOF'
+            printf '%s\n' "${images[@]}"
+            echo 'EOF'
+            # Debian 9 gets no more fixes, so a rebuild cannot clear what is found in 5.6
+            echo 'report_only<<EOF'
+            printf '%s\n' "${images[@]}" | grep ':5\.6$'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: images
+    uses: ./.github/workflows/scan-docker-images.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      images: ${{ needs.images.outputs.images }}
+      report_only_images: ${{ needs.images.outputs.report_only }}
+      fail_on_critical: ${{ inputs.fail_on_critical }}
+      alert: ${{ inputs.alert }}

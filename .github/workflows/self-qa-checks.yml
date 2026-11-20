@@ -52,3 +52,9 @@ jobs:
       # No install step: node_modules is committed, the actions rely on it at runtime
       - name: Run tests
         run: npm test
+
+  docker-images:
+    uses: ./.github/workflows/self-scan-docker-images.yml
+    permissions:
+      contents: read
+      packages: read
