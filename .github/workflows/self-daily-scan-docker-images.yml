@@ -1,0 +1,59 @@
+name: Scan Docker images
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  scan:
+    uses: ./.github/workflows/self-scan-docker-images.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      # A scheduled run rebuilds first, and `rebuild` alerts only when it cannot
+      alert: ${{ github.event_name != 'schedule' }}
+
+  # A fix Debian has shipped reaches the images by rebuilding them without the cached package
+  # layer. The build scans the images again when it is done, and that scan alerts on what is left
+  rebuild:
+    name: Rebuild the images
+    needs: scan
+    if: github.event_name == 'schedule' && needs.scan.outputs.critical != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Rebuild, or alert when a rebuild already ran today
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRITICAL: ${{ needs.scan.outputs.critical }}
+        run: |
+          set -u
+
+          # Once a day at most: a vulnerability the rebuild did not clear would otherwise start a
+          # build every day
+          today="$(date -u +%Y-%m-%d)"
+          builds="$(gh run list --workflow build-docker-images.yml --event workflow_dispatch \
+            --created ">=$today" --json databaseId --jq 'length')"
+          running="$(gh run list --workflow build-docker-images.yml --status in_progress \
+            --json databaseId --jq 'length')"
+
+          if (( builds == 0 && running == 0 )); then
+            # From `main`, which is the latest release - what a tag build would have built
+            gh workflow run build-docker-images.yml --ref main
+            echo "Started a rebuild for:"
+            echo "$CRITICAL"
+            exit 0
+          fi
+
+          echo "A build already ran today or is running - alerting instead"
+          mapfile -t critical < <(grep -v '^$' <<< "$CRITICAL")
+          list="$(printf '%s%%0A' "${critical[@]}")"
+          echo "::warning title=Critical vulnerabilities::${list%%%0A}"
