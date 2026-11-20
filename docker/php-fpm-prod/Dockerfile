@@ -13,6 +13,9 @@ ENV NODE_VERSION=${NODE_VERSION}
 # Set by Buildx to the platform being built
 ARG TARGETARCH
 
+# A new value skips the cached layers below, so the packages are upgraded again
+ARG PACKAGES_REFRESH
+
 ADD https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 ADD https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-${TARGETARCH} /usr/local/bin/supercronic
 

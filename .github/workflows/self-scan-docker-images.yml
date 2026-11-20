@@ -4,8 +4,12 @@ on:
   schedule:
     - cron: '0 5 * * *'
   workflow_dispatch:
-  # Called by the QA checks and the release preparation
+  # Called by the QA checks, the release preparation and the image build
   workflow_call:
+    inputs:
+      fail_on_critical:
+        type: boolean
+        default: false
 
 defaults:
   run:
@@ -17,22 +21,29 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       images: ${{ steps.list.outputs.images }}
+      report_only: ${{ steps.list.outputs.report_only }}
     steps:
       # Keep in step with the matrix in build-docker-images.yml. The old `php-prod` and `php-dev`
       # names are the apachemod images under another tag, so they are not scanned twice
       - name: List the images
         id: list
         run: |
-          {
-            echo 'images<<EOF'
-            for stage in prod dev; do
-              for variant in apachemod fpm apachefpm; do
-                for php in 5.6 8.1 8.2 8.3 8.4; do
-                  [[ "$variant" == apachefpm && "$php" == 5.6 ]] && continue
-                  echo "ghcr.io/uniquesca/php-${variant}-${stage}:${php}"
-                done
+          images=()
+          for stage in prod dev; do
+            for variant in apachemod fpm apachefpm; do
+              for php in 5.6 8.1 8.2 8.3 8.4; do
+                [[ "$variant" == apachefpm && "$php" == 5.6 ]] && continue
+                images+=( "ghcr.io/uniquesca/php-${variant}-${stage}:${php}" )
               done
             done
+          done
+          {
+            echo 'images<<EOF'
+            printf '%s\n' "${images[@]}"
+            echo 'EOF'
+            # Debian 9 gets no more fixes, so a rebuild cannot clear what is found in 5.6
+            echo 'report_only<<EOF'
+            printf '%s\n' "${images[@]}" | grep ':5\.6$'
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
@@ -44,3 +55,46 @@ jobs:
       packages: read
     with:
       images: ${{ needs.images.outputs.images }}
+      report_only_images: ${{ needs.images.outputs.report_only }}
+      fail_on_critical: ${{ inputs.fail_on_critical || false }}
+      # A scheduled run rebuilds first, and `rebuild` alerts only when it cannot
+      alert: ${{ github.event_name != 'schedule' }}
+
+  # A fix Debian has shipped reaches the images by rebuilding them without the cached package
+  # layer. The build scans the images again when it is done, and that scan alerts on what is left
+  rebuild:
+    name: Rebuild the images
+    needs: scan
+    if: github.event_name == 'schedule' && needs.scan.outputs.critical != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Rebuild, or alert when a rebuild already ran today
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRITICAL: ${{ needs.scan.outputs.critical }}
+        run: |
+          set -u
+
+          # Once a day at most: a vulnerability the rebuild did not clear would otherwise start a
+          # build every day
+          today="$(date -u +%Y-%m-%d)"
+          builds="$(gh run list --workflow build-docker-images.yml --event workflow_dispatch \
+            --created ">=$today" --json databaseId --jq 'length')"
+          running="$(gh run list --workflow build-docker-images.yml --status in_progress \
+            --json databaseId --jq 'length')"
+
+          if (( builds == 0 && running == 0 )); then
+            # From `main`, which is the latest release - what a tag build would have built
+            gh workflow run build-docker-images.yml --ref main
+            echo "Started a rebuild for:"
+            echo "$CRITICAL"
+            exit 0
+          fi
+
+          echo "A build already ran today or is running - alerting instead"
+          mapfile -t critical < <(grep -v '^$' <<< "$CRITICAL")
+          list="$(printf '%s%%0A' "${critical[@]}")"
+          echo "::warning title=Critical vulnerabilities::${list%%%0A}"
