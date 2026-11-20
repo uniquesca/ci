@@ -24,3 +24,5 @@ jobs:
     permissions:
       contents: read
       packages: read
+    with:
+      fail_on_critical: true

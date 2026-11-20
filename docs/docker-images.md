@@ -82,10 +82,14 @@ critical hole.** The minimums are in `docker/php-minimum-version.sh`.
 
 ## Vulnerability scans
 
-These images are scanned daily, and on every QA run and release preparation in this repository,
-with [`scan-docker-images.yml`](workflows/scan-docker-images.md). Images built on them can be
-scanned the same way. It scans what is published, so a Dockerfile change shows up after the next
-image build.
+These images are scanned daily, after every build, and on every QA run and release preparation in
+this repository, with [`scan-docker-images.yml`](workflows/scan-docker-images.md). Images built on
+them can be scanned the same way. Release preparation fails on a critical vulnerability that has a
+fix. The 5.6 images are report-only: Debian 9 gets no more fixes.
+
+When the daily scan finds a critical vulnerability with a fix, it rebuilds the images from `main`
+without the cached package layer, and the scan after that build alerts on whatever is left. It
+rebuilds at most once a day.
 
 ## Dig deeper
 

@@ -11,25 +11,51 @@ on:
         description: User the token below belongs to
         type: string
         default: ''
+      report_only_images:
+        description: Images, one per line, that are scanned and listed but never alert or fail the run
+        type: string
+        default: ''
+      fail_on_critical:
+        description: Fail the run when an image has a critical vulnerability that has a fix
+        type: boolean
+        default: false
+      alert:
+        description: Leave the annotation comms-api turns into a Teams alert
+        type: boolean
+        default: true
     secrets:
       REGISTRY_TOKEN:
         description: Token that can read the images. Defaults to the run's `GITHUB_TOKEN`
         required: false
+    outputs:
+      critical:
+        description: Images with a critical vulnerability that has a fix, one per line, leaving out the report-only ones
+        value: ${{ jobs.scan.outputs.critical }}
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  # Report only: the findings go to the run summary and an artifact, and the job stays green.
-  # It scans published images, so a Dockerfile change is not reflected until the image is rebuilt
+  # The findings go to the run summary and an artifact. It scans published images, so a Dockerfile
+  # change is not reflected until the image is rebuilt
   scan:
     name: Scan the images
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
+    outputs:
+      critical: ${{ steps.scan.outputs.critical }}
     steps:
+      # Only for the caller's ignore file
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: .trivyignore.yaml
+          sparse-checkout-cone-mode: false
+
+
       # Installed from the release with a pinned checksum rather than through trivy-action, whose
       # tags have been hijacked before
       - name: Install Trivy
@@ -45,14 +71,22 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
 
       - name: Scan
+        id: scan
         env:
           TRIVY_USERNAME: ${{ inputs.registry_username || github.actor }}
           TRIVY_PASSWORD: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
           IMAGES: ${{ inputs.images }}
+          REPORT_ONLY: ${{ inputs.report_only_images }}
+          FAIL: ${{ inputs.fail_on_critical }}
+          ALERT: ${{ inputs.alert }}
         run: |
           set -u
 
           mapfile -t images < <(grep -v '^[[:space:]]*$' <<< "$IMAGES")
+          mapfile -t report_only < <(grep -v '^[[:space:]]*$' <<< "$REPORT_ONLY")
+
+          ignore=()
+          [[ -f .trivyignore.yaml ]] && ignore=( --ignorefile .trivyignore.yaml )
 
           trivy image --download-db-only --no-progress
 
@@ -61,8 +95,8 @@ jobs:
           {
             echo "## Vulnerabilities with a fix available"
             echo
-            echo "| Image | Critical | High |"
-            echo "|---|---|---|"
+            echo "| Image | Critical | High | |"
+            echo "|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
 
           for image in "${images[@]}"; do
@@ -70,7 +104,7 @@ jobs:
             name="${name//:/-}"
             if ! trivy image --skip-db-update --no-progress --quiet --ignore-unfixed \
                 --scanners vuln --severity HIGH,CRITICAL --format json \
-                --output "reports/$name.json" "$image"; then
+                "${ignore[@]}" --output "reports/$name.json" "$image"; then
               echo "::warning::Could not scan $image"
               echo "| \`$image\` | scan failed | |" >> "$GITHUB_STEP_SUMMARY"
               continue
@@ -80,19 +114,36 @@ jobs:
               [.Results[]?.Vulnerabilities[]?.Severity]
               | "\(map(select(. == "CRITICAL")) | length) \(map(select(. == "HIGH")) | length)"
             ' "reports/$name.json")
-            echo "| \`$image\` | $critical | $high |" >> "$GITHUB_STEP_SUMMARY"
-            (( critical > 0 )) && critical_images+=( "$image ($critical)" )
+            note=''
+            if printf '%s\n' "${report_only[@]}" | grep -qxF -- "$image"; then
+              note='report only'
+            elif (( critical > 0 )); then
+              critical_images+=( "$image ($critical)" )
+              echo "$image" >> critical.txt
+            fi
+            echo "| \`$image\` | $critical | $high | $note |" >> "$GITHUB_STEP_SUMMARY"
           done
+
+          {
+            echo 'critical<<EOF'
+            [[ -f critical.txt ]] && cat critical.txt
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
           # comms-api reads this annotation, by its title, to post the Teams alert from a scheduled
           # or hand-started run. One annotation for all images: GitHub keeps ten warnings per step
-          if (( ${#critical_images[@]} > 0 )); then
+          if [[ "$ALERT" == true ]] && (( ${#critical_images[@]} > 0 )); then
             list="$(printf '%s%%0A' "${critical_images[@]}")"
             echo "::warning title=Critical vulnerabilities::${list%%%0A}"
           fi
 
           echo >> "$GITHUB_STEP_SUMMARY"
           echo "The full list per image is in the \`vulnerability-reports\` artifact." >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$FAIL" == true ]] && (( ${#critical_images[@]} > 0 )); then
+            echo "::error::${#critical_images[@]} image(s) have critical vulnerabilities with a fix available"
+            exit 1
+          fi
 
       - name: Upload the reports
         if: ${{ !cancelled() }}
