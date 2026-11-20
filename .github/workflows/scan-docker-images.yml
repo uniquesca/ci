@@ -1,0 +1,95 @@
+name: Scan Docker images
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: Images to scan, one per line
+        type: string
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Report only: the findings go to the run summary and an artifact, and the job stays green.
+  # It scans published images, so a Dockerfile change is not reflected until the image is rebuilt
+  scan:
+    name: Scan the images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      # Installed from the release with a pinned checksum rather than through trivy-action, whose
+      # tags have been hijacked before
+      - name: Install Trivy
+        env:
+          VERSION: 0.76.2
+          SHA256: bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
+        run: |
+          archive="trivy_${VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${VERSION}/${archive}"
+          echo "$SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --quiet
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" trivy
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Scan
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          IMAGES: ${{ inputs.images }}
+        run: |
+          set -u
+
+          mapfile -t images < <(grep -v '^[[:space:]]*$' <<< "$IMAGES")
+
+          trivy image --download-db-only --no-progress
+
+          mkdir reports
+          critical_images=()
+          {
+            echo "## Vulnerabilities with a fix available"
+            echo
+            echo "| Image | Critical | High |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for image in "${images[@]}"; do
+            name="${image##*/}"
+            name="${name//:/-}"
+            if ! trivy image --skip-db-update --no-progress --quiet --ignore-unfixed \
+                --scanners vuln --severity HIGH,CRITICAL --format json \
+                --output "reports/$name.json" "$image"; then
+              echo "::warning::Could not scan $image"
+              echo "| \`$image\` | scan failed | |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            trivy convert --format table --output "reports/$name.txt" "reports/$name.json"
+            read -r critical high < <(jq -r '
+              [.Results[]?.Vulnerabilities[]?.Severity]
+              | "\(map(select(. == "CRITICAL")) | length) \(map(select(. == "HIGH")) | length)"
+            ' "reports/$name.json")
+            echo "| \`$image\` | $critical | $high |" >> "$GITHUB_STEP_SUMMARY"
+            (( critical > 0 )) && critical_images+=( "$image ($critical)" )
+          done
+
+          # comms-api reads this annotation, by its title, to post the Teams alert from a scheduled
+          # or hand-started run. One annotation for all images: GitHub keeps ten warnings per step
+          if (( ${#critical_images[@]} > 0 )); then
+            list="$(printf '%s%%0A' "${critical_images[@]}")"
+            echo "::warning title=Critical vulnerabilities::${list%%%0A}"
+          fi
+
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "The full list per image is in the \`vulnerability-reports\` artifact." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vulnerability-reports
+          path: reports
+          retention-days: 14

@@ -17,3 +17,10 @@ jobs:
       NPM_ACCESS_TOKEN: ${{ secrets.GHA_PUBLIC_ACCESS_TOKEN }}
     with:
       version: ${{ needs.version.outputs.version }}
+
+  docker-images:
+    if: startsWith(github.ref, 'refs/heads/release/')
+    uses: ./.github/workflows/self-scan-docker-images.yml
+    permissions:
+      contents: read
+      packages: read

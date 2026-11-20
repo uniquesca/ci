@@ -80,6 +80,13 @@ Dockerfile went red, no later tag rebuilds it, because by then nothing has chang
 **A PROD build fails on a base image older than the release that fixes its PHP branch's latest
 critical hole.** The minimums are in `docker/php-minimum-version.sh`.
 
+## Vulnerability scans
+
+These images are scanned daily, and on every QA run and release preparation in this repository,
+with [`scan-docker-images.yml`](workflows/scan-docker-images.md). Images built on them can be
+scanned the same way. It scans what is published, so a Dockerfile change shows up after the next
+image build.
+
 ## Dig deeper
 
 ### Restarts

@@ -1,0 +1,46 @@
+name: Scan Docker images
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+  # Called by the QA checks and the release preparation
+  workflow_call:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  images:
+    name: List the images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+    steps:
+      # Keep in step with the matrix in build-docker-images.yml. The old `php-prod` and `php-dev`
+      # names are the apachemod images under another tag, so they are not scanned twice
+      - name: List the images
+        id: list
+        run: |
+          {
+            echo 'images<<EOF'
+            for stage in prod dev; do
+              for variant in apachemod fpm apachefpm; do
+                for php in 5.6 8.1 8.2 8.3 8.4; do
+                  [[ "$variant" == apachefpm && "$php" == 5.6 ]] && continue
+                  echo "ghcr.io/uniquesca/php-${variant}-${stage}:${php}"
+                done
+              done
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: images
+    uses: ./.github/workflows/scan-docker-images.yml
+    permissions:
+      contents: read
+      packages: read
+    with:
+      images: ${{ needs.images.outputs.images }}
