@@ -1648,3 +1648,8 @@
 ## v11.50.0
 
 * New: prepare-release sets the version in package.json files listed under release.npm_packages in _ci_environment.json, and on dependencies between them (c151f47 by George Shestayev)
+
+## v11.52.0
+
+* New: /ai-do on a pull request a person opened does the job asked for and pushes it to the branch (ai-assist.yml) (a046ebf by George Shestayev)
+* New: ai-prepare-workspace and ai-hold-workflow-changes actions (8f219e2 by George Shestayev)
