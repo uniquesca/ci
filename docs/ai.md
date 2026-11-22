@@ -1,11 +1,13 @@
 # AI assisted development
 
-Three workflows that take an issue to a reviewed pull request. Each has its own page:
+Three workflows that take an issue to a reviewed pull request, and one that works on a pull request a
+person opened. Each has its own page:
 
 | Workflow | What it does |
 |---|---|
 | [AI Plan](ai/ai-plan.md) | Turns an issue into an implementation plan, on `/ai-plan` |
 | [AI Implement](ai/ai-implement.md) | Builds the plan on a branch and opens a pull request, then runs a round for every review or red check, on `/ai-do` |
+| [AI Assist](ai/ai-assist.md) | Does a job asked for on a pull request a person opened, and pushes it to the branch, on `/ai-do` |
 | [AI Review](ai/ai-review.md) | Reviews a pull request as a real Github review, on `/ai-review` or on what a round pushed |
 
 What the three of them spend is recorded on the issues they work on, and read back by

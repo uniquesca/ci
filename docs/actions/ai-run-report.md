@@ -25,7 +25,7 @@ Used by [`ai-plan`](../ai/ai-plan.md), [`ai-implement`](../ai/ai-implement.md) a
 |---|---|---|---|
 | `execution_file` | no | `''` | Path to the agent execution log, the `execution_file` output of `claude-code-action` |
 | `verb` | no | | Deprecated, does nothing, and will be removed in v12 |
-| `kind` | no | | What the run was doing - `plan`, `implement` or `review`. Recorded in `cost_line` |
+| `kind` | no | | What the run was doing - `plan`, `implement`, `review` or `assist`. Recorded in `cost_line` |
 | `issue` | no | | Issue the run belongs to. Recorded in `cost_line`, and what a cost report groups by |
 | `pull_request` | no | | Pull request the run belongs to, where there is one |
 | `round` | no | | Which round this run was, where the caller counts them |

@@ -12,7 +12,7 @@ inputs:
     required: false
     default: ''
   kind:
-    description: 'What the run was doing - `plan`, `implement` or `review`. Recorded in `cost_line`, where it is what tells one kind of spend from another'
+    description: 'What the run was doing - `plan`, `implement`, `review` or `assist`. Recorded in `cost_line`, where it is what tells one kind of spend from another'
     required: false
     default: ''
   issue:

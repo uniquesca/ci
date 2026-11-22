@@ -1,0 +1,639 @@
+name: AI Assist
+
+on:
+  workflow_call:
+    secrets:
+      AI_IMPLEMENT_APP_ID:
+        description: 'App id of AI Implement, which the work is pushed as. A push made with the run''s own token starts no workflow, so the QA checks would never run on it'
+        required: true
+      AI_IMPLEMENT_PRIVATE_KEY:
+        description: 'Private key of the AI Implement app'
+        required: true
+      COMPOSER_ACCESS_TOKEN:
+        description: 'Token for the Uniques private Composer registry, so the agent can run the checks against installed dependencies'
+        required: false
+      NPM_ACCESS_TOKEN:
+        description: 'Token for the Uniques private NPM registry, on the same terms'
+        required: false
+      ENV_VARIABLES:
+        description: 'JSON object of configuration tokens the config templates are rendered with. The agent can read them, so give it a test environment''s credentials'
+        required: false
+    inputs:
+      anthropic_federation_rule_id:
+        description: 'Identity federation rule the job authenticates against'
+        required: true
+        type: string
+      anthropic_organization_id:
+        description: 'Anthropic organization the federation rule belongs to'
+        required: true
+        type: string
+      anthropic_service_account_id:
+        description: 'Service account the minted token acts as'
+        required: true
+        type: string
+      anthropic_workspace_id:
+        description: 'Workspace to bill the run to. Empty uses the service account''s default'
+        required: false
+        default: ''
+        type: string
+      command:
+        description: 'Comment prefix that starts a run on a pull request'
+        required: false
+        default: '/ai-do'
+        type: string
+      allowed_permissions:
+        description: 'Space-separated repository permissions allowed to run the command'
+        required: false
+        default: 'admin write'
+        type: string
+      branch_prefix:
+        description: 'Branch prefix AI Implement pushes to. Pull requests on such a branch are left to AI Implement'
+        required: false
+        default: 'ai-feature/'
+        type: string
+      progress_label:
+        description: 'Label put on the pull request while the agent works. Empty for none'
+        required: false
+        default: 'ai:implementing'
+        type: string
+      timeout_minutes:
+        description: 'Timeout for the whole job. Keep it a few minutes above agent_timeout_minutes'
+        required: false
+        default: 65
+        type: number
+      agent_timeout_minutes:
+        description: 'Timeout for the agent step'
+        required: false
+        default: 60
+        type: number
+      max_turns:
+        description: 'Turns the agent may take'
+        required: false
+        default: 100
+        type: number
+      model:
+        description: 'Model the agent runs on'
+        required: false
+        default: 'claude-opus-5-5'
+        type: string
+      effort:
+        description: 'Effort the agent runs at. Empty for the model default'
+        required: false
+        default: 'high'
+        type: string
+      max_diff_bytes:
+        description: 'How much of the pull request diff to stage. The agent has the files and can read past it'
+        required: false
+        default: 200000
+        type: number
+      allow_workflow_changes:
+        description: 'Push edits under .github/workflows/. Needs the app to hold the workflows permission. Off, they are posted as a patch'
+        required: false
+        default: false
+        type: boolean
+      provision_checks:
+        description: 'Bring the application up and install its dependencies, so the agent can run the checks on its work'
+        required: false
+        default: true
+        type: boolean
+      spin_up_docker:
+        description: 'Bring the application up in Docker when the repository has a task.sh or a compose file'
+        required: false
+        default: true
+        type: boolean
+      docker_profile:
+        description: 'Docker Compose profile to bring up'
+        required: false
+        default: ''
+        type: string
+      node_working_directory:
+        description: 'Directory holding the package.json to install from'
+        required: false
+        default: '.'
+        type: string
+      node_version:
+        description: 'Node version to install under, on the runner'
+        required: false
+        default: 20
+        type: number
+      debug:
+        description: 'Log the raw agent transcript. It holds whatever the agent read, so not in a public repository'
+        required: false
+        default: false
+        type: boolean
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  assist:
+    name: Work on the pull request
+    # A typed command on a pull request, and nothing else. AI Implement calls this for `/ai-do` on
+    # a pull request it did not open, with the same event, so this test holds there too.
+    if: >-
+      ${{ github.event_name == 'issue_comment'
+      && github.event.action == 'created'
+      && github.event.issue.pull_request != null
+      && startsWith(github.event.comment.body, inputs.command) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      finished: ${{ steps.finished.outputs.done }}
+      acked: ${{ steps.ack.outcome == 'success' }}
+      target: ${{ steps.pull_request.outputs.number }}
+    # Queued, never cancelled: a run killed mid-way loses the agent's work. The second run starts
+    # from what the first pushed.
+    concurrency:
+      group: ai-assist-${{ github.repository }}-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      checks: read
+      actions: read
+      packages: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      # The same contract as AI Implement: a guard that sets this to false in $GITHUB_ENV stands
+      # every later step down without failing the job. **Every step that does work tests it.**
+      PROCEED: 'true'
+    steps:
+      # Pushes as the app, so the push starts the QA workflows. The agent never sees this token.
+      - name: Create AI Implement app token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AI_IMPLEMENT_APP_ID }}
+          private-key: ${{ secrets.AI_IMPLEMENT_PRIVATE_KEY }}
+
+      - name: Resolve the pull request
+        id: pull_request
+        env:
+          PR: ${{ github.event.issue.number }}
+          PREFIX: ${{ inputs.branch_prefix }}
+        run: |
+          gh pr view "$PR" --json number,state,title,url,body,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository \
+            > "$RUNNER_TEMP/pull-request.json"
+
+          state=$(jq -r '.state' "$RUNNER_TEMP/pull-request.json")
+          head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pull-request.json")
+          head_repo="$(jq -r '.headRepositoryOwner.login' "$RUNNER_TEMP/pull-request.json")/$(jq -r '.headRepository.name' "$RUNNER_TEMP/pull-request.json")"
+
+          # A fork's branch is never checked out: this job holds an Anthropic credential and an
+          # app token that can push, and `issue_comment` hands both to a fork's pull request.
+          reason=''
+          if [[ "$head_repo" != "$GH_REPO" ]]; then
+            reason="its branch lives in \`$head_repo\` rather than in this repository"
+          elif [[ "$state" != 'OPEN' ]]; then
+            reason="it is $(echo "$state" | tr '[:upper:]' '[:lower:]')"
+          elif [[ "$head_ref" == "$PREFIX"* ]]; then
+            reason="its branch \`$head_ref\` belongs to AI Implement"
+          fi
+
+          printf 'number=%s\n' "$PR" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$reason" ]]; then
+            echo "PROCEED=false" >> "$GITHUB_ENV"
+            printf 'stand_down=%s\n' "$reason" >> "$GITHUB_OUTPUT"
+            echo "Standing down on #$PR: $reason"
+            exit 0
+          fi
+
+          {
+            printf 'branch=%s\n' "$head_ref"
+            printf 'base=%s\n' "$(jq -r '.baseRefName' "$RUNNER_TEMP/pull-request.json")"
+            printf 'head_sha=%s\n' "$(jq -r '.headRefOid' "$RUNNER_TEMP/pull-request.json")"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Working on #$PR, branch $head_ref"
+
+      # Not gated on PROCEED, so the stand-down reply below only answers somebody allowed to ask
+      - name: Check the commenter is allowed to run this
+        id: permissions
+        env:
+          ACTOR: ${{ github.event.comment.user.login }}
+          ALLOWED: ${{ inputs.allowed_permissions }}
+        run: |
+          allowed='false'
+          if permission=$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq '.permission' 2> error.log); then
+            for level in $ALLOWED; do
+              [[ "$permission" == "$level" ]] && allowed='true'
+            done
+          elif grep -q 'Not Found' error.log; then
+            permission='none'
+          else
+            cat error.log
+            echo "::error title=Permission check failed::Could not read the permissions of @$ACTOR"
+            exit 1
+          fi
+
+          echo "@$ACTOR has '$permission', allowed: $allowed"
+          {
+            printf 'permission=%s\n' "$permission"
+            printf 'allowed=%s\n' "$allowed"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Refuse the request
+        if: ${{ success() && env.PROCEED == 'true' && steps.permissions.outputs.allowed != 'true' }}
+        env:
+          ACTOR: ${{ github.event.comment.user.login }}
+          COMMAND: ${{ inputs.command }}
+          PERMISSION: ${{ steps.permissions.outputs.permission }}
+          PR: ${{ steps.pull_request.outputs.number }}
+        run: |
+          gh issue comment "$PR" --body "@$ACTOR you are not allowed to run \`$COMMAND\` in this repository - your access level is \`$PERMISSION\`." \
+            || echo "::warning title=Could not post the refusal::Nothing was posted on #$PR"
+          echo "::error title=Permission denied::@$ACTOR ($PERMISSION) is not allowed to run $COMMAND"
+          exit 1
+
+      # Deliberately without the PROCEED test: this step exists because PROCEED is false
+      - name: Say the command cannot run here
+        if: >-
+          ${{ success()
+          && steps.pull_request.outputs.stand_down != ''
+          && steps.permissions.outputs.allowed == 'true' }}
+        env:
+          ACTOR: ${{ github.event.comment.user.login }}
+          COMMAND: ${{ inputs.command }}
+          PR: ${{ steps.pull_request.outputs.number }}
+          REASON: ${{ steps.pull_request.outputs.stand_down }}
+        run: |
+          gh issue comment "$PR" --body "@$ACTOR I cannot run \`$COMMAND\` on #$PR - $REASON." \
+            || echo "::warning title=Could not say the command cannot run::Nothing was posted on #$PR"
+
+      - name: Acknowledge the command
+        id: ack
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-react@v11
+        with:
+          subject: ${{ github.event.comment.node_id }}
+          add: EYES
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Say the agent is working on this
+        id: label
+        if: ${{ success() && env.PROCEED == 'true' && inputs.progress_label != '' }}
+        env:
+          LABEL: ${{ inputs.progress_label }}
+          PR: ${{ steps.pull_request.outputs.number }}
+        run: |
+          gh label create "$LABEL" --color 'fbca04' --description 'An AI workflow is working on this' \
+            2> /dev/null || true
+
+          if gh api "repos/$GH_REPO/issues/$PR/labels" --method POST -f "labels[]=$LABEL" > /dev/null; then
+            echo "added=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Could not label #$PR::'$LABEL' was not added, the run continues without it"
+          fi
+
+      # Full depth, so the base is there to diff against. No credentials left in .git/config for
+      # the agent to find - the push below passes its token itself.
+      - name: Check out the pull request branch
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.pull_request.outputs.branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Everything the agent reads goes under `.ai-task/`, which is kept out of the commit
+      - name: Stage the request and the diff
+        id: stage
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          BASE: ${{ steps.pull_request.outputs.base }}
+          COMMAND: ${{ inputs.command }}
+          COMMENT: ${{ github.event.comment.body }}
+          MAX_DIFF_BYTES: ${{ inputs.max_diff_bytes }}
+        run: |
+          mkdir -p .ai-task .ai-reports
+          printf '/.ai-task/\n/.ai-reports/\n' >> .git/info/exclude
+
+          cp "$RUNNER_TEMP/pull-request.json" .ai-task/pull-request.json
+          printf '%s\n' "${COMMENT#"$COMMAND"}" > .ai-task/request.md
+
+          git diff "origin/$BASE...HEAD" > "$RUNNER_TEMP/full.diff"
+          git diff --stat "origin/$BASE...HEAD" > .ai-task/diffstat.txt
+
+          size=$(wc -c < "$RUNNER_TEMP/full.diff")
+          head -c "$MAX_DIFF_BYTES" "$RUNNER_TEMP/full.diff" > .ai-task/diff.patch
+          if [[ "$size" -gt "$MAX_DIFF_BYTES" ]]; then
+            echo "::warning title=Diff truncated::The diff is $size bytes, staged the first $MAX_DIFF_BYTES"
+          fi
+
+          if [[ -z "$(tr -d '[:space:]' < .ai-task/request.md)" ]]; then
+            echo "empty_request=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Review threads, comments and failing checks, for a request like "address the review"
+      - name: Stage the review feedback
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-stage-pull-request@v11
+        with:
+          pull_request: ${{ steps.pull_request.outputs.number }}
+          repository: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          head_sha: ${{ steps.pull_request.outputs.head_sha }}
+          directory: .ai-task
+          include_answered_threads: true
+
+      # The output of the failing checks, which the QA workflows upload as `ai-report-*`. The agent
+      # cannot read job logs. Missing is normal.
+      - name: Fetch the check reports
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+        run: |
+          for run_id in $(gh api "repos/$GH_REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+                --jq '.workflow_runs[].id' 2> /dev/null); do
+            [[ "$run_id" == "$GITHUB_RUN_ID" ]] && continue
+            gh run download "$run_id" --pattern 'ai-report-*' --dir .ai-reports 2> /dev/null || true
+          done
+          echo "Staged $(find .ai-reports -type f | wc -l) report file(s)"
+
+      - name: Prepare the workspace
+        id: workspace
+        if: ${{ success() && env.PROCEED == 'true' && inputs.provision_checks }}
+        uses: uniquesca/ci/ai-prepare-workspace@v11
+        with:
+          spin_up_docker: ${{ inputs.spin_up_docker }}
+          docker_profile: ${{ inputs.docker_profile }}
+          node_working_directory: ${{ inputs.node_working_directory }}
+          node_version: ${{ inputs.node_version }}
+          env_variables: ${{ secrets.ENV_VARIABLES || '{}' }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          composer_access_token: ${{ secrets.COMPOSER_ACCESS_TOKEN }}
+          npm_access_token: ${{ secrets.NPM_ACCESS_TOKEN }}
+
+      - name: Map the folders
+        id: folders
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-folder-map@v11
+
+      - name: Read the style guide
+        id: style
+        if: ${{ success() && env.PROCEED == 'true' }}
+        uses: uniquesca/ci/ai-style-guide@v11
+
+      # Judged below rather than taken at face value: an agent that overran its turns may still
+      # have finished the work
+      - name: Do the work
+        id: agent
+        if: ${{ success() && env.PROCEED == 'true' }}
+        timeout-minutes: ${{ inputs.agent_timeout_minutes }}
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: ${{ inputs.debug }}
+          # What anybody wrote is read off disk, never expanded into this prompt
+          prompt: |
+            You are a senior software engineer. A person wrote pull request
+            #${{ steps.pull_request.outputs.number }} of this repository and asked you to do a job
+            on it. You are on its branch. Do the job in the working tree; the workflow commits and
+            pushes what you leave, and the person takes it from there.
+
+            Read these first:
+
+            - `.ai-task/request.md` - what you were asked to do. This is the work. ${{ steps.stage.outputs.empty_request == 'true' && 'It is empty: act on the open review feedback and the failing checks below.' || '' }}
+            - `AGENTS.md`, if the repository has one and it is not already in your instructions.
+            - `.ai-task/pull-request.json` - the title and description: what the change is for.
+            - `.ai-task/diff.patch` and `.ai-task/diffstat.txt` - what the pull request changes so far.
+            - `.ai-task/feedback.json` - review threads, comments and failing checks on it. Context,
+              not work, unless the request asks for it.
+            - `.ai-reports/` - the output of the failing checks on this commit. Empty when nothing
+              failed or nothing was uploaded.
+
+            ${{ steps.folders.outputs.text }}
+
+            ${{ steps.workspace.outputs.instructions }}
+
+            Do what the request asks and nothing beyond it. Keep to how the pull request already
+            does things. Run the tests and linters on what you change, and fix what you break.
+
+            Do the work yourself, in this run. You have no subagents and nothing arrives later, so
+            never end a turn waiting. Run every command in the foreground.
+
+            Do not:
+
+            - commit, push or comment anywhere - the workflow does that;
+            - modify anything under `.ai-task/` beyond writing `report.json`;
+            - touch `CHANGELOG.md`;
+            - write Github workflow YAML from memory - follow the files under `.github/workflows/`.
+            ${{ !inputs.allow_workflow_changes && '- expect a change under `.github/workflows/` to be pushed - it is taken out and posted as a patch, so say so in your reply.' || '' }}
+
+            When you are done, write `.ai-task/report.json`:
+
+            ```json
+            {
+              "commit_message": "Fix: the retry loop gave up after one attempt",
+              "reply": "Markdown for the person who asked."
+            }
+            ```
+
+            - `commit_message` - one line per change, each starting with one of `BREAKING:`,
+              `Depr:`, `Fix:`, `New:`, `Update:`, `QA:`, `CI:`, `Chore:` or `Refactor:`. It becomes
+              the changelog entry, so plain English about the effect, not the files.
+            - `reply` - what you did, what you did not do and why, and which checks you ran with
+              their result. Short: a few lines and a list at most.
+
+            ${{ steps.style.outputs.text }}
+          claude_args: |
+            --model ${{ inputs.model }}
+            ${{ inputs.effort && format('--effort {0}', inputs.effort) || '' }}
+            --max-turns ${{ inputs.max_turns }}
+            --tools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
+            --allowedTools "Read,Grep,Glob,Edit,Write,NotebookEdit,Bash"
+            ${{ inputs.debug && '--debug' || '' }}
+
+      - name: Report on the run
+        id: report
+        if: ${{ always() && steps.agent.outcome != 'skipped' && steps.agent.outcome != '' }}
+        uses: uniquesca/ci/ai-run-report@v11
+        with:
+          execution_file: ${{ steps.agent.outputs.execution_file }}
+          kind: 'assist'
+          pull_request: ${{ steps.pull_request.outputs.number }}
+
+      # The reply the hold-back step appends to, and the commit message, both out of the report
+      - name: Read the agent's report
+        id: result
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          SUMMARY: ${{ steps.report.outputs.summary }}
+          COMMAND: ${{ inputs.command }}
+          PR: ${{ steps.pull_request.outputs.number }}
+        run: |
+          reply="$RUNNER_TEMP/assist-reply.md"
+          message=''
+
+          if jq -e 'type == "object"' .ai-task/report.json > /dev/null 2>&1; then
+            jq -r '.reply // ""' .ai-task/report.json > "$reply"
+            message=$(jq -r '.commit_message // ""' .ai-task/report.json)
+          else
+            echo "::warning title=No report::The agent left no readable .ai-task/report.json"
+            printf '%s\n' "$SUMMARY" > "$reply"
+          fi
+
+          # Each line becomes a changelog entry, so a line without a known prefix is dropped
+          # rather than published
+          message=$(printf '%s\n' "$message" \
+            | grep -E '^(BREAKING|Depr|Fix|New|Update|QA|CI|Chore|Refactor): .+' || true)
+          [[ -z "$message" ]] && message="Chore: changes asked for with $COMMAND on #$PR"
+
+          printf '%s\n' "$message" > "$RUNNER_TEMP/assist-commit-message"
+          printf 'reply_file=%s\n' "$reply" >> "$GITHUB_OUTPUT"
+
+      - name: Hold back the changes to the workflow files
+        id: workflow_changes
+        if: ${{ success() && env.PROCEED == 'true' && !inputs.allow_workflow_changes }}
+        uses: uniquesca/ci/ai-hold-workflow-changes@v11
+        with:
+          report_file: ${{ steps.result.outputs.reply_file }}
+
+      # A plain push on top of the head this run started from. If somebody pushed meanwhile, it is
+      # refused and nothing is overwritten - the work is posted as a patch instead.
+      - name: Commit and push the work
+        id: push
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          BRANCH: ${{ steps.pull_request.outputs.branch }}
+          HEAD_SHA: ${{ steps.pull_request.outputs.head_sha }}
+        run: |
+          # Anything the agent committed despite being told not to goes into the one commit
+          git reset --quiet --soft "$HEAD_SHA"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The agent changed nothing"
+            exit 0
+          fi
+
+          app_login="${APP_SLUG}[bot]"
+          app_user_id=$(GH_TOKEN="$APP_TOKEN" gh api "/users/${APP_SLUG}%5Bbot%5D" --jq '.id' 2> /dev/null || echo '')
+          git config --local user.name "$app_login"
+          git config --local user.email "${app_user_id:+${app_user_id}+}${app_login}@users.noreply.github.com"
+
+          git commit --quiet --file "$RUNNER_TEMP/assist-commit-message"
+          sha=$(git rev-parse HEAD)
+          printf 'changed=true\nsha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+
+          if git push --quiet "https://x-access-token:${APP_TOKEN}@github.com/${GH_REPO}.git" "HEAD:refs/heads/$BRANCH"; then
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            echo "Pushed $sha to $BRANCH"
+          else
+            git format-patch -1 --stdout HEAD > "$RUNNER_TEMP/assist.patch"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Push refused::$BRANCH moved while the agent worked, so nothing was pushed. The work is in the reply as a patch"
+          fi
+
+      # As the app, so the reply comes from the identity that pushed
+      - name: Post the reply
+        if: ${{ success() && env.PROCEED == 'true' }}
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          ACTOR: ${{ github.event.comment.user.login }}
+          PR: ${{ steps.pull_request.outputs.number }}
+          REPLY: ${{ steps.workflow_changes.outputs.report_file || steps.result.outputs.reply_file }}
+          CHANGED: ${{ steps.push.outputs.changed }}
+          PUSHED: ${{ steps.push.outputs.pushed }}
+          SHA: ${{ steps.push.outputs.sha }}
+          COST: ${{ steps.report.outputs.cost_line }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="$RUNNER_TEMP/assist-comment.md"
+          {
+            if [[ "$CHANGED" != 'true' ]]; then
+              printf '@%s Nothing was changed.\n\n' "$ACTOR"
+            elif [[ "$PUSHED" == 'true' ]]; then
+              printf '@%s Pushed %s.\n\n' "$ACTOR" "$SHA"
+            else
+              printf '@%s The branch moved while I worked, so nothing was pushed. Apply the patch at the end, or ask again.\n\n' "$ACTOR"
+            fi
+
+            cat "$REPLY"
+
+            if [[ "$CHANGED" == 'true' && "$PUSHED" != 'true' ]]; then
+              if [[ "$(wc -c < "$RUNNER_TEMP/assist.patch")" -gt 20000 ]]; then
+                printf '\nThe patch is too long to post here. It is in the [run summary](%s).\n' "$RUN_URL"
+                { printf '## The patch\n\n````diff\n'; cat "$RUNNER_TEMP/assist.patch"; printf '````\n'; } >> "$GITHUB_STEP_SUMMARY"
+              else
+                printf '\n````bash\ngit am <<'"'"'ASSIST_PATCH'"'"'\n'
+                cat "$RUNNER_TEMP/assist.patch"
+                printf 'ASSIST_PATCH\n````\n'
+              fi
+            fi
+
+            # Hidden, and what the cost report reads
+            [[ -n "$COST" ]] && printf '\n%s\n' "$COST"
+          } > "$body"
+
+          GH_TOKEN="$APP_TOKEN" gh issue comment "$PR" --body-file "$body" \
+            || gh issue comment "$PR" --body-file "$body"
+
+      - name: Report a failed run
+        if: ${{ failure() && steps.ack.outcome == 'success' }}
+        env:
+          ACTOR: ${{ github.event.comment.user.login }}
+          COMMAND: ${{ inputs.command }}
+          PR: ${{ steps.pull_request.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue comment "$PR" --body "@$ACTOR The run failed before it could push anything - see [the run]($RUN_URL). Comment \`$COMMAND\` with the same request to try again." \
+            || echo "::warning title=Could not report the failure::Nothing was posted on #$PR"
+
+      - name: Say how it ended
+        if: ${{ always() && steps.ack.outcome == 'success' }}
+        uses: uniquesca/ci/ai-react@v11
+        with:
+          subject: ${{ github.event.comment.node_id }}
+          remove: EYES
+          add: ${{ job.status != 'success' && 'CONFUSED' || 'ROCKET' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Take the label back off
+        if: ${{ always() && steps.label.outputs.added == 'true' }}
+        env:
+          LABEL: ${{ inputs.progress_label }}
+          PR: ${{ steps.pull_request.outputs.number }}
+        run: |
+          name=$(jq -rn --arg name "$LABEL" '$name | @uri')
+          gh api "repos/$GH_REPO/issues/$PR/labels/$name" --method DELETE > /dev/null \
+            || echo "::warning title=Could not unlabel #$PR::'$LABEL' is still on it - take it off by hand"
+
+      # Last, so `finish` can tell the clean-up above ran
+      - name: Mark the clean-up done
+        id: finished
+        if: always()
+        run: echo "done=true" >> "$GITHUB_OUTPUT"
+
+  finish:
+    name: Clean up after a run that was cut off
+    needs: assist
+    if: ${{ always() && needs.assist.outputs.target != '' && needs.assist.outputs.finished != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: uniquesca/ci/ai-cut-off@v11
+        with:
+          number: ${{ needs.assist.outputs.target }}
+          message: >-
+            ${{ format('@{0} AI Assist did not finish this run. Comment `{1}` with the same request to try again.',
+                       github.event.comment.user.login, inputs.command) }}
+          subject: ${{ needs.assist.outputs.acked == 'true' && github.event.comment.node_id || '' }}
+          label: ${{ inputs.progress_label }}
+          token: ${{ secrets.GITHUB_TOKEN }}

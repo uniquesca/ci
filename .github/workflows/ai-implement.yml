@@ -166,6 +166,11 @@ on:
         required: false
         default: 20
         type: number
+      assist_human_pull_requests:
+        description: 'Hand the command typed on a pull request this workflow did not open to AI Assist, which does the job asked for and pushes it to that branch. Off, the command is refused there'
+        required: false
+        default: true
+        type: boolean
       debug:
         description: 'Log the raw agent transcript as JSON, on top of the readable summary that is always printed. Tool results contain whatever the agent read, so do not turn this on in a public repository'
         required: false
@@ -245,6 +250,7 @@ jobs:
       finished: ${{ steps.finished.outputs.done }}
       acked: ${{ steps.ack.outcome == 'success' }}
       target: ${{ steps.event.outputs.target }}
+      handoff: ${{ steps.pull_request.outputs.handoff }}
       mention: ${{ steps.event.outputs.actor_type == 'User' && format('@{0} ', steps.event.outputs.actor) || '' }}
       # The base asked for matters only before there is a branch
       retry_base: >-
@@ -668,6 +674,8 @@ jobs:
         env:
           PR: ${{ steps.event.outputs.pull_request }}
           PREFIX: ${{ inputs.branch_prefix }}
+          TRIGGER: ${{ steps.event.outputs.trigger }}
+          ASSIST: ${{ inputs.assist_human_pull_requests }}
         run: |
           gh pr view "$PR" --json number,state,title,url,baseRefName,headRefName,headRefOid,headRepositoryOwner,headRepository,body \
             > "$RUNNER_TEMP/pull-request.json"
@@ -681,6 +689,12 @@ jobs:
             reason="its branch lives in \`$head_repo\` rather than in this repository"
           elif [[ "$head_ref" != "$PREFIX"* ]]; then
             reason="its branch \`$head_ref\` was not created by this workflow"
+
+            # A command typed on a pull request a person opened goes to AI Assist, which answers
+            # it from there. Closed and fork pull requests are refused by AI Assist too.
+            if [[ "$TRIGGER" == 'pr-command' && "$ASSIST" == 'true' ]]; then
+              echo 'handoff=true' >> "$GITHUB_OUTPUT"
+            fi
           elif [[ "$state" != 'OPEN' ]]; then
             reason="it is $(echo "$state" | tr '[:upper:]' '[:lower:]')"
           fi
@@ -829,6 +843,7 @@ jobs:
         if: >-
           ${{ success()
           && steps.pull_request.outputs.stand_down != ''
+          && steps.pull_request.outputs.handoff != 'true'
           && (steps.event.outputs.trigger == 'pr-command'
               || steps.event.outputs.trigger == 'issue-command')
           && steps.permissions.outputs.allowed == 'true' }}
@@ -3030,6 +3045,44 @@ jobs:
             && (github.event.comment.node_id || github.event.review.node_id) || '' }}
           label: ${{ inputs.progress_label }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # `/ai-do` on a pull request a person opened. The same event reaches AI Assist, which reads the
+  # request off the comment. `always()` because the job above ends green either way.
+  assist:
+    name: Hand the command to AI Assist
+    needs: implement
+    if: ${{ always() && needs.implement.outputs.handoff == 'true' }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      checks: read
+      actions: read
+      packages: read
+      id-token: write
+    uses: uniquesca/ci/.github/workflows/ai-assist.yml@v11
+    secrets: inherit
+    with:
+      anthropic_federation_rule_id: ${{ inputs.anthropic_federation_rule_id }}
+      anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+      anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+      anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+      command: ${{ inputs.command }}
+      allowed_permissions: ${{ inputs.allowed_permissions }}
+      branch_prefix: ${{ inputs.branch_prefix }}
+      progress_label: ${{ inputs.progress_label }}
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      agent_timeout_minutes: ${{ inputs.agent_timeout_minutes }}
+      max_turns: ${{ inputs.max_turns }}
+      model: ${{ inputs.model }}
+      effort: ${{ inputs.effort }}
+      allow_workflow_changes: ${{ inputs.allow_workflow_changes }}
+      provision_checks: ${{ inputs.provision_checks }}
+      spin_up_docker: ${{ inputs.spin_up_docker }}
+      docker_profile: ${{ inputs.docker_profile }}
+      node_working_directory: ${{ inputs.node_working_directory }}
+      node_version: ${{ inputs.node_version }}
+      debug: ${{ inputs.debug }}
 
   # A command that will not run - not at the start of the comment, or on the wrong kind of page - would
   # otherwise get silence, which looks exactly like a run that is still working. No `permissions:`, so

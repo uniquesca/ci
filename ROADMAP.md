@@ -135,9 +135,8 @@ People want to point an agent at their own pull request and have it do a job the
 plan and the rounds of AI Implement. The agent reads the pull request, does the job, pushes to its
 branch, and a person takes it from there. Still to do:
 
-- Make the setup reusable: `ai-prepare-workspace` and `ai-hold-workflow-changes`. In progress.
-- Write the workflow. It runs only on a command, pushes straight to the branch and never forces.
-  `/ai-do` is taken by AI Implement, so it needs another name.
+- Run AI Assist for real on a pull request, and read what it posts and pushes.
+- A command to roll back what it pushed.
 - Move `ai-plan.yml`'s install steps onto `ai-prepare-workspace`.
 
 ## For v12
