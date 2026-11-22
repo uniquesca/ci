@@ -168,6 +168,8 @@ out.
 | [`ai-render-report`](actions/ai-render-report.md) | Renders an implementing agent's report into the pull request, and keeps the status at its top current |
 | [`ai-render-plan`](actions/ai-render-plan.md) | Checks a plan's ids against the plan before it, and renders it for the issue |
 | [`ai-failure-summary`](actions/ai-failure-summary.md) | Writes why a run failed into its summary page, and whether each failure is flaky or broken going by earlier runs |
+| [`ai-prepare-workspace`](actions/ai-prepare-workspace.md) | Brings the application up and installs its dependencies, so an agent can run CI's checks on its own work |
+| [`ai-hold-workflow-changes`](actions/ai-hold-workflow-changes.md) | Takes an agent's workflow file edits out before the push, and posts them as a patch |
 
 ## Pinning a version
 

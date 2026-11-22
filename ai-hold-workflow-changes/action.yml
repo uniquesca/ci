@@ -1,0 +1,119 @@
+name: Hold back an AI agent's workflow changes
+
+description: Takes an agent's edits under .github/workflows/ out of the working tree before the commit, and posts them as a patch to apply by hand.
+
+inputs:
+  report_file:
+    description: 'The agent''s rendered report, which the patch is appended to. Empty if there is none'
+    required: false
+    default: ''
+
+outputs:
+  held_back:
+    description: 'Comma-separated workflow files that were held back. Empty if none were'
+    value: ${{ steps.hold.outputs.held_back }}
+  report_file:
+    description: 'The report with the patch appended. Empty if nothing was held back'
+    value: ${{ steps.hold.outputs.report_file }}
+
+runs:
+  using: composite
+  steps:
+    # The agent's edit to a workflow file, taken back out of the working tree before it is
+    # committed - Github refuses a push carrying it, and a refusal here loses everything
+    # else the run did as well. What the agent wanted is not lost with it: the patch is
+    # appended to the agent's report, so it reaches the person who can apply it.
+    #
+    # Measured here rather than taken from the agent's final message. `git diff` describes the
+    # edit as it actually stands, with context and line numbers `git apply` will accept, and a
+    # diff written out from memory in a closing summary is neither.
+    #
+    # Against `HEAD` rather than the index, because the agent may have staged its edit - the
+    # push commits with `git add -A` and would carry a staged file a bare `git diff` never
+    # mentions. `--intent-to-add` first for the same completeness at the other end: a workflow
+    # file the agent created is one git has never seen, and without it that file appears in no
+    # diff here, is reported to nobody, and is then deleted by the clean below.
+    - name: Hold back the changes to the workflow files
+      id: hold
+      shell: bash
+      env:
+        REPORT_FILE: ${{ inputs.report_file }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        git add --intent-to-add -- .github/workflows/ 2> /dev/null || true
+
+        if git diff HEAD --quiet -- .github/workflows/; then
+          # Which is the ordinary outcome: the work needed no workflow change
+          git reset --quiet -- .github/workflows/ 2> /dev/null || true
+          echo "The workflow files are untouched"
+          exit 0
+        fi
+
+        held=$(git diff HEAD --name-only -- .github/workflows/ | paste -sd, | sed 's/,/, /g')
+        git diff HEAD -- .github/workflows/ > "$RUNNER_TEMP/held-workflow-changes.patch"
+
+        # Unstage the intent-to-add, put back what was edited or deleted, then remove what was
+        # created. `git clean` is deliberately without `-x`: an ignored file that happens to
+        # live here is not the agent's doing and is left where it is.
+        #
+        # The checkout is allowed to fail. A repository with no `.github/workflows/` of its own
+        # has nothing under that path in `HEAD`, so there is nothing to restore and everything
+        # to clean.
+        git reset --quiet -- .github/workflows/
+        git checkout --quiet -- .github/workflows/ 2> /dev/null || true
+        git clean --quiet -fd -- .github/workflows/
+
+        echo "::warning title=Workflow changes held back::$held - Github refuses a push carrying these from this identity, so the edits are posted as a patch instead"
+
+        # A command rather than a bare diff, so applying it is one paste. Four backticks,
+        # because a workflow file may hold a three-backtick fence that would end the block
+        # early. Every line of a diff starts with a prefix, so none can end the heredoc.
+        apply_command() {
+          printf '````bash\n'
+          printf "git apply <<'WORKFLOW_PATCH'\n"
+          cat "$RUNNER_TEMP/held-workflow-changes.patch"
+          printf 'WORKFLOW_PATCH\n'
+          printf '````\n'
+        }
+
+        # The full patch, whatever its size, in the one place with no length limit on it
+        {
+          printf '## The workflow changes were held back\n\n'
+          printf 'Run this from the root of a checkout of the branch, then commit and push:\n\n'
+          apply_command
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        # A run that produced no final message has no file to append to, and gets one of its
+        # own - the section below reads on its own, and the alternative is the one report that
+        # says nothing about the only thing the run did.
+        report="$REPORT_FILE"
+        if [[ -z "$report" ]]; then
+          report="$RUNNER_TEMP/ai-run-report/held-workflow-changes.md"
+          mkdir -p "$(dirname "$report")"
+          : > "$report"
+        fi
+
+        {
+          printf '\n### Workflow changes held back - apply these by hand\n\n'
+          printf 'This work edited %s, and Github refuses a push touching ' "$held"
+          printf '`.github/workflows/` from the identity this branch is pushed with. The edits '
+          printf 'were taken back out, so they are not on the branch and nothing below has been '
+          printf 'reviewed by anybody.\n\n'
+
+          # A comment Github rejects is a patch nobody reads, so a long one is named rather
+          # than pasted. 20000 leaves the agent's own message its room under the 65536
+          # characters a comment body is allowed.
+          if [[ "$(wc -c < "$RUNNER_TEMP/held-workflow-changes.patch")" -gt 20000 ]]; then
+            printf 'The patch is too long to post here - it is under **The workflow changes '
+            printf 'were held back** in the [run summary](%s).\n' "$RUN_URL"
+          else
+            printf 'To apply them, run this from the root of a checkout of the branch, then '
+            printf 'commit and push:\n\n'
+            apply_command
+          fi
+        } >> "$report"
+
+        {
+          printf 'held_back=%s\n' "$held"
+          printf 'report_file=%s\n' "$report"
+        } >> "$GITHUB_OUTPUT"
