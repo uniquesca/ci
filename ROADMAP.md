@@ -129,6 +129,16 @@ it, so it is forgotten once the pull request merges, like the 500 in officio#126
 - If they are, give them their own place in the plan, and open an issue for each one nobody took
   on by the time the pull request merges.
 
+### Ask the AI to work on a pull request a person opened
+
+People want to point an agent at their own pull request and have it do a job there, without the
+plan and the rounds of AI Implement. The agent reads the pull request, does the job, pushes to its
+branch, and a person takes it from there. Still to do:
+
+- Run AI Assist for real on a pull request, and read what it posts and pushes.
+- A command to roll back what it pushed.
+- Move `ai-plan.yml`'s install steps onto `ai-prepare-workspace`.
+
 ## For v12
 
 These are breaking changes, so they wait for the next major version.

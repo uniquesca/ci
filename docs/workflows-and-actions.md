@@ -48,6 +48,7 @@ How the three fit together, and the setup they share: [AI assisted development](
 |---|---|
 | [`ai-plan.yml`](ai/ai-plan.md) | Turns an issue into an implementation plan, on `/ai-plan` |
 | [`ai-implement.yml`](ai/ai-implement.md) | Implements the plan on a branch, opens a pull request, and runs another round for every review or red check |
+| [`ai-assist.yml`](ai/ai-assist.md) | Does a job asked for on a pull request a person opened and pushes it to the branch, on `/ai-do` |
 | [`ai-review.yml`](ai/ai-review.md) | Reviews a pull request as a real Github review, on `/ai-review` or on what an implementing round pushed |
 | [`ai-harness-hint.yml`](ai/ai-harness-hint.md) | Comments on a merged hand-written pull request that went back and forth in a way the harness would have handled itself |
 | [`ai-retro.yml`](ai/ai-retro.md) | Comments on a merged AI Implement pull request that took too many rounds, with what would have saved them |
@@ -168,6 +169,8 @@ out.
 | [`ai-render-report`](actions/ai-render-report.md) | Renders an implementing agent's report into the pull request, and keeps the status at its top current |
 | [`ai-render-plan`](actions/ai-render-plan.md) | Checks a plan's ids against the plan before it, and renders it for the issue |
 | [`ai-failure-summary`](actions/ai-failure-summary.md) | Writes why a run failed into its summary page, and whether each failure is flaky or broken going by earlier runs |
+| [`ai-prepare-workspace`](actions/ai-prepare-workspace.md) | Brings the application up and installs its dependencies, so an agent can run CI's checks on its own work |
+| [`ai-hold-workflow-changes`](actions/ai-hold-workflow-changes.md) | Takes an agent's workflow file edits out before the push, and posts them as a patch |
 
 ## Pinning a version
 
