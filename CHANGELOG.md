@@ -1653,3 +1653,10 @@
 
 * New: /ai-do on a pull request a person opened does the job asked for and pushes it to the branch (ai-assist.yml) (a046ebf by George Shestayev)
 * New: ai-prepare-workspace and ai-hold-workflow-changes actions (8f219e2 by George Shestayev)
+
+## v11.53.0
+
+* New: ai-plan plans a ClickUp task in another repository and posts the plan on the task (cdbf34a by George Shestayev)
+* Update: .idea settings removed (cdbf34a by George Shestayev)
+* Update: plans moved out of this repo (cdbf34a by George Shestayev)
+* Update: added license prohibiting use of this repo by 3rd party (cdbf34a by George Shestayev)
