@@ -39,9 +39,6 @@ We looked at 105 AI pull requests across 15 repositories in early October 2026 (
 `ai-harness-hint.yml` comments on a merged pull request somebody wrote by hand when QA failed on its
 first run or Copilot review took several rounds. Still to do:
 
-- Commit the `ai-pr-post-analytics.yml` callers staged in forms-dev-platform, context-lib,
-  sentry-lib, uforms, form-suite, field-framework, condition-manager, angular-core,
-  formula-builder and scoring-lib. Until then the old callers there fail on every run.
 - Read the first 20 hints posted, and change the prompt if they read wrong.
 - Count both triggers on past pull requests, to see how often each would fire.
 - A person gets at most one hint a week, but in each repository. Across repositories needs a token
@@ -148,6 +145,8 @@ These are breaking changes, so they wait for the next major version.
 - Remove `verb` from AI run report. It already does nothing, and warns when it is set.
 - Rename `review_label_minutes` in AI Implement to `review_wait_minutes`. It is how long a round
   waits for a review, and has nothing to do with the label.
+- Remove `ai-plan.yml` once planning from GitHub issues is retired. Planning then lives in the
+  private `ci-private` repository, from ClickUp only.
 
 ## Done
 
@@ -412,20 +411,20 @@ Still open from step 3d:
 
 ### Step 8: One package of feedback, and firm rules
 
+`ai-stage-issue` and `ai-stage-pull-request` gather part of the input, and
+`ai-hold-workflow-changes` holds back workflow changes. Still to do:
+
 - Gather everything a round needs in one place: the pull request and plan, open review threads, new
   comments, failing checks, and where the last round stopped.
 - One decision on whether a round should run: all checks done, the review not running, something to
   act on, not the same feedback as last time, and not too many rounds without a person.
-- Check every change before it is pushed or posted: no editing the AI's input files, no
-  `CHANGELOG.md`, no workflow changes without permission, no secrets, and replies only to real
-  threads.
+- Check every change before it is pushed: no editing the AI's input files, no `CHANGELOG.md` and
+  no secrets.
 
-### Step 9: Plans across several repositories
+### Step 9: Plan in ClickUp, across several repositories
 
-- The planner can read other repositories it needs, without being able to change them.
-- Each plan step says which repository it is for.
-- The plan becomes one linked issue per repository, in order, and each repository's AI does its
-  part.
+Plan in the ClickUp task, then build in rounds, one pull request per repository, with library
+releases in between. See [the ClickUp planning plan](https://github.com/uniquesca/infra-apps/blob/develop/docs/plans/clickup-planning.md).
 
 ### Step 10: Let the AI push back on bad instructions
 
