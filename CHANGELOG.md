@@ -1660,3 +1660,7 @@
 * Update: .idea settings removed (cdbf34a by George Shestayev)
 * Update: plans moved out of this repo (cdbf34a by George Shestayev)
 * Update: added license prohibiting use of this repo by 3rd party (cdbf34a by George Shestayev)
+
+## v11.53.1
+
+* Update: plans posted to ClickUp use ClickUp formatting instead of Markdown (39e2103 by George Shestayev)
