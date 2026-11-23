@@ -3,14 +3,14 @@
 // the agent ended on, which the caller checks the way it always has.
 import fs from 'node:fs';
 import path from 'node:path';
-import { normalisePlan, renderPlan, visiblePart } from '../src/ai-plan.js';
+import { clickUpPlan, normalisePlan, renderPlan, visiblePart } from '../src/ai-plan.js';
 import { withTextStats } from '../src/ai-text.js';
 
 const env = process.env;
 const out = path.join(env.RUNNER_TEMP, 'ai-render-plan');
 fs.mkdirSync(out, { recursive: true });
 
-const outputs = { rendered: 'false', plan_file: '', has_qa: 'false', cost_line: '' };
+const outputs = { rendered: 'false', plan_file: '', clickup_file: '', has_qa: 'false', cost_line: '' };
 
 function warn(message) {
     console.log(`::warning title=Plan problem::${message}`);
@@ -76,7 +76,9 @@ let chars = 0;
 if (plan) {
     const rendered = renderPlan(plan);
     fs.writeFileSync(file, rendered + '\n');
-    Object.assign(outputs, { rendered: 'true', plan_file: file, has_qa: String(plan.qa.length > 0) });
+    const clickUpFile = path.join(out, 'clickup.json');
+    fs.writeFileSync(clickUpFile, JSON.stringify(clickUpPlan(plan)));
+    Object.assign(outputs, { rendered: 'true', plan_file: file, clickup_file: clickUpFile, has_qa: String(plan.qa.length > 0) });
     chars = visiblePart(rendered).length;
 } else if (env.INPUT_FALLBACK_FILE && fs.existsSync(env.INPUT_FALLBACK_FILE)) {
     warn('Posting the final message the agent ended on instead');

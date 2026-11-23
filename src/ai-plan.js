@@ -260,6 +260,71 @@ export function renderPlan(plan) {
     return parts.join('\n\n');
 }
 
+// The plan as ClickUp's comment blocks, which is how a comment gets formatting there: ClickUp shows
+// Markdown as typed. A block ending a line carries the line's kind, such as a list item. There are
+// no headings, so a section title is a bold line. No JSON copy: the next run reads this text back.
+export function clickUpPlan(plan) {
+    const blocks = [];
+    const line = (parts, attributes) => blocks.push(...parts, attributes ? { text: '\n', attributes } : { text: '\n' });
+    const title = (text) => {
+        blocks.push({ text: '\n' });
+        line([{ text, attributes: { bold: true } }]);
+    };
+    const bold = (text) => ({ text, attributes: { bold: true } });
+
+    if (plan.revision) {
+        line([bold('Revised: '), ...inlineBlocks(plan.revision)]);
+        blocks.push({ text: '\n' });
+    }
+    line(inlineBlocks(plan.summary));
+
+    if (plan.risks.length) {
+        title('Risks, unknowns and assumptions');
+        for (const r of plan.risks) {
+            const ask = r.ask ? [bold(' Needs your decision: '), ...inlineBlocks(r.ask)] : [];
+            line([bold(r.id), { text: ' ' }, ...inlineBlocks(r.text), ...ask], { list: { list: 'bullet' } });
+        }
+    }
+
+    title('Steps');
+    for (const s of plan.steps) {
+        const scope = s.scope ? [{ text: ' - ' }, ...inlineBlocks(s.scope, { italic: true })] : [];
+        line([bold(s.id), { text: ' ' }, ...inlineBlocks(s.title), ...scope], { list: { list: 'unchecked' } });
+    }
+
+    if (plan.qa.length) {
+        title('QA acceptance criteria');
+        for (const q of plan.qa) {
+            const where = q.where ? [{ text: `In ${q.where}: ` }] : [];
+            line([bold(q.id), { text: `${idsText(q.covers)} ` }, ...where, ...inlineBlocks(q.do), bold(' Expect: '), ...inlineBlocks(q.expect)],
+                { list: { list: 'bullet' } });
+        }
+    }
+
+    return blocks;
+}
+
+// `code`, **bold** and [links](url) inside one line of text the agent wrote
+export function inlineBlocks(text, base = {}) {
+    const blocks = [];
+    const pattern = /`([^`\n]+)`|\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g;
+    const source = String(text ?? '').replace(/\n+/g, ' ');
+    const push = (value, extra = {}) => {
+        const attributes = { ...base, ...extra };
+        blocks.push(Object.keys(attributes).length ? { text: value, attributes } : { text: value });
+    };
+    let last = 0;
+    for (const match of source.matchAll(pattern)) {
+        if (match.index > last) push(source.slice(last, match.index));
+        if (match[1] !== undefined) push(match[1], { code: true });
+        else if (match[2] !== undefined) push(match[2], { bold: true });
+        else push(match[3], { link: match[4] });
+        last = match.index + match[0].length;
+    }
+    if (last < source.length) push(source.slice(last));
+    return blocks;
+}
+
 // The plan's JSON out of a posted comment, folded or hidden
 export function readPlanData(text) {
     const body = String(text ?? '');

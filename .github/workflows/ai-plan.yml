@@ -506,6 +506,12 @@ jobs:
         env:
           CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
         run: |
+          # Without it ClickUp answers 400, which says nothing about why
+          if [[ -z "$CLICKUP_TOKEN" ]]; then
+            echo "::error title=No ClickUp token::The CLICKUP_TOKEN secret is empty, so the task cannot be read or the plan posted. Add System Bot's token as a secret in the calling repository"
+            exit 1
+          fi
+
           api() {
             curl -sSf --max-time 30 -H "Authorization: $CLICKUP_TOKEN" "https://api.clickup.com/api/v2/$1"
           }
@@ -1141,6 +1147,7 @@ jobs:
         if: ${{ steps.task.outputs.has_task == 'true' }}
         env:
           PLAN_FILE: ${{ steps.render.outputs.plan_file }}
+          CLICKUP_FILE: ${{ steps.render.outputs.clickup_file }}
           HAS_QA: ${{ steps.render.outputs.has_qa }}
           RENDERED: ${{ steps.render.outputs.rendered }}
           USAGE: ${{ steps.report.outputs.summary }}
@@ -1219,9 +1226,28 @@ jobs:
             exit 1
           fi
 
-          # ClickUp shows a comment as plain text: no hidden lines, no folded sections. The plan's
-          # JSON copy and the metadata go, and the first line is what the next run finds it by.
+          # ClickUp shows Markdown as typed, so the plan goes as its formatted blocks. The first line
+          # is what the next run finds it by. A plan that only came back as the agent's final message
+          # has no blocks, and goes as plain text with the Markdown left in.
           if [[ -n "$CLICKUP_TASK" ]]; then
+            if [[ -n "$CLICKUP_FILE" && -f "$CLICKUP_FILE" ]]; then
+              jq -n --slurpfile plan "$CLICKUP_FILE" \
+                --arg footer "Requested by $COMMENTER · Written against $BASE in $TARGET${USAGE:+ · $USAGE} · " \
+                --arg run "$RUN_URL" '
+                {comment: (
+                  [{text: "AI plan", attributes: {bold: true}}, {text: "\n"}, {text: "\n"}]
+                  + $plan[0]
+                  + [{text: "\n"}, {text: $footer, attributes: {italic: true}},
+                     {text: "Run", attributes: {italic: true, link: $run}}, {text: "\n"},
+                     {text: "Comment /ai-plan with what to change to get a revised plan."}, {text: "\n"}]
+                ), notify_all: false}' > clickup-comment.json
+
+              curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
+                --data @clickup-comment.json "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null
+              echo "Posted the plan on ClickUp task $CLICKUP_TASK"
+              exit 0
+            fi
+
             {
               printf 'AI plan\n\n'
               perl -0pe 's/\n*<!-- ai-plan-json -->[\s\S]*?\n<\/details>//g; s/<!--[\s\S]*?-->//g;
