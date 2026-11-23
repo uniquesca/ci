@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalisePlan, renderPlan, readPlanData, visiblePart, JSON_MARKER } from '../src/ai-plan.js';
+import { normalisePlan, renderPlan, readPlanData, visiblePart, JSON_MARKER, clickUpPlan, inlineBlocks } from '../src/ai-plan.js';
 
 const plan = {
     summary: 'Business hours get their own settings page.',
@@ -220,4 +220,44 @@ test('the visible part is what comes above the folded JSON, and a banned phrase 
 
     assert.deepEqual(problems, ['uses "I looked at", which the style guide rules out']);
     assert.equal(visiblePart(text), text.slice(0, text.indexOf(JSON_MARKER)).trimEnd());
+});
+
+test('ClickUp gets the plan as formatted blocks, without the JSON copy', () => {
+    const { plan: normal } = normalisePlan(plan);
+    const blocks = clickUpPlan(normal);
+    const text = blocks.map((b) => b.text).join('');
+
+    assert.equal(text, [
+        'Business hours get their own settings page.',
+        '',
+        'Risks, unknowns and assumptions',
+        'U1 Whether hours differ per office. Needs your decision: Confirm one set per company.',
+        '',
+        'Steps',
+        'S1 Add the model - A new business hours table and its entity',
+        'S2 Add the page',
+        '',
+        'QA acceptance criteria',
+        'QA1 (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. Expect: Reloading shows 9-5.',
+        '',
+    ].join('\n'));
+    assert.deepEqual(blocks.find((b) => b.text === 'Steps'), { text: 'Steps', attributes: { bold: true } });
+    assert.deepEqual(blocks.filter((b) => b.attributes?.list?.list === 'unchecked').length, 2);
+    assert.doesNotMatch(text, /"summary"/);
+});
+
+test('code, bold and links inside a line become ClickUp attributes', () => {
+    assert.deepEqual(inlineBlocks('Run `composer test`, see **this** and [the docs](https://example.com/a).'), [
+        { text: 'Run ' },
+        { text: 'composer test', attributes: { code: true } },
+        { text: ', see ' },
+        { text: 'this', attributes: { bold: true } },
+        { text: ' and ' },
+        { text: 'the docs', attributes: { link: 'https://example.com/a' } },
+        { text: '.' },
+    ]);
+    assert.deepEqual(inlineBlocks('in `a`', { italic: true }), [
+        { text: 'in ', attributes: { italic: true } },
+        { text: 'a', attributes: { italic: true, code: true } },
+    ]);
 });
