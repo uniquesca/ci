@@ -145,6 +145,8 @@ These are breaking changes, so they wait for the next major version.
 - Remove `verb` from AI run report. It already does nothing, and warns when it is set.
 - Rename `review_label_minutes` in AI Implement to `review_wait_minutes`. It is how long a round
   waits for a review, and has nothing to do with the label.
+- Remove `ai-plan.yml` once planning from GitHub issues is retired. Planning then lives in the
+  private `ci-private` repository, from ClickUp only.
 
 ## Done
 
@@ -422,7 +424,7 @@ Still open from step 3d:
 ### Step 9: Plan in ClickUp, across several repositories
 
 Plan in the ClickUp task, then build in rounds, one pull request per repository, with library
-releases in between. See [the ClickUp planning plan](docs/plans/clickup-planning.md).
+releases in between. See [the ClickUp planning plan](https://github.com/uniquesca/infra-apps/blob/develop/docs/plans/clickup-planning.md).
 
 ### Step 10: Let the AI push back on bad instructions
 

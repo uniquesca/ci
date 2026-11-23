@@ -57,6 +57,10 @@ plan, or a steer for the first one - so put the task itself in the issue. Only
 collaborators with admin or write access can run it, and the plan comes back as a single comment a
 few minutes later.
 
+**From ClickUp**, comment `/ai-plan` on a task. [`infra-api`](https://github.com/uniquesca/infra-apps/blob/develop/docs/plans/infra-api.md) checks who asked
+and which repository the task belongs to, and starts this workflow in `uniquesca/ci-private`, which
+plans in that repository and posts the plan back on the task.
+
 ### Planning against another branch
 
 The planner reads the default branch unless you name another, and it only needs naming once - the
@@ -126,6 +130,8 @@ dropped as well as adding what it now asks for.
 |---|---|---|
 | `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent plans against [the source of what this project depends on](#what-the-agent-can-and-cannot-do). A repository whose dependencies are all public installs without it; one with private dependencies is planned without them |
 | `NPM_ACCESS_TOKEN` | no | Token for `npm.pkg.github.com`, where the `@uniquesca` NPM scope is served from. The Composer token's counterpart for a JavaScript repository, on the same terms |
+| `CLICKUP_TOKEN` | no | API token of the ClickUp user that reads the task and posts the plan (System Bot). Needed with `clickup_task` |
+| `CHECKOUT_TOKEN` | no | Token that can read `repository` when it is not the calling repository. Defaults to the job's own token |
 
 ## Inputs
 
@@ -147,11 +153,14 @@ dropped as well as adding what it now asks for.
 | `node_version` | number | `20` | Node version the JavaScript dependencies are installed under. The same default as [`npm-qa-checks`](../qa-checks.md#npm-qa-checks-workflow) |
 | `branch_prefix` | string | `ai-feature/` | Prefix of the branch [`ai-implement`](ai-implement.md) pushes to, used to find the pull request already implementing this issue. Keep the two the same |
 | `progress_label` | string | `ai:planning` | Label put on the issue while the run is planning, and taken off however it ends. Created if the repository has not got it, then left alone, so recolouring it there sticks. Empty to not label anything |
+| `clickup_task` | string | *(none)* | ClickUp task ID to plan, instead of the issue a comment was made on. The plan is read from and posted to the task |
+| `requested_by` | string | *(none)* | GitHub login of whoever asked for the plan in ClickUp, for the plan's footer |
+| `repository` | string | *(none)* | Repository to plan in, `owner/name`, when it is not the calling one |
 | `debug` | boolean | `false` | Log the raw agent transcript as JSON. **Not for a public repository** - tool results contain whatever the agent read |
 
 ## Outputs
 
-None. The plan is posted as a comment on the issue.
+None. The plan is posted as a comment on the issue, or on the ClickUp task.
 
 ## Dig deeper
 
