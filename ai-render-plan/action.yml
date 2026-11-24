@@ -28,7 +28,7 @@ outputs:
     description: 'The rendered plan, with the whole plan folded under it as JSON for the agents and the next revision - or a copy of `fallback_file`. Empty when there was neither'
     value: ${{ steps.render.outputs.plan_file }}
   clickup_file:
-    description: 'The plan as a JSON list of ClickUp comment blocks, which ClickUp formats where it shows Markdown as typed. Empty when the JSON plan was not usable'
+    description: 'The plan as ClickUp comment blocks, which ClickUp formats where it shows Markdown as typed: a JSON object with `overview`, `risks`, `steps` and `qa`, the risks and QA null when there are none, one list of blocks per comment. Empty when the JSON plan was not usable'
     value: ${{ steps.render.outputs.clickup_file }}
   has_qa:
     description: 'Whether the plan has QA acceptance criteria - "true" or "false"'

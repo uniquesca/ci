@@ -260,48 +260,62 @@ export function renderPlan(plan) {
     return parts.join('\n\n');
 }
 
-// The plan as ClickUp's comment blocks, which is how a comment gets formatting there: ClickUp shows
-// Markdown as typed. A block ending a line carries the line's kind, such as a list item. There are
-// no headings, so a section title is a bold line. No JSON copy: the next run reads this text back.
+// The first line of each comment a plan is posted as on ClickUp, which is how the next run finds
+// them. Only comments by System Bot count, since anybody can type the line.
+export const CLICKUP_TITLES = {
+    overview: 'AI plan',
+    risks: 'AI plan: risks and unknowns',
+    steps: 'AI plan: steps',
+    qa: 'AI plan: QA acceptance criteria',
+};
+
+// The plan as ClickUp comment blocks, one list per comment: the overview, the risks people answer
+// in its thread, the steps, and the QA criteria for testers. ClickUp shows Markdown as typed, so formatting goes in
+// attributes, and a block ending a line carries the line's kind, such as a list item. There are no
+// headings, so a title is a bold line. No JSON copy: the next run reads this text back. `risks` and
+// `qa` are null when there are none, so no empty comment is posted.
 export function clickUpPlan(plan) {
-    const blocks = [];
-    const line = (parts, attributes) => blocks.push(...parts, attributes ? { text: '\n', attributes } : { text: '\n' });
-    const title = (text) => {
-        blocks.push({ text: '\n' });
-        line([{ text, attributes: { bold: true } }]);
-    };
     const bold = (text) => ({ text, attributes: { bold: true } });
+    const comment = (title) => {
+        const blocks = [bold(title), { text: '\n' }, { text: '\n' }];
+        const line = (parts, attributes) => blocks.push(...parts, attributes ? { text: '\n', attributes } : { text: '\n' });
+        return { blocks, line };
+    };
 
+    const overview = comment(CLICKUP_TITLES.overview);
     if (plan.revision) {
-        line([bold('Revised: '), ...inlineBlocks(plan.revision)]);
-        blocks.push({ text: '\n' });
+        overview.line([bold('Revised: '), ...inlineBlocks(plan.revision)]);
+        overview.blocks.push({ text: '\n' });
     }
-    line(inlineBlocks(plan.summary));
+    overview.line(inlineBlocks(plan.summary));
 
+    let risks = null;
     if (plan.risks.length) {
-        title('Risks, unknowns and assumptions');
+        risks = comment(CLICKUP_TITLES.risks);
         for (const r of plan.risks) {
             const ask = r.ask ? [bold(' Needs your decision: '), ...inlineBlocks(r.ask)] : [];
-            line([bold(r.id), { text: ' ' }, ...inlineBlocks(r.text), ...ask], { list: { list: 'bullet' } });
+            risks.line([bold(r.id), { text: ' ' }, ...inlineBlocks(r.text), ...ask], { list: { list: 'bullet' } });
         }
+        risks.blocks.push({ text: '\n' });
+        risks.line([{ text: 'Reply in this thread to answer or correct any of them, then comment /ai-plan for a revised plan.', attributes: { italic: true } }]);
     }
 
-    title('Steps');
+    const steps = comment(CLICKUP_TITLES.steps);
     for (const s of plan.steps) {
         const scope = s.scope ? [{ text: ' - ' }, ...inlineBlocks(s.scope, { italic: true })] : [];
-        line([bold(s.id), { text: ' ' }, ...inlineBlocks(s.title), ...scope], { list: { list: 'unchecked' } });
+        steps.line([bold(s.id), { text: ' ' }, ...inlineBlocks(s.title), ...scope], { list: { list: 'unchecked' } });
     }
-
+    let qa = null;
     if (plan.qa.length) {
-        title('QA acceptance criteria');
+        qa = comment(CLICKUP_TITLES.qa);
         for (const q of plan.qa) {
             const where = q.where ? [{ text: `In ${q.where}: ` }] : [];
-            line([bold(q.id), { text: `${idsText(q.covers)} ` }, ...where, ...inlineBlocks(q.do), bold(' Expect: '), ...inlineBlocks(q.expect)],
+            qa.line([bold(q.id), { text: `${idsText(q.covers)} ` }, ...where, ...inlineBlocks(q.do), bold(' Expect: '), ...inlineBlocks(q.expect)],
                 { list: { list: 'bullet' } });
         }
     }
 
-    return blocks;
+    return { overview: overview.blocks, risks: risks?.blocks ?? null, steps: steps.blocks, qa: qa?.blocks ?? null };
 }
 
 // `code`, **bold** and [links](url) inside one line of text the agent wrote

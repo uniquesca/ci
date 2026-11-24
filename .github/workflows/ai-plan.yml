@@ -555,13 +555,30 @@ jobs:
             query=$(jq -r 'last | "?start=\(.date)&start_id=\(.id)"' "$RUNNER_TEMP/page.json")
           done
 
-          jq --arg bot "$bot" '
-            map({author: .user.username, is_bot: ((.user.id | tostring) == $bot), date: (.date | tonumber), body: .comment_text})
-            | sort_by(.date)' "$RUNNER_TEMP/comments.json" > "$RUNNER_TEMP/sorted.json"
+          # Answers to the risks are replies in that comment's thread, which the list leaves out
+          echo '[]' > "$RUNNER_TEMP/replies.json"
+          for id in $(jq -r '.[] | select((.reply_count // 0 | tonumber) > 0) | .id' "$RUNNER_TEMP/comments.json"); do
+            parent=$(jq -r --arg id "$id" '.[] | select(.id == $id) | .comment_text | split("\n")[0]' "$RUNNER_TEMP/comments.json")
+            api "comment/$id/reply" | jq --arg parent "$parent" '.comments | map(. + {in_reply_to: $parent})' \
+              | jq -s 'add' "$RUNNER_TEMP/replies.json" - > "$RUNNER_TEMP/replies.next.json"
+            mv "$RUNNER_TEMP/replies.next.json" "$RUNNER_TEMP/replies.json"
+          done
 
-          jq -r '[.[] | select(.is_bot and (.body | startswith("AI plan\n")))] | last | .body // empty' \
-            "$RUNNER_TEMP/sorted.json" > .ai-plan/plan.md
-          since=$(jq '[.[] | select(.is_bot and (.body | startswith("AI plan\n")))] | last | .date // 0' "$RUNNER_TEMP/sorted.json")
+          jq -s --arg bot "$bot" 'add
+            | map({author: .user.username, is_bot: ((.user.id | tostring) == $bot), date: (.date | tonumber),
+                   body: .comment_text} + (if .in_reply_to then {in_reply_to} else {} end))
+            | sort_by(.date)' "$RUNNER_TEMP/comments.json" "$RUNNER_TEMP/replies.json" > "$RUNNER_TEMP/sorted.json"
+
+          # A plan is its overview and the risks and steps comments posted after it, by System Bot.
+          # Replies are left out: a reply starting with a title is somebody quoting it.
+          jq '[.[] | select(.is_bot and (.in_reply_to | not))] as $bot
+              | ([$bot[] | select(.body | startswith("AI plan\n"))] | last) as $overview
+              | if $overview == null then []
+                else [$bot[] | select(.date >= $overview.date
+                        and (.body | test("^AI plan(: risks and unknowns|: steps|: QA acceptance criteria)?\n")))]
+                end' "$RUNNER_TEMP/sorted.json" > "$RUNNER_TEMP/plan.json"
+          jq -r 'map(.body) | join("\n\n")' "$RUNNER_TEMP/plan.json" > .ai-plan/plan.md
+          since=$(jq 'map(.date) | max // 0' "$RUNNER_TEMP/plan.json")
           jq --argjson since "$since" 'map(select(.date > $since))' "$RUNNER_TEMP/sorted.json" > .ai-plan/comments.json
           [[ -s .ai-plan/plan.md ]] || rm -f .ai-plan/plan.md
 
@@ -960,7 +977,7 @@ jobs:
 
             ${{ inputs.clickup_task && '- `.ai-plan/task.json` - the task name and description, with its parent task and the tasks linked to it for context. This is the task.' || '- `.ai-plan/issue.json` - the issue number, title and body. This is the task.' }}
             - `.ai-plan/comments.json` - the comments since the last plan, or all of them before the
-              first, oldest first, with their author and an `is_bot` flag.
+              first, oldest first, with their author and an `is_bot` flag.${{ inputs.clickup_task && ' A reply in a thread has `in_reply_to`, the first line of the comment it answers - replies to `AI plan: risks and unknowns` answer the risks by id.' || '' }}
             - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
               work is done here.
 
@@ -1230,20 +1247,30 @@ jobs:
           # is what the next run finds it by. A plan that only came back as the agent's final message
           # has no blocks, and goes as plain text with the Markdown left in.
           if [[ -n "$CLICKUP_TASK" ]]; then
+            # Up to four comments, in reading order: the overview with what the run was, the risks
+            # people answer in its thread, the steps, and the QA criteria. `risks` and `qa` are null
+            # for a plan without them. The usage summary is laid out for GitHub, with `&nbsp;`.
             if [[ -n "$CLICKUP_FILE" && -f "$CLICKUP_FILE" ]]; then
-              jq -n --slurpfile plan "$CLICKUP_FILE" \
-                --arg footer "Requested by $COMMENTER · Written against $BASE in $TARGET${USAGE:+ · $USAGE} · " \
-                --arg run "$RUN_URL" '
-                {comment: (
-                  [{text: "AI plan", attributes: {bold: true}}, {text: "\n"}, {text: "\n"}]
-                  + $plan[0]
-                  + [{text: "\n"}, {text: $footer, attributes: {italic: true}},
-                     {text: "Run", attributes: {italic: true, link: $run}}, {text: "\n"},
-                     {text: "Comment /ai-plan with what to change to get a revised plan."}, {text: "\n"}]
-                ), notify_all: false}' > clickup-comment.json
+              post() {
+                jq -c '{comment: ., notify_all: false}' \
+                  | curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
+                      --data @- "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null
+              }
 
-              curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
-                --data @clickup-comment.json "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null
+              jq --arg footer "Requested by $COMMENTER · Written against $BASE in $TARGET${USAGE:+ · ${USAGE//&nbsp;/ }} · " \
+                --arg run "$RUN_URL" '
+                .overview + [{text: "\n"}, {text: $footer, attributes: {italic: true}},
+                  {text: "Run", attributes: {italic: true, link: $run}}, {text: "\n"},
+                  {text: "Comment /ai-plan with what to change to get a revised plan."}, {text: "\n"}]' \
+                "$CLICKUP_FILE" | post
+              if [[ "$(jq '.risks != null' "$CLICKUP_FILE")" == 'true' ]]; then
+                jq '.risks' "$CLICKUP_FILE" | post
+              fi
+              jq '.steps' "$CLICKUP_FILE" | post
+              if [[ "$(jq '.qa != null' "$CLICKUP_FILE")" == 'true' ]]; then
+                jq '.qa' "$CLICKUP_FILE" | post
+              fi
+
               echo "Posted the plan on ClickUp task $CLICKUP_TASK"
               exit 0
             fi
@@ -1253,7 +1280,7 @@ jobs:
               perl -0pe 's/\n*<!-- ai-plan-json -->[\s\S]*?\n<\/details>//g; s/<!--[\s\S]*?-->//g;
                          s/<\/?details>//g; s/<summary>(.*?)<\/summary>/$1/g; s/&nbsp;/ /g; s/\n{3,}/\n\n/g' "$PLAN_FILE"
               printf '\n\n---\nRequested by %s · Written against %s in %s' "$COMMENTER" "$BASE" "$TARGET"
-              [[ -n "$USAGE" ]] && printf ' · %s' "$USAGE"
+              [[ -n "$USAGE" ]] && printf ' · %s' "${USAGE//&nbsp;/ }"
               printf '\nRun: %s\n' "$RUN_URL"
               printf '\nComment /ai-plan with what to change to get a revised plan.\n'
             } > clickup-comment.txt

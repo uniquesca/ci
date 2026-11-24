@@ -29,7 +29,7 @@ Used by [`ai-plan`](../ai/ai-plan.md).
 |---|---|
 | `rendered` | Whether the JSON plan was usable - `true` or `false` |
 | `plan_file` | The rendered plan, with the whole plan folded under it as JSON - or a copy of `fallback_file`. Empty when there was neither |
-| `clickup_file` | The plan as a JSON list of ClickUp comment blocks, which ClickUp formats where it shows Markdown as typed. Empty when the JSON plan was not usable |
+| `clickup_file` | The plan as ClickUp comment blocks, which ClickUp formats where it shows Markdown as typed: a JSON object with `overview`, `risks`, `steps` and `qa`, the risks and QA null when there are none, one list of blocks per comment. Empty when the JSON plan was not usable |
 | `has_qa` | Whether the plan has QA acceptance criteria - `true` or `false` |
 | `cost_line` | The `cost_line` input with [what was posted](../ai/ai-costs.md#what-the-hidden-line-holds) added. Empty when the input was |
 
