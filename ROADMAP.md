@@ -421,10 +421,10 @@ Still open from step 3d:
 - Check every change before it is pushed: no editing the AI's input files, no `CHANGELOG.md` and
   no secrets.
 
-### Step 9: Plan in ClickUp, across several repositories
+### Step 9: Plan and build from ClickUp
 
-Plan in the ClickUp task, then build in rounds, one pull request per repository, with library
-releases in between. See [the ClickUp planning plan](https://github.com/uniquesca/infra-apps/blob/develop/docs/plans/clickup-planning.md).
+Planning from a ClickUp task works. Next is building from the task in one repository, then QA steps
+for testers. Work across several repositories, with library releases in between, comes later. See [the ClickUp planning plan](https://github.com/uniquesca/infra-apps/blob/develop/docs/plans/clickup-planning.md).
 
 ### Step 10: Let the AI push back on bad instructions
 

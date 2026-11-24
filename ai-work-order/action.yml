@@ -1,0 +1,114 @@
+name: AI work order
+
+description: Builds the work order the coding agent works from, posts it on the pull request, or reads the newest one back from there
+
+inputs:
+  mode:
+    description: '`build` it from what `ai-stage-issue` staged, `post` it on `pull_request`, or `fetch` the newest one from `pull_request`'
+    required: true
+  directory:
+    description: 'Directory inside the checkout the order and the plan files are written to and read from'
+    required: false
+    default: '.ai-plan'
+  source:
+    description: 'For `build`: where the work was asked for, as JSON, such as `{"kind":"issue","repository":"owner/name","number":12,"url":"..."}`'
+    required: false
+    default: ''
+  plan_url:
+    description: 'For `build`: the `plan_url` output of `ai-stage-issue`'
+    required: false
+    default: ''
+  plan_base:
+    description: 'For `build`: the `plan_base` output of `ai-stage-issue`'
+    required: false
+    default: ''
+  plan_created_at:
+    description: 'For `build`: the `plan_created_at` output of `ai-stage-issue`'
+    required: false
+    default: ''
+  pull_request:
+    description: 'For `post` and `fetch`: the pull request number'
+    required: false
+    default: ''
+  repository:
+    description: 'For `post` and `fetch`: the repository, in owner/name form'
+    required: false
+    default: ${{ github.repository }}
+  token:
+    description: 'For `post` and `fetch`: a token that can read and comment on pull requests. Only comments by a bot count, so post with one that comments as a bot'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  found:
+    description: 'Whether there is a work order - "true" or "false". Always "true" after `build`'
+    value: ${{ steps.order.outputs.found }}
+  file:
+    description: 'Path to the work order, empty when there is none'
+    value: ${{ steps.order.outputs.file }}
+  source:
+    description: 'Where the work was asked for, as JSON'
+    value: ${{ steps.order.outputs.source }}
+  title:
+    description: 'Title of the task, suitable for use as a pull request title'
+    value: ${{ steps.order.outputs.title }}
+  has_plan:
+    description: 'Whether the order holds a plan - "true" or "false"'
+    value: ${{ steps.order.outputs.has_plan }}
+  plan_file:
+    description: 'Path to the plan as a person sees it, written next to the order. Empty when there is no plan'
+    value: ${{ steps.order.outputs.plan_file }}
+  plan_url:
+    description: 'Link to where the plan was posted'
+    value: ${{ steps.order.outputs.plan_url }}
+  plan_base:
+    description: 'Branch the plan was written against, empty when it did not say'
+    value: ${{ steps.order.outputs.plan_base }}
+  plan_created_at:
+    description: 'When the plan was posted, as an ISO 8601 UTC timestamp'
+    value: ${{ steps.order.outputs.plan_created_at }}
+
+runs:
+  using: composite
+  steps:
+    # Newest bot-authored comment carrying the marker. Anyone can paste the marker, so only a
+    # bot's counts, the same rule the plan on an issue follows.
+    - name: Find the newest work order
+      if: ${{ inputs.mode == 'fetch' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull_request }}
+      run: |
+        gh api --paginate --slurp "repos/$REPO/issues/$PR/comments" \
+          | jq -r 'flatten
+                   | map(select(.user.type == "Bot" and (.body | startswith("<!-- ai-work-order -->"))))
+                   | last | .body // empty' > "$RUNNER_TEMP/ai-work-order-found.md"
+
+    - id: order
+      if: ${{ inputs.mode == 'build' || inputs.mode == 'fetch' }}
+      shell: bash
+      env:
+        INPUT_MODE: ${{ inputs.mode == 'fetch' && 'read' || 'build' }}
+        INPUT_DIRECTORY: ${{ inputs.directory }}
+        INPUT_SOURCE: ${{ inputs.source }}
+        INPUT_PLAN_URL: ${{ inputs.plan_url }}
+        INPUT_PLAN_BASE: ${{ inputs.plan_base }}
+        INPUT_PLAN_CREATED_AT: ${{ inputs.plan_created_at }}
+        INPUT_COMMENT_FILE: ${{ runner.temp }}/ai-work-order-found.md
+      run: node "$GITHUB_ACTION_PATH/work-order.js"
+
+    - name: Post the work order
+      if: ${{ inputs.mode == 'post' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull_request }}
+        INPUT_MODE: comment
+        INPUT_DIRECTORY: ${{ inputs.directory }}
+      run: |
+        node "$GITHUB_ACTION_PATH/work-order.js"
+        gh issue comment "$PR" --body-file "$RUNNER_TEMP/ai-work-order-comment.md"
+        echo "Posted the work order on #$PR"

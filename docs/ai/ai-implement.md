@@ -77,13 +77,12 @@ jobs:
 Comment `/ai-do` on an issue that already has a plan. Same permission gate as
 [the planner](ai-plan.md#triggering-the-planner): admin or write access.
 
-The agent implements the plan on a branch named after the issue, runs whatever tests and linters
-it can find, and a pull request appears. The issue gets a comment with the link, and **that
-comment is the hand-off** - from then on the issue is only for the plan, and running `/ai-do`
-there again replies pointing at the pull request. The exception is a
-[revised plan](#when-the-plan-is-revised-under-the-work), which is what `/ai-do` on the issue is
-still for: it runs the round on the pull request. The pull request says `Closes #N`, so merging it
-closes the issue.
+A **draft pull request** opens straight away, with the work order and a link from the issue, and
+that is the hand-off: from then on the issue is only for the plan. The agent then implements the
+plan on the draft's branch and runs whatever tests and linters it can find, and the pull request
+turns ready for review with what it did. Running `/ai-do` on the issue again replies pointing at
+the pull request, except after a [revised plan](#when-the-plan-is-revised-under-the-work), when
+it hands the revision over. The pull request says `Closes #N`, so merging it closes the issue.
 
 The pull request cites the plan's [ids](ai-plan.md#how-the-plan-is-numbered), and you can use them
 talking back to it - "S5 is missing", "C1 still fails" lands exactly where you mean it. The plan's
@@ -149,8 +148,9 @@ somebody replies to it again**, which is what stops every round redoing the same
 Besides your review comments, each round picks up anything said in the pull request conversation
 since the last round and **any check that is currently failing**, with its annotations - so there is
 no need to paste a CI failure in, and a red check is expected to be fixed rather than explained.
-Each round also re-reads **the plan on the issue**, so [revising
-it](#when-the-plan-is-revised-under-the-work) is how you change the approach rather than the code.
+Each round works from the **work order** posted on the pull request when the work started, so
+[revising the plan](#when-the-plan-is-revised-under-the-work) is how you change the approach rather
+than the code.
 
 ## Wiring CI into the loop
 
@@ -326,15 +326,23 @@ updating a workflow file. Rounds are not replayed, because they push to a branch
 against its own previous tip. A replay that hits a conflict pushes the work as it was cut, with a
 warning, and the pull request arrives wanting a rebase.
 
+### The draft's placeholder commit
+
+Github opens no pull request without a commit, so the draft starts on an empty one,
+`CI: start work on #N [skip ci]`, which runs no CI and stays out of the changelog. The first push
+commits the work straight onto the base and force-pushes over it, so it never reaches the history.
+A first run that fails leaves the draft on that commit, and the next `/ai-do` on the issue starts
+again on the same draft.
+
 ### When the plan is revised under the work
 
-**Revising a plan never starts a round** - ask for one with `/ai-do` or a review. Each round
-compares the plan comment against its watermark and reconciles a newer one against the whole
-branch: what the plan now asks for is added, what it no longer asks for comes back out, and your
-feedback still wins where the two disagree. Editing a plan comment in place is not a revision,
-because the comparison is on when it was posted. `/ai-do` on the issue is the shortest way to ask -
-against a plan newer than the open pull request was built to, it runs the round there and says on
-the issue where the work went.
+**Revising a plan never starts a round, and a round on the pull request does not see it.** Rounds
+read the work order posted on the pull request. `/ai-do` on the issue hands the revised plan over:
+it posts a new work order and runs a round that reconciles the whole branch against it - what the
+plan now asks for is added, what it no longer asks for comes back out, and your feedback still wins
+where the two disagree. Editing a plan comment in place is not a revision, because the comparison
+is on when it was posted. A pull request opened before work orders existed gets one from the issue
+on its next round.
 
 ### What the agent can and cannot do
 
