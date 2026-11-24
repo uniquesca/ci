@@ -511,13 +511,25 @@ jobs:
       # is the specification, and "this does not do what the plan says" is the most valuable
       # thing a reviewer can find.
       #
-      # Only when there is an issue to read it from. A pull request somebody wrote may answer to
+      # The work order on the pull request first: it is the plan the coding agent was handed, and
+      # a plan revised on the issue but not handed over is not what the change was built to.
+      - name: Read the work order from the pull request
+        id: order
+        if: ${{ success() && env.PROCEED == 'true' && steps.pull_request.outputs.ai_authored == 'true' }}
+        uses: uniquesca/ci/ai-work-order@v11
+        with:
+          mode: fetch
+          pull_request: ${{ steps.pull_request.outputs.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Otherwise the issue, when there is one to read. A pull request somebody wrote may answer to
       # no issue, and its own title and description are then what the change is measured against
       # - `ai-stage-pull-request` below writes those out either way.
       - name: Stage the issue and its plan
         id: stage_issue
         if: >-
           ${{ success() && env.PROCEED == 'true'
+          && steps.order.outputs.found != 'true'
           && steps.pull_request.outputs.issue != '' }}
         uses: uniquesca/ci/ai-stage-issue@v11
         with:
@@ -664,7 +676,7 @@ jobs:
               ${{ steps.diff.outputs.truncated == 'true' && 'It was TRUNCATED and stops partway: read the files for the rest.' || '' }}
             - `.ai-review/diffstat.txt` and `.ai-review/changed-files.txt` - its shape.
             - `.ai-review/pull-request.json` - the title and description.
-              ${{ steps.stage_issue.outputs.has_plan == 'true' && 'Context for the plan below.' || '**This is the specification**: measure the change against it, and say so where the description does not match the diff.' }}
+              ${{ (steps.order.outputs.has_plan == 'true' || steps.stage_issue.outputs.has_plan == 'true') && 'Context for the plan below.' || '**This is the specification**: measure the change against it, and say so where the description does not match the diff.' }}
             ${{ steps.pull_request.outputs.ai_authored == 'true' && '- `.ai-review/last-report.json` - what the implementing agent says it did and left undone. Judge the change against it, do not retell it. Missing when there is none.' || '' }}
             - `.ai-plan/plan.json` - the approved plan, if there is one; `.ai-plan/plan.md` is the
               part a person sees, and wins where it differs; an older plan has only `plan.md`.
@@ -673,10 +685,8 @@ jobs:
               finding. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
               acceptance criterion. Check the diff against them and cite them; use step titles
               where a plan has no ids.
-            - `.ai-plan/issue.json` - why the work was wanted, when there is an issue.
-            - `.ai-plan/comments.json` - the issue comments since the plan, oldest first, with their
-              author and an `is_bot` flag. What a person asked for there wins over the plan: code
-              that follows it is not a plan mismatch.
+            ${{ steps.order.outputs.found == 'true' && '- `.ai-plan/work-order.json` - what the coding agent was handed: `task` is why the work was wanted, and `feedback_on_plan` the comments made after the plan, oldest first, with their author and an `is_bot` flag. What a person asked for there wins over the plan: code that follows it is not a plan mismatch.' || '- `.ai-plan/issue.json` - why the work was wanted, when there is an issue.
+            - `.ai-plan/comments.json` - the issue comments since the plan, oldest first, with their author and an `is_bot` flag. What a person asked for there wins over the plan: code that follows it is not a plan mismatch.' }}
             - `.ai-review/feedback.json` - what is open on this pull request: `source` is
               `thread`, `review`, `comment` or `check` (a failing check), with an `anchor`, a
               `state`, and for a thread an `answered` flag.
@@ -788,7 +798,7 @@ jobs:
               - `path` and `line` - where it is. `line` is in the **new file**, and gets an
                 inline comment only on a line the diff contains - an added or context line in a
                 hunk. Take it from `diff.patch`. Leave both out for the change as a whole.
-              - `refs` - ${{ steps.stage_issue.outputs.has_plan == 'true' && 'the plan ids it is about, printed after the title.' || 'leave it empty.' }}
+              - `refs` - ${{ (steps.order.outputs.has_plan == 'true' || steps.stage_issue.outputs.has_plan == 'true') && 'the plan ids it is about, printed after the title.' || 'leave it empty.' }}
             - `qa_focus` - QA criteria a tester should check first, by id. Usually empty.
 
             ${{ steps.style.outputs.text }}
