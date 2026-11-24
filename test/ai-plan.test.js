@@ -222,28 +222,42 @@ test('the visible part is what comes above the folded JSON, and a banned phrase 
     assert.equal(visiblePart(text), text.slice(0, text.indexOf(JSON_MARKER)).trimEnd());
 });
 
-test('ClickUp gets the plan as formatted blocks, without the JSON copy', () => {
+test('ClickUp gets the plan as four comments of formatted blocks, without the JSON copy', () => {
     const { plan: normal } = normalisePlan(plan);
-    const blocks = clickUpPlan(normal);
-    const text = blocks.map((b) => b.text).join('');
+    const { overview, risks, steps, qa } = clickUpPlan(normal);
+    const text = (blocks) => blocks.map((b) => b.text).join('');
 
-    assert.equal(text, [
-        'Business hours get their own settings page.',
+    assert.equal(text(overview), 'AI plan\n\nBusiness hours get their own settings page.\n');
+    assert.equal(text(risks), [
+        'AI plan: risks and unknowns',
         '',
-        'Risks, unknowns and assumptions',
         'U1 Whether hours differ per office. Needs your decision: Confirm one set per company.',
         '',
-        'Steps',
+        'Reply in this thread to answer or correct any of them, then comment /ai-plan for a revised plan.',
+        '',
+    ].join('\n'));
+    assert.equal(text(steps), [
+        'AI plan: steps',
+        '',
         'S1 Add the model - A new business hours table and its entity',
         'S2 Add the page',
         '',
-        'QA acceptance criteria',
+    ].join('\n'));
+    assert.equal(text(qa), [
+        'AI plan: QA acceptance criteria',
+        '',
         'QA1 (S2) In Company Settings -> Business Hours: Set Monday to 9-5 and save. Expect: Reloading shows 9-5.',
         '',
     ].join('\n'));
-    assert.deepEqual(blocks.find((b) => b.text === 'Steps'), { text: 'Steps', attributes: { bold: true } });
-    assert.deepEqual(blocks.filter((b) => b.attributes?.list?.list === 'unchecked').length, 2);
-    assert.doesNotMatch(text, /"summary"/);
+    assert.deepEqual(overview[0], { text: 'AI plan', attributes: { bold: true } });
+    assert.equal(steps.filter((b) => b.attributes?.list?.list === 'unchecked').length, 2);
+    assert.doesNotMatch(text(overview) + text(steps), /"summary"/);
+});
+
+test('a plan without risks or QA posts no comment for them', () => {
+    const { plan: normal } = normalisePlan({ ...plan, risks: [], qa: [], qa_none: 'Nothing a user can reach.' });
+    assert.equal(clickUpPlan(normal).risks, null);
+    assert.equal(clickUpPlan(normal).qa, null);
 });
 
 test('code, bold and links inside a line become ClickUp attributes', () => {
