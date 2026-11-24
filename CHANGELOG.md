@@ -1664,3 +1664,8 @@
 ## v11.53.1
 
 * Update: plans posted to ClickUp use ClickUp formatting instead of Markdown (39e2103 by George Shestayev)
+
+## v11.53.2
+
+* Update: ClickUp plan posted as overview, risks and steps comments, with replies to the risks read by the next plan (ae473bd by George Shestayev)
+* Update: ClickUp plan posts QA criteria as their own comment, and its footer shows plain spaces (ae473bd by George Shestayev)
