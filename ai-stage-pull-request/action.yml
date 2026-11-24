@@ -416,10 +416,11 @@ runs:
         # comment that triggered this run - a `/ai-do` with instructions after it is
         # feedback, and dropping the text after the command would throw those away. The
         # workflow's own round comments are filtered out, or it would read its own summaries
-        # back as requests.
+        # back as requests, and so are work orders, which a round reads on their own.
         jq --arg since "$since" --arg marker "$ROUND_MARKER" '
           map(select((.created_at // "") > $since))
           | map(select((.body | startswith($marker)) | not))
+          | map(select(((.user.type // "") == "Bot" and (.body | startswith("<!-- ai-work-order -->"))) | not))
           | map({
               id: ("comment-" + (.id | tostring)),
               source: "comment",

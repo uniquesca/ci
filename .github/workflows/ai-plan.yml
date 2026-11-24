@@ -1014,6 +1014,7 @@ jobs:
             {
               "summary": "What is going to be done, in one paragraph.",
               "revision": "",
+              "branch": "export-clients-to-csv",
               "risks": [{"id": "U1", "text": "...", "ask": "..."}],
               "steps": [{"id": "S1", "title": "...", "scope": "...", "detail": "...", "depends_on": []}],
               "qa": [{"id": "QA1", "covers": ["S2"], "where": "...", "do": "...", "expect": "..."}],
@@ -1027,6 +1028,8 @@ jobs:
               what is done, why, and which part of the product it touches ("the company
               settings"). No file paths, class names or jargon. Name any call the developer may
               object to, such as reading an unclear issue one way.
+            - `branch` - a name for the branch the work goes on: three to five lowercase words joined
+              by `-`, saying what the work is.
             - `revision` - on a revised plan, one sentence in ids: "S4 dropped, S7 and S8 added,
               R2 no longer applies". Empty on a first plan.
             - `risks` - `R1` for what could really break, `U1` for an unknown or an assumption.
@@ -1328,8 +1331,22 @@ jobs:
           # is actually targeting
           BASE: ${{ steps.task.outputs.base || github.event.repository.default_branch }}
         run: |
-          gh pr list --head "$BRANCH" --state open --json number,baseRefName \
-            --jq '.[0] // {}' > pull-request.json
+          # The implementing workflow's handoff comment on this issue names its pull request on
+          # its second line. Work started before that line existed is found by its branch name.
+          linked=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
+            | jq -r '
+                flatten
+                | map(select(.user.type == "Bot" and (.body | startswith("<!-- ai-implement -->"))))
+                | map(.body | split("\n") | (.[1] // "") | ltrimstr("<!-- ") | rtrimstr(" -->")
+                      | (try fromjson catch {}) | .pull_request // empty)
+                | last // empty')
+          if [[ -n "$linked" ]]; then
+            gh pr view "$linked" --json number,baseRefName,state \
+              --jq 'if .state == "OPEN" then {number, baseRefName} else {} end' > pull-request.json
+          else
+            gh pr list --head "$BRANCH" --state open --json number,baseRefName \
+              --jq '.[0] // {}' > pull-request.json
+          fi
 
           number=$(jq -r '.number // ""' pull-request.json)
 

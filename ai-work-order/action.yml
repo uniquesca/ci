@@ -67,6 +67,12 @@ outputs:
   plan_created_at:
     description: 'When the plan was posted, as an ISO 8601 UTC timestamp'
     value: ${{ steps.order.outputs.plan_created_at }}
+  source_number:
+    description: 'Number of the issue the work came from, empty for any other source'
+    value: ${{ steps.order.outputs.source_number }}
+  branch_hint:
+    description: 'Name the planner proposed for the branch, without the prefix and not yet checked. Empty when it proposed none'
+    value: ${{ steps.order.outputs.branch_hint }}
 
 runs:
   using: composite

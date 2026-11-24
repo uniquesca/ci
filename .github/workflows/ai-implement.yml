@@ -82,7 +82,7 @@ on:
         default: 'medium'
         type: string
       branch_prefix:
-        description: 'Prefix of the branch the work is pushed to. The branch is this plus `issue-<number>`, which is what ties a pull request back to its issue. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
+        description: 'Prefix of the branch the work is pushed to. The branch is this plus a name from the plan or the task title, such as `export-clients-to-csv`. Only branches carrying this prefix are ever worked on, which is also what keeps a review on somebody else fork from starting an agent'
         required: false
         default: 'ai-feature/'
         type: string
@@ -372,6 +372,9 @@ jobs:
       # as a `User` rather than a `Bot` at all. Keying off the marker as well is what keeps the
       # unattended round cap working whatever the reviewer was configured with.
       REVIEW_MARKER: '<!-- ai-review -->'
+      # Start of the empty commit a draft pull request is opened with, before any work exists.
+      # Github opens no pull request without a commit; the first push replaces this one.
+      PLACEHOLDER_SUBJECT: 'CI: start work on'
     steps:
       # Minted once and used only by workflow-owned git and API steps. The agent never receives it,
       # and the checkout still persists no credentials, so the app can push and open the pull
@@ -406,11 +409,36 @@ jobs:
           ISSUE: ${{ github.event.issue.number }}
           BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
         run: |
-          gh pr list --head "$BRANCH" --state all --json number,state,url,baseRefName,createdAt \
-            --jq 'sort_by(.number) | last // {}' > "$RUNNER_TEMP/existing.json"
+          # The handoff comment records its pull request on its second line. Only a bot's counts,
+          # since anybody can paste the marker. Work started before that line existed is found by
+          # the branch name it was given then.
+          fields='number,state,url,baseRefName,createdAt,isDraft,headRefOid,headRefName'
+          linked=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
+            | jq -r '
+                flatten
+                | map(select(.user.type == "Bot" and (.body | startswith("<!-- ai-implement -->"))))
+                | map(.body | split("\n") | (.[1] // "") | ltrimstr("<!-- ") | rtrimstr(" -->")
+                      | (try fromjson catch {}) | .pull_request // empty)
+                | last // empty')
+          if [[ -n "$linked" ]]; then
+            gh pr view "$linked" --json "$fields" > "$RUNNER_TEMP/existing.json"
+          else
+            gh pr list --head "$BRANCH" --state all --json "$fields" \
+              --jq 'sort_by(.number) | last // {}' > "$RUNNER_TEMP/existing.json"
+          fi
 
           number=$(jq -r '.number // ""' "$RUNNER_TEMP/existing.json")
           state=$(jq -r '.state // ""' "$RUNNER_TEMP/existing.json")
+
+          # A draft still holding only the placeholder commit is a first run that never finished.
+          # The command starts it again on that draft rather than pointing at it.
+          placeholder='false'
+          if [[ "$state" == 'OPEN' && "$(jq -r '.isDraft' "$RUNNER_TEMP/existing.json")" == 'true' ]]; then
+            subject=$(gh api "repos/$GH_REPO/commits/$(jq -r '.headRefOid' "$RUNNER_TEMP/existing.json")" \
+              --jq '.commit.message | split("\n")[0]' 2> /dev/null || true)
+            [[ "$subject" == "$PLACEHOLDER_SUBJECT"* ]] && placeholder='true'
+          fi
+          echo "placeholder=$placeholder" >> "$GITHUB_OUTPUT"
 
           # Where the last round drew its watermark, or when the pull request was opened if no
           # round has run yet. `ai-stage-pull-request` works `since` out exactly this way for a
@@ -437,6 +465,7 @@ jobs:
             printf 'state=%s\n' "$state"
             printf 'number=%s\n' "$number"
             printf 'since=%s\n' "$since"
+            printf 'branch=%s\n' "$(jq -r '.headRefName // ""' "$RUNNER_TEMP/existing.json")"
           } >> "$GITHUB_OUTPUT"
 
           if [[ -n "$state" ]]; then
@@ -498,7 +527,9 @@ jobs:
           # What the two steps above found: the open pull request already implementing this
           # issue, the watermark its work stands at, and when the plan was last posted. All
           # three are empty for every other trigger, and for an issue with nothing open.
-          OPEN_PR: ${{ steps.existing_pr.outputs.state == 'OPEN' && steps.existing_pr.outputs.number || '' }}
+          OPEN_PR: >-
+            ${{ steps.existing_pr.outputs.state == 'OPEN' && steps.existing_pr.outputs.placeholder != 'true'
+            && steps.existing_pr.outputs.number || '' }}
           PLAN_SINCE: ${{ steps.existing_pr.outputs.since }}
           PLAN_AT: ${{ steps.plan_at.outputs.plan_created_at }}
         run: |
@@ -710,15 +741,10 @@ jobs:
             exit 0
           fi
 
-          # The branch name carries the issue number, which is what lets a round read the
-          # plan it is still working to. Derived rather than looked up in the pull request
-          # body, because the branch is this workflow's own construction and the body is
-          # editable prose.
+          # A round works from the work order on the pull request. Only a pull request opened
+          # before work orders existed needs its issue, which its branch name carries.
           issue="${head_ref##*issue-}"
-          if [[ ! "$issue" =~ ^[0-9]+$ ]]; then
-            echo "::error title=Cannot find the issue::Branch $head_ref carries no issue number"
-            exit 1
-          fi
+          [[ "$issue" =~ ^[0-9]+$ ]] || issue=''
 
           {
             printf 'issue=%s\n' "$issue"
@@ -729,7 +755,7 @@ jobs:
             printf 'url=%s\n' "$(jq -r '.url' "$RUNNER_TEMP/pull-request.json")"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Round on #$PR, branch $head_ref, implementing issue #$issue"
+          echo "Round on #$PR, branch $head_ref${issue:+, implementing issue #$issue}"
 
       # Deliberately not gated on PROCEED. A run that has already stood down still needs an
       # answer here, because the step below it only speaks to somebody the gate approved - and
@@ -910,6 +936,7 @@ jobs:
         id: existing
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
         env:
+          PLACEHOLDER: ${{ steps.existing_pr.outputs.placeholder }}
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -923,6 +950,12 @@ jobs:
           # argument. A quoted string laid out to match this script's indentation puts several
           # spaces in front of every line after the first, and four spaces in markdown is a
           # code block.
+          if [[ "$state" == 'OPEN' && "$PLACEHOLDER" == 'true' ]]; then
+            echo "draft=$number" >> "$GITHUB_OUTPUT"
+            echo "Starting the work again on the draft $url, which still holds only its placeholder commit"
+            exit 0
+          fi
+
           case "$state" in
             OPEN)
               # The plan has not moved since that pull request last read it - a plan that had
@@ -1026,12 +1059,29 @@ jobs:
           # pushing anything itself, however it is asked to.
           persist-credentials: false
 
-      # The plan is the specification in both modes, and it lives on the issue in exactly one
-      # copy. A round reads it too: the code under review is meant to implement it, and a
-      # revised plan has to reach the next round without anybody copying it anywhere.
+      # What a round works from: the work order the first run posted on the pull request, so a
+      # round never goes back to the issue. Not for a round asked for on the issue, which hands
+      # over a revised plan and builds a new order below.
+      - name: Read the work order from the pull request
+        id: order
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'round'
+          && steps.event.outputs.trigger != 'issue-command' }}
+        uses: uniquesca/ci/ai-work-order@v11
+        with:
+          mode: fetch
+          pull_request: ${{ steps.event.outputs.pull_request }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The handover from the issue: the first run, a round asked for on the issue after a replan,
+      # and a pull request opened before work orders existed. The step after the plan check below
+      # turns what is staged here into the work order.
       - name: Stage the issue and its plan
         id: stage_issue
-        if: ${{ success() && env.PROCEED == 'true' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && steps.order.outputs.found != 'true'
+          && (steps.event.outputs.issue || steps.pull_request.outputs.issue) != '' }}
         uses: uniquesca/ci/ai-stage-issue@v11
         with:
           issue: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
@@ -1056,6 +1106,21 @@ jobs:
           gh issue comment "$ISSUE" --body "@$ACTOR there is no plan on this issue yet, so there is nothing to implement. Run \`/ai-plan\` first, review the plan it posts, then run \`$COMMAND\` again."
           echo "PROCEED=false" >> "$GITHUB_ENV"
           echo "Issue #$ISSUE has no plan comment, nothing to implement"
+
+      # Everything the agent works from, in one file. It is posted on the pull request further
+      # down, which is what every later round reads instead of the issue.
+      - name: Build the work order
+        id: order_built
+        if: ${{ success() && env.PROCEED == 'true' && steps.stage_issue.outcome == 'success' }}
+        uses: uniquesca/ci/ai-work-order@v11
+        with:
+          mode: build
+          source: >-
+            ${{ format('{{"kind":"issue","repository":"{0}","number":{1},"url":"{2}/{0}/issues/{1}"}}',
+                github.repository, steps.event.outputs.issue || steps.pull_request.outputs.issue, github.server_url) }}
+          plan_url: ${{ steps.stage_issue.outputs.plan_url }}
+          plan_base: ${{ steps.stage_issue.outputs.plan_base }}
+          plan_created_at: ${{ steps.stage_issue.outputs.plan_created_at }}
 
       # Everything asking for a change, from every source, normalised into one list. This is
       # the round's actual input.
@@ -1145,10 +1210,10 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.stage_issue.outputs.plan_created_at != ''
+          && (steps.order_built.outputs.plan_created_at || steps.order.outputs.plan_created_at) != ''
           && steps.stage_pr.outputs.since != '' }}
         env:
-          PLAN_AT: ${{ steps.stage_issue.outputs.plan_created_at }}
+          PLAN_AT: ${{ (steps.order_built.outputs.plan_created_at || steps.order.outputs.plan_created_at) }}
           SINCE: ${{ steps.stage_pr.outputs.since }}
         run: |
           if [[ ! "$PLAN_AT" > "$SINCE" ]]; then
@@ -1167,7 +1232,7 @@ jobs:
             printf 'instruction<<AI_IMPLEMENT_REVISION\n'
             printf '%s\n' \
               '**The plan was revised after the last round, so this branch was built to an older plan.**' \
-              'Reconcile the whole branch against `.ai-plan/plan.json`, not only the feedback: add what the plan now asks for, and take out the code of steps it dropped.' \
+              'Reconcile the whole branch against the `plan` in `.ai-plan/work-order.json`, not only the feedback: add what the plan now asks for, and take out the code of steps it dropped.' \
               'Its `revision` note says which ids moved. Report what you changed for the revision and what you left alone.' \
               'Where the revision and the feedback disagree about code somebody has read, the feedback wins.'
             printf 'AI_IMPLEMENT_REVISION\n'
@@ -1382,6 +1447,40 @@ jobs:
           echo "PROCEED=false" >> "$GITHUB_ENV"
           echo "::warning title=Unattended round limit reached::$ROUNDS unattended rounds on #$PR, limit is $MAX"
 
+      # A new branch is named after the work: the name the planner proposed, or the task's title.
+      # Work that already has a pull request keeps its branch, whatever it was called.
+      - name: Name the branch
+        id: name
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.existing_pr.outputs.branch == '' }}
+        env:
+          PREFIX: ${{ inputs.branch_prefix }}
+          HINT: ${{ steps.order_built.outputs.branch_hint }}
+          TITLE: ${{ steps.order_built.outputs.title }}
+          ISSUE: ${{ steps.event.outputs.issue }}
+        run: |
+          # Lowercase words of letters and digits joined by `-`, cut at a word to 50 characters
+          slug() {
+            printf '%s' "$1" | iconv -f utf-8 -t ascii//TRANSLIT 2> /dev/null | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+              | awk '{ if (length($0) <= 50) { print; exit } s = substr($0, 1, 51); sub(/-[^-]*$/, "", s); print s }'
+          }
+          name=$(slug "$HINT")
+          [[ -n "$name" ]] || name=$(slug "$TITLE")
+          [[ -n "$name" ]] || name="issue-$ISSUE"
+
+          # Taken by any branch, open or long merged, gets a number on the end
+          branch="$PREFIX$name"
+          n=2
+          while gh api "repos/$GH_REPO/git/ref/heads/$branch" --silent 2> /dev/null; do
+            branch="$PREFIX$name-$n"
+            n=$((n + 1))
+          done
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "The work goes on $branch"
+
       # After every guard that can stand the run down through `PROCEED`, and that placement is
       # the point: the `workflow_run` trigger fires for every QA run on every branch this
       # workflow owns, and a round follows only the few with something to act on. Labelling in
@@ -1425,7 +1524,7 @@ jobs:
           # Who the commits are authored by, resolved below into the app's bot login and the
           # noreply address that login is linked to
           APP_SLUG: ${{ steps.ai_implement.outputs.app-slug }}
-          BRANCH: ${{ steps.pull_request.outputs.branch || format('{0}issue-{1}', inputs.branch_prefix, steps.event.outputs.issue) }}
+          BRANCH: ${{ steps.pull_request.outputs.branch || steps.existing_pr.outputs.branch || steps.name.outputs.branch }}
           # Which branch the work is cut from, and which one the pull request will target. This
           # is the only place either question is answered, and the three candidates are ranked
           # differently depending on whether there is already a branch - see below.
@@ -1437,7 +1536,7 @@ jobs:
           # planning workflow. This is the one that matters most of the time: it means the
           # branch gets cut from whatever the plan actually read, without anybody having to say
           # so twice. Empty for a plan posted before that was recorded.
-          PLAN_BASE: ${{ steps.stage_issue.outputs.plan_base }}
+          PLAN_BASE: ${{ (steps.order_built.outputs.plan_base || steps.order.outputs.plan_base) }}
           # What the pull request behind this branch already targets - the one a round is
           # continuing, or the closed one a first run is reviving. Empty on an ordinary first
           # run, and not separately checked to exist: it is a branch Github reported as the base
@@ -1530,6 +1629,99 @@ jobs:
             printf 'created=%s\n' "$created"
           } >> "$GITHUB_OUTPUT"
 
+      # The handoff ends here: the work moves to a draft pull request before any code exists, so
+      # it is visible from the start and every run after this one is a run on the pull request.
+      # Github opens no pull request without a commit, so the draft starts on an empty placeholder
+      # commit that skips CI; the first push replaces it. A draft left holding only that commit
+      # by a run that failed is picked up again by the next command on the issue.
+      - name: Open the draft pull request
+        id: draft
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.mode == 'initial'
+          && steps.existing.outputs.reopen == '' }}
+        env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
+          GIT_TOKEN: ${{ steps.ai_implement.outputs.token }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          BASE: ${{ steps.branch.outputs.base }}
+          REUSE: ${{ steps.existing.outputs.draft }}
+          ISSUE: ${{ steps.event.outputs.issue }}
+          TITLE: ${{ steps.order_built.outputs.title }}
+          PLAN_URL: ${{ steps.order_built.outputs.plan_url }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ -n "$REUSE" ]]; then
+            # The branch step checked out the draft's branch, whose tip is the placeholder
+            {
+              printf 'number=%s\n' "$REUSE"
+              printf 'url=%s\n' "$(gh pr view "$REUSE" --json url --jq '.url')"
+              printf 'placeholder=%s\n' "$(git rev-parse HEAD)"
+              printf 'reused=true\n'
+            } >> "$GITHUB_OUTPUT"
+            echo "Working on the draft #$REUSE again"
+            exit 0
+          fi
+
+          git commit --quiet --allow-empty -m "$PLACEHOLDER_SUBJECT #$ISSUE [skip ci]"
+          auth=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push --quiet origin "HEAD:refs/heads/$BRANCH"
+
+          # ClickUp tasks named in the issue body, so the pull request links them too
+          clickup=$(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '.body // ""' 2> /dev/null \
+            | grep -oE 'https://app\.clickup\.com/t/[A-Za-z0-9/_-]+' | awk '!seen[$0]++' || true)
+
+          # Everything known before the work: where it came from, the empty QA pair the step
+          # after the run fills in, and that it is in progress. The run rewrites it when it ends.
+          {
+            printf 'Closes #%s' "$ISSUE"
+            [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
+            while IFS= read -r link; do
+              [[ -n "$link" ]] && printf ' · [ClickUp %s](%s)' "${link##*/}" "$link"
+            done <<< "$clickup"
+            printf '\n\n'
+            printf '> [!NOTE]\n> **Work in progress.** The coding agent is on its first run ([Run](%s)). This pull request turns ready for review when it is done.\n\n' "$RUN_URL"
+            printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
+            printf -- '---\n\nRequested by @%s\n' "$ACTOR"
+          } > "$RUNNER_TEMP/draft-body.md"
+
+          url=$(gh pr create --draft --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/draft-body.md")
+          {
+            printf 'number=%s\n' "${url##*/}"
+            printf 'url=%s\n' "$url"
+            printf 'placeholder=%s\n' "$(git rev-parse HEAD)"
+            printf 'reused=false\n'
+          } >> "$GITHUB_OUTPUT"
+          echo "Opened the draft $url"
+
+      - name: Post the work order on the draft
+        if: ${{ success() && env.PROCEED == 'true' && steps.draft.outputs.number != '' }}
+        uses: uniquesca/ci/ai-work-order@v11
+        with:
+          mode: post
+          pull_request: ${{ steps.draft.outputs.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Where the work went, said on the issue once. `ai-retro` reads who asked from this comment.
+      - name: Point the issue at the draft
+        if: ${{ success() && env.PROCEED == 'true' && steps.draft.outputs.reused == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
+          ISSUE: ${{ steps.event.outputs.issue }}
+          PR_URL: ${{ steps.draft.outputs.url }}
+          ACTOR: ${{ steps.event.outputs.actor }}
+          COMMAND: ${{ inputs.command }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            printf '<!-- ai-implement -->\n<!-- %s -->\n\n' "$(jq -nc --argjson pr "${PR_URL##*/}" '{pull_request: $pr}')"
+            printf 'The work is at %s, as a draft until the coding agent finishes its first run.\n\n' "$PR_URL"
+            printf 'It continues there, not here: review it there, and `%s` works there too. This issue keeps the plan - after `/ai-plan` revises it, run `%s` here to hand the revised plan over.\n\n' "$COMMAND" "$COMMAND"
+            printf -- '---\n\nRequested by @%s &nbsp;·&nbsp; [Run](%s)\n' "$ACTOR" "$RUN_URL"
+          } > "$RUNNER_TEMP/handoff-comment.md"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/handoff-comment.md"
+
       # A base asked for on a branch that already existed, which is a request nothing can act on:
       # the history is already sitting on top of something else. Said out loud rather than
       # dropped, because a person who typed `base=` and got silence has no way to tell that from
@@ -1591,14 +1783,14 @@ jobs:
           ${{ success() && env.PROCEED == 'true'
           && steps.branch.outputs.created == 'true'
           && steps.event.outputs.requested_base != ''
-          && steps.stage_issue.outputs.plan_base != ''
-          && steps.event.outputs.requested_base != steps.stage_issue.outputs.plan_base }}
+          && (steps.order_built.outputs.plan_base || steps.order.outputs.plan_base) != ''
+          && steps.event.outputs.requested_base != (steps.order_built.outputs.plan_base || steps.order.outputs.plan_base) }}
         env:
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           TARGET: ${{ steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
           REQUESTED: ${{ steps.event.outputs.requested_base }}
-          PLAN_BASE: ${{ steps.stage_issue.outputs.plan_base }}
+          PLAN_BASE: ${{ (steps.order_built.outputs.plan_base || steps.order.outputs.plan_base) }}
           COMMAND: ${{ inputs.command }}
         run: |
           {
@@ -1757,8 +1949,8 @@ jobs:
           # Instructions only. A run that ends its turn waiting on anything posts nothing: the
           # run ends with the turn, and nothing wakes it.
           prompt: |
-            You are a senior software engineer. Implement the approved plan for issue
-            #${{ steps.event.outputs.issue }} of this repository, in the working tree you are in.
+            You are a senior software engineer. Implement the approved plan in the work order, in
+            the working tree you are in.
 
             This branch is cut from `${{ steps.branch.outputs.base }}` and merges back into it,
             so that is the code your change has to fit. Some of the plan may already be done.
@@ -1767,16 +1959,17 @@ jobs:
 
             - `AGENTS.md`, if the repository has one and it is not already in your instructions - how
               work is done here.
-            - `.ai-plan/plan.json` - the approved plan, and the specification. `.ai-plan/plan.md`
-              is the part a person sees, and wins where it differs; an older plan has only
-              `plan.md`. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
-              acceptance criterion. Cite them as described below, or step titles where a plan
-              has no ids.
-            - `.ai-plan/issue.json` - the issue, for why the work is wanted.
-            - `.ai-plan/comments.json` - the comments since the plan, oldest first, with their author
-              and an `is_bot` flag. Each is feedback on the plan, and wins over it.
+            - `.ai-plan/work-order.json` - everything you work from:
+              - `plan` - the approved plan, and the specification. `plan_markdown` is the part a
+                person sees, and wins where it differs; an older plan has only `plan_markdown`.
+                Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA` acceptance
+                criterion. Cite them as described below, or step titles where a plan has no ids.
+              - `task` - what was asked for, and why the work is wanted.
+              - `feedback_on_plan` - comments made after the plan, oldest first, with their
+                author and an `is_bot` flag. Each wins over the plan.
 
-            If there is neither `plan.json` nor `plan.md`, stop and say so as your final message.
+            If the work order has neither `plan` nor `plan_markdown`, stop and say so as your
+            final message.
 
             Read the code the plan touches first, and match its conventions - structure, error
             handling, tests. The plan is the scope: where you think it is wrong, do it as written
@@ -1898,14 +2091,14 @@ jobs:
               answered, and earlier reviews. **A record, not a task list** - nothing in it is
               work.
             - `.ai-review/pull-request.json` - the pull request.
-            - `.ai-plan/plan.json` - the approved plan, if the issue still has one. It may have
-              been revised since the last round; the workflow says so below when it has.
-              `.ai-plan/plan.md` is the part a person sees, and wins where it differs; an older
-              plan has only `plan.md`. Feedback wins over the plan. Ids: `S` step, `R` risk, `U`
-              unknown or assumption, `C` check, `QA` acceptance criterion. Feedback cites them
-              ("C1 still fails"), so read the item first; an id in an older comment still means
-              the same item.
-            - `.ai-plan/issue.json` and `.ai-plan/comments.json` - the issue this came from.
+            - `.ai-plan/work-order.json` - what this pull request was asked to do. `plan` is the
+              approved plan; it may have been revised since the last round, and the workflow
+              says so below when it has. `plan_markdown` is the part a person sees, and wins
+              where it differs; an older plan has only `plan_markdown`. Feedback wins over the
+              plan. Ids: `S` step, `R` risk, `U` unknown or assumption, `C` check, `QA`
+              acceptance criterion. Feedback cites them ("C1 still fails"), so read the item
+              first; an id in an older comment still means the same item. `task` and
+              `feedback_on_plan` are what was asked for and said before the work started.
             - `.ai-review/last-report.json` - what the previous run reported, in the shape you
               write below. Start from it. Missing when there was none.
             - `.ai-reports/` - the output of the failing checks on this commit, one directory per
@@ -2023,7 +2216,7 @@ jobs:
           kind: 'implement'
           # A round is triggered on the pull request and learns its issue from the branch, so
           # the resolved number comes first and the typed-on issue is the fallback
-          issue: ${{ steps.pull_request.outputs.issue || steps.event.outputs.issue }}
+          issue: ${{ steps.pull_request.outputs.issue || steps.event.outputs.issue || steps.order.outputs.source_number }}
           # Empty on an initial run: the pull request is opened after this step, and the issue
           # is what ties the two together anyway
           pull_request: ${{ steps.event.outputs.pull_request }}
@@ -2137,11 +2330,21 @@ jobs:
           DEFAULT_BASE: ${{ github.event.repository.default_branch }}
           MODE: ${{ steps.event.outputs.mode }}
           ROUND: ${{ steps.stage_pr.outputs.round }}
-          TITLE: ${{ steps.stage_issue.outputs.title }}
-          ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue }}
+          TITLE: ${{ (steps.order_built.outputs.title || steps.order.outputs.title) }}
+          ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue || steps.order.outputs.source_number }}
           ACTOR: ${{ steps.event.outputs.actor }}
+          PLACEHOLDER: ${{ steps.draft.outputs.placeholder }}
         run: |
           git add -A
+
+          # The draft's empty placeholder commit goes: the work is committed straight onto the base
+          # and pushed over it. Nobody has reviewed an empty commit, so rewriting it loses nothing.
+          # Left alone if the agent committed on top of it, which it is told not to do.
+          lease=()
+          if [[ -n "$PLACEHOLDER" && "$(git rev-parse HEAD)" == "$PLACEHOLDER" ]]; then
+            git reset --quiet --soft HEAD~1
+            lease=("--force-with-lease=refs/heads/$BRANCH:$PLACEHOLDER")
+          fi
 
           if git diff --cached --quiet; then
             # Nothing new in the working tree. The agent was told not to commit, but check
@@ -2357,7 +2560,7 @@ jobs:
           # Read as a failure only because the shell carries pipefail - on `tee`'s status a
           # refused push is a successful one, and a pull request is opened for a missing branch
           if ! git -c http.extraheader="AUTHORIZATION: basic $auth" \
-                 push origin "HEAD:refs/heads/$BRANCH" 2>&1 | tee "$RUNNER_TEMP/push-output.txt"; then
+                 push "${lease[@]}" origin "HEAD:refs/heads/$BRANCH" 2>&1 | tee "$RUNNER_TEMP/push-output.txt"; then
             # The run summary outlives nothing here, but it is the one place somebody reading
             # the failure comment can get to in a click, and it does not require scrolling a
             # job log to find
@@ -2399,12 +2602,12 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           BRANCH: ${{ steps.branch.outputs.branch }}
-          TITLE: ${{ steps.stage_issue.outputs.title }}
+          TITLE: ${{ (steps.order_built.outputs.title || steps.order.outputs.title) }}
           # Resolved where the branch was, so the pull request targets whatever the work was
           # actually cut from - the default branch unless the command asked for another
           BASE: ${{ steps.branch.outputs.base }}
           ISSUE: ${{ steps.event.outputs.issue }}
-          PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
+          PLAN_URL: ${{ (steps.order_built.outputs.plan_url || steps.order.outputs.plan_url) }}
           # The agent's rendered report, carrying the held-back workflow patch where the step
           # that held it back appended one
           SUMMARY_FILE: ${{ steps.workflow_changes.outputs.report_file || steps.render.outputs.body_file }}
@@ -2419,6 +2622,7 @@ jobs:
           # What the pull request being revived used to target. Only differs from BASE when its
           # branch was gone and a new one was cut from somewhere else.
           OLD_BASE: ${{ steps.existing.outputs.base }}
+          DRAFT: ${{ steps.draft.outputs.number }}
         run: |
           url=''
 
@@ -2496,11 +2700,21 @@ jobs:
               printf '\n'
             } > "$RUNNER_TEMP/pr-body.md"
 
-            url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
-            # `gh pr create` prints the pull request URL, which ends in its number
-            number="${url##*/}"
-            echo "Opened $url"
-            echo "created=true" >> "$GITHUB_OUTPUT"
+            if [[ -n "$DRAFT" ]]; then
+              # The draft the handoff opened: what was done replaces what was expected
+              gh pr edit "$DRAFT" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md" > /dev/null
+              gh pr ready "$DRAFT"
+              url=$(gh pr view "$DRAFT" --json url --jq '.url')
+              number="$DRAFT"
+              echo "Marked $url ready for review"
+              echo "created=true" >> "$GITHUB_OUTPUT"
+            else
+              url=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/pr-body.md")
+              # `gh pr create` prints the pull request URL, which ends in its number
+              number="${url##*/}"
+              echo "Opened $url"
+              echo "created=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
           {
@@ -2529,7 +2743,7 @@ jobs:
           pull_request: ${{ steps.pr.outputs.number || steps.event.outputs.pull_request }}
           repository: ${{ github.repository }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          plan_file: ${{ steps.stage_issue.outputs.plan_file }}
+          plan_file: ${{ (steps.order_built.outputs.plan_file || steps.order.outputs.plan_file) }}
           marker: ${{ env.QA_MARKER }}
           end_marker: ${{ env.QA_END_MARKER }}
 
@@ -2551,9 +2765,8 @@ jobs:
           gh api "repos/$GH_REPO/pulls/$PR" --method PATCH -f body="$body" > /dev/null \
             || echo "::warning title=Commit not recorded::A red check on #$PR will wait for the command"
 
-      # The issue is where the work was asked for, so the pull request has to be findable
-      # from it. This is also the hand-off: after this comment, the issue is only for the
-      # plan.
+      # How the first run ended, on the pull request. A reopened pull request had no handoff
+      # comment, so the issue still hears about that one. The cost line rides on this comment.
       - name: Post the pull request link on the issue
         id: post_link
         if: >-
@@ -2572,9 +2785,25 @@ jobs:
           # footer is for whoever opens the issue; this is the only copy a machine can add up.
           COST: ${{ steps.render.outputs.cost_line || steps.report.outputs.cost_line }}
           COMMAND: ${{ inputs.command }}
+          DRAFT: ${{ steps.draft.outputs.number }}
         run: |
+          if [[ -n "$DRAFT" ]]; then
+            {
+              printf 'The first run is done, and this pull request is ready for review. Comment on the lines you want changed and submit the review as **Request changes** - another round starts by itself.\n\n'
+              printf 'Requested by @%s' "$ACTOR"
+              [[ -n "$USAGE" ]] && printf ' &nbsp;·&nbsp; %s' "$USAGE"
+              printf ' &nbsp;·&nbsp; [Run](%s)' "$RUN_URL"
+              [[ -n "$CONTEXT_URL" ]] && printf ' &nbsp;·&nbsp; [Context](%s)' "$CONTEXT_URL"
+              printf '\n'
+              [[ -n "$COST" ]] && printf '\n%s\n' "$COST"
+            } > "$RUNNER_TEMP/first-run-comment.md"
+            cat "$RUNNER_TEMP/first-run-comment.md" >> "$GITHUB_STEP_SUMMARY"
+            gh issue comment "$DRAFT" --body-file "$RUNNER_TEMP/first-run-comment.md"
+            exit 0
+          fi
+
           {
-            printf '<!-- ai-implement -->\n\n'
+            printf '<!-- ai-implement -->\n<!-- %s -->\n\n' "$(jq -nc --argjson pr "${PR_URL##*/}" '{pull_request: $pr}')"
             printf 'Opened %s with an implementation of the plan.\n\n' "$PR_URL"
             printf 'The work continues there, not here. Comment on the lines you want changed and submit the review as **Request changes** - another round starts by itself. `%s` works in the pull request too.\n\n' "$COMMAND"
             printf 'This issue keeps the plan. Run `/ai-plan` here if the approach itself needs revising, and the next round will pick it up.\n\n'
@@ -2592,7 +2821,8 @@ jobs:
           cat "$RUNNER_TEMP/implement-comment.md" >> "$GITHUB_STEP_SUMMARY"
           gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/implement-comment.md"
 
-      # An initial run that produced nothing has no pull request to say so in.
+      # Said on the draft where there is one, which stays open for the next command on the issue
+      # to pick up; a reopened pull request's first run has only the issue to say it on.
       - name: Report an empty implementation
         if: >-
           ${{ success() && env.PROCEED == 'true'
@@ -2600,7 +2830,7 @@ jobs:
           && steps.push.outputs.pushed == 'false' }}
         env:
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
-          ISSUE: ${{ steps.event.outputs.issue }}
+          ISSUE: ${{ steps.draft.outputs.number || steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           # Set where the only thing the agent changed was a workflow file, which is a run with
@@ -2618,9 +2848,9 @@ jobs:
           # either of them lands
           {
             if [[ -z "$HELD_BACK" ]]; then
-              printf '@%s the implementing agent finished without changing any files, so there is nothing to open a pull request with. The run log has what it did: %s\n' "$ACTOR" "$RUN_URL"
+              printf '@%s the implementing agent finished without changing any files, so there is nothing to review yet. The run log has what it did: %s\n' "$ACTOR" "$RUN_URL"
             else
-              printf '@%s the implementing agent changed nothing outside %s, and that cannot be pushed from here - so there is no pull request for this issue.\n\n' "$ACTOR" "$HELD_BACK"
+              printf '@%s the implementing agent changed nothing outside %s, and that cannot be pushed from here - so there is nothing to review yet.\n\n' "$ACTOR" "$HELD_BACK"
               [[ -f "$REPORT_FILE" ]] && cat "$REPORT_FILE"
               printf '\nThe run log has the rest of what it did: %s\n' "$RUN_URL"
             fi
@@ -2685,7 +2915,7 @@ jobs:
           # What the round cost, as one hidden line for a report to read back
           COST: ${{ steps.render.outputs.cost_line || steps.report.outputs.cost_line }}
           REVISED: ${{ steps.revision.outputs.revised }}
-          PLAN_URL: ${{ steps.stage_issue.outputs.plan_url }}
+          PLAN_URL: ${{ (steps.order_built.outputs.plan_url || steps.order.outputs.plan_url) }}
         run: |
           # Built with jq rather than printf, so a timestamp or a flag can never break the
           # line the next round parses
@@ -2897,6 +3127,22 @@ jobs:
       #
       # `verdict` and not the two agent steps: one of those goes red for an overrun that cost
       # the work nothing, and a round that was pushed must not also be reported as unfinished.
+      # Posted whenever an order was built and the draft step did not already post it: a round
+      # handing over a revised plan, a reopened pull request, and one opened before work orders.
+      # Even after a failed round, because a revised plan left unposted would be lost to the next
+      # round, which reads only the pull request.
+      - name: Post the work order on the pull request
+        if: >-
+          ${{ !cancelled()
+          && steps.order_built.outputs.found == 'true'
+          && steps.draft.outputs.number == ''
+          && (steps.pr.outputs.number != '' || steps.event.outputs.pull_request != '') }}
+        uses: uniquesca/ci/ai-work-order@v11
+        with:
+          mode: post
+          pull_request: ${{ steps.pr.outputs.number || steps.event.outputs.pull_request }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Report a failed run
         if: >-
           ${{ always()
@@ -2912,7 +3158,7 @@ jobs:
           || steps.post_link.outcome == 'failure'
           || steps.close.outcome == 'failure') }}
         env:
-          TARGET: ${{ steps.event.outputs.target }}
+          TARGET: ${{ steps.draft.outputs.number || steps.event.outputs.target }}
           ACTOR: ${{ steps.event.outputs.actor }}
           ACTOR_TYPE: ${{ steps.event.outputs.actor_type }}
           MODE: ${{ steps.event.outputs.mode }}

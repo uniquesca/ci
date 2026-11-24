@@ -327,10 +327,24 @@ jobs:
           # somebody wrote may answer to no issue at all, and the review is then built from the
           # description instead.
           issue=''
+          # The issue a work order on the pull request was handed over from, for a branch whose
+          # name does not carry it. Only a bot's order counts, since anybody can paste the marker.
+          order_issue() {
+            local body
+            body=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$1/comments" \
+              | jq -r 'flatten | map(select(.user.type == "Bot" and (.body | startswith("<!-- ai-work-order -->"))))
+                       | last | .body // ""')
+            if grep -q '^<!-- ai-work-order-data ' <<< "$body"; then
+              sed -nE 's/^<!-- ai-work-order-data ([A-Za-z0-9+\/=]+) -->$/\1/p' <<< "$body" | base64 -d | gunzip
+            else
+              sed -n '/^```json$/,/^```$/p' <<< "$body" | sed '1d;$d'
+            fi | jq -r 'select(.source.kind == "issue") | .source.number // empty' 2> /dev/null || true
+          }
           if [[ "$ai_authored" == 'true' ]]; then
-            # The branch name carries the number, and that branch is the implementing workflow's
-            # own construction rather than prose anybody can edit.
-            candidate="${head_ref##*issue-}"
+            # The work order on the pull request says where the work came from. A branch opened
+            # before work orders existed carries the number in its name instead.
+            candidate=$(order_issue "$pr")
+            [[ -n "$candidate" ]] || candidate="${head_ref##*issue-}"
             if [[ "$candidate" =~ ^[0-9]+$ ]]; then
               issue="$candidate"
             elif [[ "$trigger" == 'dispatch' ]]; then

@@ -41,6 +41,8 @@ Used by [`ai-implement`](../ai/ai-implement.md).
 | `plan_url` | Link to where the plan was posted |
 | `plan_base` | Branch the plan was written against, empty when it did not say |
 | `plan_created_at` | When the plan was posted, as an ISO 8601 UTC timestamp |
+| `source_number` | Number of the issue the work came from, empty for any other source |
+| `branch_hint` | Name the planner proposed for the branch, without the prefix and not yet checked. Empty when it proposed none |
 
 ## Dig deeper
 

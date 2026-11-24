@@ -33,6 +33,8 @@ function outputs(order, found) {
         plan_url: order?.plan_url ?? '',
         plan_base: order?.plan_base ?? '',
         plan_created_at: order?.plan_created_at ?? '',
+        source_number: order?.source.number ? String(order.source.number) : '',
+        branch_hint: (order?.plan?.branch ?? '').replace(/[\r\n]/g, ''),
     };
 }
 
