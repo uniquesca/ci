@@ -88,8 +88,8 @@ them can be scanned the same way. Release preparation fails on a critical vulner
 fix. The 5.6 images are report-only: Debian 9 gets no more fixes.
 
 When the daily scan finds a critical vulnerability with a fix, it rebuilds the images from `main`
-without the cached package layer, and the scan after that build alerts on whatever is left. It
-rebuilds at most once a day.
+without the cached package layer. The scan after that build posts either what is left or that the
+rebuild cleared it. It rebuilds at most once a day.
 
 ## Dig deeper
 
