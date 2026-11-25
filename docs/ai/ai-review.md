@@ -92,7 +92,8 @@ diff addresses the steps a criterion covers.
 Read the round comments rather than the individual replies. If two or three rounds have gone by
 with a lot of activity and little diff, the reviewer and the implementer are talking past each
 other, and the fastest fix is a sentence from you. If the *plan* turns out to be wrong rather than
-the code, go back to [`/ai-plan` on the issue](ai-plan.md#adjusting-the-plan).
+the code, go back to [`/ai-plan` on the issue](ai-plan.md#adjusting-the-plan), then hand the revised
+plan over with `/ai-do` there.
 
 ## Secrets
 
@@ -135,8 +136,9 @@ None. The result is a Github review on the pull request.
 ### What the review is built from
 
 The agent gets the diff of the branch against its base (three dots, so it is what this branch
-changed rather than everything on the base since), the **plan, the issue and its comments since the plan** (a person's request there wins over the
-plan) - a review that does
+changed rather than everything on the base since), the **plan, the task and the comments since the plan** (a person's request there wins over the
+plan), from the work order on the pull request where there is one - so the change is measured
+against the plan the coding agent was actually handed - and from the issue otherwise. A review that does
 not know what the change was *meant* to do is a style check, and the plan's
 [ids](ai-plan.md#how-the-plan-is-numbered) are what it checks the diff against - and the review
 history with **answered threads included**, so it can read the reply where its own last concern was

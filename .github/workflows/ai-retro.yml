@@ -119,8 +119,25 @@ jobs:
             exit 0
           }
 
-          issue="${HEAD_REF##*issue-}"
-          [[ "$HEAD_REF" == "$BRANCH_PREFIX"* && "$issue" =~ ^[0-9]+$ ]] || stand_down "$HEAD_REF names no issue."
+          # The issue a work order on the pull request was handed over from, for a branch whose
+          # name does not carry it. Only a bot's order counts, since anybody can paste the marker.
+          order_issue() {
+            local body
+            body=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$1/comments" \
+              | jq -r 'flatten | map(select(.user.type == "Bot" and (.body | startswith("<!-- ai-work-order -->"))))
+                       | last | .body // ""')
+            if grep -q '^<!-- ai-work-order-data ' <<< "$body"; then
+              sed -nE 's/^<!-- ai-work-order-data ([A-Za-z0-9+\/=]+) -->$/\1/p' <<< "$body" | base64 -d | gunzip
+            else
+              sed -n '/^```json$/,/^```$/p' <<< "$body" | sed '1d;$d'
+            fi | jq -r 'select(.source.kind == "issue") | .source.number // empty' 2> /dev/null || true
+          }
+
+          [[ "$HEAD_REF" == "$BRANCH_PREFIX"* ]] || stand_down "$HEAD_REF is not a branch the implementing workflow pushed."
+          # The work order says where the work came from; an older branch carries it in its name
+          issue=$(order_issue "$NUMBER")
+          [[ -n "$issue" ]] || issue="${HEAD_REF##*issue-}"
+          [[ "$issue" =~ ^[0-9]+$ ]] || stand_down "#$NUMBER came from no issue."
 
           # Outside the workspace: the checkout below empties it on a fresh runner
           cd "$RUNNER_TEMP"

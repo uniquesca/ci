@@ -22,8 +22,8 @@ jobs:
         ghcr.io/uniquesca/my-app-worker:latest
 ```
 
-When a scheduled or hand-started run finds a critical vulnerability, comms-api posts the images to
-the Teams Alerts channel.
+A scheduled or hand-started run posts to the Teams Alerts channel through comms-api: the images
+with a critical vulnerability, or a short all-clear when there are none.
 
 ```yaml
 # .trivyignore.yaml in the calling repository, for vulnerabilities you accept
@@ -47,7 +47,7 @@ vulnerabilities:
 | `registry_username` | string | `''` | User `REGISTRY_TOKEN` belongs to. Defaults to the actor of the run |
 | `report_only_images` | string | `''` | Images, one per line, that are scanned and listed but never alert or fail the run |
 | `fail_on_critical` | boolean | `false` | Fail the run when an image has a critical vulnerability that has a fix |
-| `alert` | boolean | `true` | Leave the annotation comms-api turns into a Teams alert |
+| `alert` | boolean | `true` | Leave the annotation comms-api turns into a Teams alert. The all-clear is left either way |
 
 ## Outputs
 

@@ -133,6 +133,7 @@ export function normalisePlan(raw, previous = null) {
     const plan = {
         summary: clip(block(raw.summary), 1500, problems, 'The summary'),
         revision: clip(line(raw.revision), 600, problems, 'The revision note'),
+        branch: clip(line(raw.branch), 60, problems, 'The branch name'),
         risks: section('risks', (item, id) => ({
             text: clip(line(item.text), 1000, problems, id),
             ask: clip(line(item.ask), 500, problems, id),

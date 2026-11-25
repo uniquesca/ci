@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       alert:
-        description: Leave the annotation comms-api turns into a Teams alert
+        description: Leave the annotation comms-api turns into a Teams alert. The all-clear is left either way
         type: boolean
         default: true
     secrets:
@@ -92,6 +92,7 @@ jobs:
 
           mkdir reports
           critical_images=()
+          failed=0
           {
             echo "## Vulnerabilities with a fix available"
             echo
@@ -106,6 +107,7 @@ jobs:
                 --scanners vuln --severity HIGH,CRITICAL --format json \
                 "${ignore[@]}" --output "reports/$name.json" "$image"; then
               echo "::warning::Could not scan $image"
+              failed=$(( failed + 1 ))
               echo "| \`$image\` | scan failed | |" >> "$GITHUB_STEP_SUMMARY"
               continue
             fi
@@ -130,9 +132,16 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-          # comms-api reads this annotation, by its title, to post the Teams alert from a scheduled
-          # or hand-started run. One annotation for all images: GitHub keeps ten warnings per step
-          if [[ "$ALERT" == true ]] && (( ${#critical_images[@]} > 0 )); then
+          # comms-api reads these annotations, by their titles, to post to Teams from a scheduled or
+          # hand-started run. One annotation for all images: GitHub keeps ten warnings per step.
+          # The all-clear is left even when `alert` is off, so a daily scan that finds nothing
+          # still shows that it ran
+          if (( ${#critical_images[@]} == 0 )); then
+            message="${#images[@]} images scanned"
+            (( failed > 0 )) && message+=", ${failed} could not be scanned"
+            (( ${#report_only[@]} > 0 )) && message+=", ${#report_only[@]} report-only not counted"
+            echo "::notice title=No critical vulnerabilities::${message}"
+          elif [[ "$ALERT" == true ]]; then
             list="$(printf '%s%%0A' "${critical_images[@]}")"
             echo "::warning title=Critical vulnerabilities::${list%%%0A}"
           fi
