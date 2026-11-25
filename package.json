@@ -9,7 +9,7 @@
     "scripts": {
         "test": "node --test"
     },
-    "version": "11.53.2",
+    "version": "11.54.0",
     "license": "UNLICENSED",
     "private": true
 }

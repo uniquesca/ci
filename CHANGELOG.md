@@ -1669,3 +1669,10 @@
 
 * Update: ClickUp plan posted as overview, risks and steps comments, with replies to the risks read by the next plan (ae473bd by George Shestayev)
 * Update: ClickUp plan posts QA criteria as their own comment, and its footer shows plain spaces (ae473bd by George Shestayev)
+
+## v11.54.0
+
+* Update: a rebuild started by the Docker image scan reports whether it cleared the critical vulnerabilities (0b96c29 by George Shestayev)
+* Update: ai-review measures the change against the plan in the work order (4a4d925 by George Shestayev)
+* Update: ai-implement branches are named after the work, and the issue finds its pull request through the handoff comment (5e5ab75 by George Shestayev)
+* Update: ai-implement hands work over to a draft pull request with a work order, and rounds read only the pull request (bb7a02f by George Shestayev)
