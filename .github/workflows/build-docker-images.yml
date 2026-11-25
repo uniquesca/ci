@@ -7,12 +7,32 @@ on:
   # The escape hatch out of the change detection below, and the only way to rebuild images whose
   # build failed on the tag that last touched them: a manual run always builds everything
   workflow_dispatch:
+    inputs:
+      rebuilt_for:
+        description: Images the daily scan found critical vulnerabilities in, one per line. Set by the scan
+        type: string
+        default: ''
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  # infra-api reads this annotation, by its title, to tell a rebuild that cleared the images from
+  # an ordinary all-clear
+  rebuilt-for:
+    name: Note what the rebuild is for
+    if: inputs.rebuilt_for != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Note what the rebuild is for
+        env:
+          REBUILT_FOR: ${{ inputs.rebuilt_for }}
+        run: |
+          mapfile -t images < <(grep -v '^[[:space:]]*$' <<< "$REBUILT_FOR")
+          list="$(printf '%s%%0A' "${images[@]}")"
+          echo "::notice title=Rebuilt for critical vulnerabilities::${list%%%0A}"
+
   # The images are tagged with a PHP version, not a release version, so a tag that changes nothing
   # under `docker/` republishes what is already there under the name it is already published as.
   # That is most tags - this repository is released far more often than its images change

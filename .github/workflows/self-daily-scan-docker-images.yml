@@ -47,7 +47,7 @@ jobs:
 
           if (( builds == 0 && running == 0 )); then
             # From `main`, which is the latest release - what a tag build would have built
-            gh workflow run build-docker-images.yml --ref main
+            gh workflow run build-docker-images.yml --ref main -f rebuilt_for="$CRITICAL"
             echo "Started a rebuild for:"
             echo "$CRITICAL"
             exit 0
