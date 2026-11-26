@@ -181,3 +181,30 @@ test('/release counts the runs on the commit under a [skip ci] preparation commi
     assert.equal(core.failed, null);
     assert.equal(core.outputs.branch, 'release/1.2.0');
 });
+
+// A refresh after a run completed on the branch, with no issue open yet
+async function refreshAfterRun(branchExists) {
+    const api = fakeApi({});
+    api.rest.issues.listForRepo = async () => [];
+    api.rest.issues.create = async params => {
+        api.calls.push({ name: 'create', params });
+        return { data: { number: 8 } };
+    };
+    api.rest.git.getRef = async () => {
+        if (!branchExists) {
+            throw Object.assign(new Error('Not Found'), { status: 404 });
+        }
+        return { data: {} };
+    };
+    const tracker = createTracker({ api, repo: { owner: 'o', repo: 'r' }, config: normaliseConfig({ phases }), core: fakeCore(), log: () => {} });
+    await tracker.refresh('release/1.2.0');
+    return api.calls.some(call => call.name === 'create');
+}
+
+test('refresh opens an issue for a release branch made by hand', async () => {
+    assert.equal(await refreshAfterRun(true), true);
+});
+
+test('refresh opens no issue when the branch is gone, as after /abandon', async () => {
+    assert.equal(await refreshAfterRun(false), false);
+});
