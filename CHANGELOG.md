@@ -1676,3 +1676,7 @@
 * Update: ai-review measures the change against the plan in the work order (4a4d925 by George Shestayev)
 * Update: ai-implement branches are named after the work, and the issue finds its pull request through the handoff comment (5e5ab75 by George Shestayev)
 * Update: ai-implement hands work over to a draft pull request with a work order, and rounds read only the pull request (bb7a02f by George Shestayev)
+
+## v11.54.1
+
+* Fix: release-tracker no longer reopens an issue for a release branch deleted by /abandon (4dbee6c by George Shestayev)
