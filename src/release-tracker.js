@@ -373,9 +373,10 @@ export function createTracker({ api, refs = api, repo, config, core, log = () =>
         }
     }
 
-    // A release branch made by hand gets its issue when its first workflow completes
+    // A release branch made by hand gets its issue when its first workflow completes. A run can
+    // complete after /abandon deleted its branch, and that must not reopen an issue for it.
     async function refresh(branch = '') {
-        if (isReleaseBranch(branch)) {
+        if (isReleaseBranch(branch) && (await refExists(`heads/${branch}`))) {
             await openIssue(branch);
         }
         for (const { issue, meta } of await trackedIssues()) {
