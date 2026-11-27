@@ -1680,3 +1680,7 @@
 ## v11.54.1
 
 * Fix: release-tracker no longer reopens an issue for a release branch deleted by /abandon (4dbee6c by George Shestayev)
+
+## v11.55.0
+
+* New: ai-implement starts work from a ClickUp task, and ai-plan attaches the plan JSON to it (112815c by George Shestayev)
