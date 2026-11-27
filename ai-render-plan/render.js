@@ -10,7 +10,7 @@ const env = process.env;
 const out = path.join(env.RUNNER_TEMP, 'ai-render-plan');
 fs.mkdirSync(out, { recursive: true });
 
-const outputs = { rendered: 'false', plan_file: '', clickup_file: '', has_qa: 'false', cost_line: '' };
+const outputs = { rendered: 'false', plan_file: '', clickup_file: '', json_file: '', visible_file: '', has_qa: 'false', cost_line: '' };
 
 function warn(message) {
     console.log(`::warning title=Plan problem::${message}`);
@@ -78,7 +78,14 @@ if (plan) {
     fs.writeFileSync(file, rendered + '\n');
     const clickUpFile = path.join(out, 'clickup.json');
     fs.writeFileSync(clickUpFile, JSON.stringify(clickUpPlan(plan)));
-    Object.assign(outputs, { rendered: 'true', plan_file: file, clickup_file: clickUpFile, has_qa: String(plan.qa.length > 0) });
+    const jsonFile = path.join(out, 'plan.json');
+    fs.writeFileSync(jsonFile, JSON.stringify(plan, null, 2) + '\n');
+    const visibleFile = path.join(out, 'visible.md');
+    fs.writeFileSync(visibleFile, visiblePart(rendered) + '\n');
+    Object.assign(outputs, {
+        rendered: 'true', plan_file: file, clickup_file: clickUpFile, json_file: jsonFile, visible_file: visibleFile,
+        has_qa: String(plan.qa.length > 0),
+    });
     chars = visiblePart(rendered).length;
 } else if (env.INPUT_FALLBACK_FILE && fs.existsSync(env.INPUT_FALLBACK_FILE)) {
     warn('Posting the final message the agent ended on instead');

@@ -18,7 +18,20 @@ on:
       ENV_VARIABLES:
         description: 'JSON object of configuration tokens this repository''s config templates are rendered with. Read only when the application is brought up, which is what renders the templates. These reach a shell the agent controls, so give it a test environment''s credentials and never production''s'
         required: false
+      CLICKUP_TOKEN:
+        description: 'API token of the ClickUp user that posts the plans (System Bot). Needed when `clickup_task` is set'
+        required: false
     inputs:
+      clickup_task:
+        description: 'ClickUp task to start the work for, instead of an issue a comment was made on. Set by the run `infra-api` starts. The plan is read from the task'
+        required: false
+        default: ''
+        type: string
+      requested_by:
+        description: 'GitHub login of whoever asked for the work in ClickUp'
+        required: false
+        default: ''
+        type: string
       anthropic_federation_rule_id:
         description: 'Identity federation rule the job authenticates against. The agent is called with a short-lived token minted from this run''s own Github OIDC identity, and the rule is what decides which repositories and branches are allowed to mint one. An identifier rather than a secret'
         required: true
@@ -225,7 +238,8 @@ jobs:
     # that its head is what the event claimed. `Resolve the pull request` below re-checks all of
     # it against what the API says, and that check is the one that decides.
     if: >-
-      ${{ (github.event_name == 'issue_comment'
+      ${{ inputs.clickup_task != ''
+          || (github.event_name == 'issue_comment'
            && github.event.action == 'created'
            && startsWith(github.event.comment.body, inputs.command))
           || (github.event_name == 'pull_request_review'
@@ -286,7 +300,8 @@ jobs:
             && format('{0}issue-{1}', inputs.branch_prefix, github.event.issue.number)
           || github.event.issue.number
           || github.event.pull_request.head.ref
-          || github.event.workflow_run.head_branch }}
+          || github.event.workflow_run.head_branch
+          || format('clickup-{0}', inputs.clickup_task) }}
       cancel-in-progress: false
     permissions:
       # Wider than the planner needs, because this one pushes a branch and opens a pull
@@ -372,6 +387,7 @@ jobs:
       # as a `User` rather than a `Bot` at all. Keying off the marker as well is what keeps the
       # unattended round cap working whatever the reviewer was configured with.
       REVIEW_MARKER: '<!-- ai-review -->'
+      CLICKUP_TASK: ${{ inputs.clickup_task }}
       # Start of the empty commit a draft pull request is opened with, before any work exists.
       # Github opens no pull request without a commit; the first push replaces this one.
       PLACEHOLDER_SUBJECT: 'CI: start work on'
@@ -403,24 +419,32 @@ jobs:
         id: existing_pr
         if: >-
           ${{ success()
-          && github.event_name == 'issue_comment'
-          && github.event.issue.pull_request == null }}
+          && (inputs.clickup_task != ''
+              || (github.event_name == 'issue_comment' && github.event.issue.pull_request == null)) }}
         env:
           ISSUE: ${{ github.event.issue.number }}
+          PREFIX: ${{ inputs.branch_prefix }}
           BRANCH: ${{ inputs.branch_prefix }}issue-${{ github.event.issue.number }}
         run: |
           # The handoff comment records its pull request on its second line. Only a bot's counts,
           # since anybody can paste the marker. Work started before that line existed is found by
           # the branch name it was given then.
           fields='number,state,url,baseRefName,createdAt,isDraft,headRefOid,headRefName'
-          linked=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
+          linked=$([[ -n "$ISSUE" ]] && gh api --paginate --slurp "repos/$GH_REPO/issues/$ISSUE/comments" \
             | jq -r '
                 flatten
                 | map(select(.user.type == "Bot" and (.body | startswith("<!-- ai-implement -->"))))
                 | map(.body | split("\n") | (.[1] // "") | ltrimstr("<!-- ") | rtrimstr(" -->")
                       | (try fromjson catch {}) | .pull_request // empty)
                 | last // empty')
-          if [[ -n "$linked" ]]; then
+          if [[ -n "$CLICKUP_TASK" ]]; then
+            # A task's pull request links the task in its description. Read from the list rather
+            # than searched for: search lags behind, and does not look inside a link.
+            gh pr list --state all --limit 300 --json "$fields,body" \
+              | jq --arg prefix "$PREFIX" --arg task "/t/$CLICKUP_TASK)" '
+                  map(select((.headRefName | startswith($prefix)) and ((.body // "") | contains($task))))
+                  | sort_by(.number) | last // {} | del(.body)' > "$RUNNER_TEMP/existing.json"
+          elif [[ -n "$linked" ]]; then
             gh pr view "$linked" --json "$fields" > "$RUNNER_TEMP/existing.json"
           else
             gh pr list --head "$BRANCH" --state all --json "$fields" \
@@ -484,7 +508,7 @@ jobs:
       # tree, and this one is thrown away with the runner.
       - name: Find when the plan was last posted
         id: plan_at
-        if: ${{ success() && steps.existing_pr.outputs.state == 'OPEN' }}
+        if: ${{ success() && steps.existing_pr.outputs.state == 'OPEN' && inputs.clickup_task == '' }}
         uses: uniquesca/ci/ai-stage-issue@v11
         with:
           issue: ${{ github.event.issue.number }}
@@ -524,16 +548,28 @@ jobs:
           RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
           RUN_ACTOR_TYPE: ${{ github.event.workflow_run.actor.type }}
           RUN_NAME: ${{ github.event.workflow_run.name }}
+          REQUESTED_BY: ${{ inputs.requested_by }}
           # What the two steps above found: the open pull request already implementing this
           # issue, the watermark its work stands at, and when the plan was last posted. All
           # three are empty for every other trigger, and for an issue with nothing open.
           OPEN_PR: >-
             ${{ steps.existing_pr.outputs.state == 'OPEN' && steps.existing_pr.outputs.placeholder != 'true'
             && steps.existing_pr.outputs.number || '' }}
+          CLICKUP_TASK: ${{ inputs.clickup_task }}
           PLAN_SINCE: ${{ steps.existing_pr.outputs.since }}
           PLAN_AT: ${{ steps.plan_at.outputs.plan_created_at }}
         run: |
-          if [[ "$EVENT_NAME" == 'workflow_run' ]]; then
+          if [[ -n "$CLICKUP_TASK" ]]; then
+            # `infra-api` checked the task before starting this. With work already open, the
+            # command hands the plan over again, the way it does on an issue after a replan.
+            trigger='clickup'; issue=''
+            actor="$REQUESTED_BY"; actor_type='User'
+            if [[ -n "$OPEN_PR" ]]; then
+              mode='round'; pull_request="$OPEN_PR"
+            else
+              mode='initial'; pull_request=''
+            fi
+          elif [[ "$EVENT_NAME" == 'workflow_run' ]]; then
             mode='round'; trigger='checks'
             issue=''
             actor="$RUN_ACTOR"; actor_type="$RUN_ACTOR_TYPE"
@@ -850,7 +886,9 @@ jobs:
 
       - name: Acknowledge the command
         id: ack
-        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.attended == 'true' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && steps.event.outputs.attended == 'true'
+          && steps.event.outputs.trigger != 'clickup' }}
         uses: uniquesca/ci/ai-react@v11
         with:
           subject: ${{ github.event.comment.node_id || github.event.review.node_id }}
@@ -937,6 +975,7 @@ jobs:
         if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.mode == 'initial' }}
         env:
           PLACEHOLDER: ${{ steps.existing_pr.outputs.placeholder }}
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -945,6 +984,13 @@ jobs:
           number=$(jq -r '.number // ""' "$RUNNER_TEMP/existing.json")
           state=$(jq -r '.state // ""' "$RUNNER_TEMP/existing.json")
           url=$(jq -r '.url // ""' "$RUNNER_TEMP/existing.json")
+
+          # Posted as System Bot, the same as everything the harness says on a task
+          say_task() {
+            jq -n --arg text "$1" '{comment_text: $text, notify_all: false}' \
+              | curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
+                  --data @- "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null
+          }
 
           # Multi-line bodies are built up in a file rather than written as one quoted
           # argument. A quoted string laid out to match this script's indentation puts several
@@ -971,7 +1017,11 @@ jobs:
               echo "Issue #$ISSUE already has an open pull request at $url, built to the plan as it stands"
               ;;
             MERGED)
-              gh issue comment "$ISSUE" --body "@$ACTOR the work for this issue was already merged in $url, so there is nothing here to implement again. Open a new issue for what you want next."
+              if [[ -n "$CLICKUP_TASK" ]]; then
+                say_task "The work for this task was already merged in $url, so there is nothing to implement again. Open a new task for what you want next."
+              else
+                gh issue comment "$ISSUE" --body "@$ACTOR the work for this issue was already merged in $url, so there is nothing here to implement again. Open a new issue for what you want next."
+              fi
               echo "PROCEED=false" >> "$GITHUB_ENV"
               echo "Issue #$ISSUE was already implemented and merged in $url"
               ;;
@@ -1067,7 +1117,8 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'round'
-          && steps.event.outputs.trigger != 'issue-command' }}
+          && steps.event.outputs.trigger != 'issue-command'
+          && steps.event.outputs.trigger != 'clickup' }}
         uses: uniquesca/ci/ai-work-order@v11
         with:
           mode: fetch
@@ -1089,6 +1140,34 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           comments: since-plan
 
+      # The task, its comments since the plan, and the plan's JSON the planner attached
+      - name: Stage the ClickUp task and its plan
+        id: stage_clickup
+        if: ${{ success() && env.PROCEED == 'true' && steps.event.outputs.trigger == 'clickup' }}
+        uses: uniquesca/ci/ai-stage-clickup@v11
+        with:
+          task: ${{ inputs.clickup_task }}
+          token: ${{ secrets.CLICKUP_TOKEN }}
+          plan_json: 'true'
+
+      - name: Make sure the task has a plan
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && steps.stage_clickup.outcome == 'success'
+          && steps.stage_clickup.outputs.has_plan != 'true' }}
+        env:
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+        run: |
+          # Posted as System Bot, the same as everything the harness says on a task
+          say_task() {
+            jq -n --arg text "$1" '{comment_text: $text, notify_all: false}' \
+              | curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
+                  --data @- "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null
+          }
+          say_task 'There is no plan on this task yet, so there is nothing to implement. Comment /ai-plan first, then /ai-implement.'
+          echo "PROCEED=false" >> "$GITHUB_ENV"
+          echo "Task $CLICKUP_TASK has no plan attachment, nothing to implement"
+
       # No plan is not a failure - the command was simply run too early. Only the first run
       # needs one: by the time there is a pull request the work exists, and a plan somebody
       # has since deleted should not stop a review being acted on.
@@ -1096,6 +1175,7 @@ jobs:
         if: >-
           ${{ success() && env.PROCEED == 'true'
           && steps.event.outputs.mode == 'initial'
+          && steps.event.outputs.trigger != 'clickup'
           && steps.stage_issue.outputs.has_plan != 'true' }}
         env:
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
@@ -1111,16 +1191,21 @@ jobs:
       # down, which is what every later round reads instead of the issue.
       - name: Build the work order
         id: order_built
-        if: ${{ success() && env.PROCEED == 'true' && steps.stage_issue.outcome == 'success' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true'
+          && (steps.stage_issue.outcome == 'success' || steps.stage_clickup.outcome == 'success') }}
         uses: uniquesca/ci/ai-work-order@v11
         with:
           mode: build
           source: >-
-            ${{ format('{{"kind":"issue","repository":"{0}","number":{1},"url":"{2}/{0}/issues/{1}"}}',
-                github.repository, steps.event.outputs.issue || steps.pull_request.outputs.issue, github.server_url) }}
-          plan_url: ${{ steps.stage_issue.outputs.plan_url }}
-          plan_base: ${{ steps.stage_issue.outputs.plan_base }}
-          plan_created_at: ${{ steps.stage_issue.outputs.plan_created_at }}
+            ${{ steps.stage_clickup.outcome == 'success'
+                && format('{{"kind":"clickup","id":"{0}","display_id":"{1}","url":"{2}"}}',
+                   inputs.clickup_task, steps.stage_clickup.outputs.display_id, steps.stage_clickup.outputs.url)
+                || format('{{"kind":"issue","repository":"{0}","number":{1},"url":"{2}/{0}/issues/{1}"}}',
+                   github.repository, steps.event.outputs.issue || steps.pull_request.outputs.issue, github.server_url) }}
+          plan_url: ${{ steps.stage_clickup.outputs.url || steps.stage_issue.outputs.plan_url }}
+          plan_base: ${{ steps.stage_clickup.outputs.plan_base || steps.stage_issue.outputs.plan_base }}
+          plan_created_at: ${{ steps.stage_clickup.outputs.plan_created_at || steps.stage_issue.outputs.plan_created_at }}
 
       # Everything asking for a change, from every source, normalised into one list. This is
       # the round's actual input.
@@ -1459,7 +1544,7 @@ jobs:
           PREFIX: ${{ inputs.branch_prefix }}
           HINT: ${{ steps.order_built.outputs.branch_hint }}
           TITLE: ${{ steps.order_built.outputs.title }}
-          ISSUE: ${{ steps.event.outputs.issue }}
+          FALLBACK: ${{ steps.event.outputs.issue && format('issue-{0}', steps.event.outputs.issue) || steps.stage_clickup.outputs.display_id }}
         run: |
           # Lowercase words of letters and digits joined by `-`, cut at a word to 50 characters
           slug() {
@@ -1469,7 +1554,7 @@ jobs:
           }
           name=$(slug "$HINT")
           [[ -n "$name" ]] || name=$(slug "$TITLE")
-          [[ -n "$name" ]] || name="issue-$ISSUE"
+          [[ -n "$name" ]] || name=$(slug "$FALLBACK")
 
           # Taken by any branch, open or long merged, gets a number on the end
           branch="$PREFIX$name"
@@ -1490,6 +1575,7 @@ jobs:
         id: label
         if: >-
           ${{ success() && env.PROCEED == 'true'
+          && steps.event.outputs.target != ''
           && inputs.progress_label != '' }}
         env:
           LABEL: ${{ inputs.progress_label }}
@@ -1647,6 +1733,8 @@ jobs:
           BASE: ${{ steps.branch.outputs.base }}
           REUSE: ${{ steps.existing.outputs.draft }}
           ISSUE: ${{ steps.event.outputs.issue }}
+          TASK_ID: ${{ steps.stage_clickup.outputs.display_id }}
+          TASK_URL: ${{ steps.stage_clickup.outputs.url }}
           TITLE: ${{ steps.order_built.outputs.title }}
           PLAN_URL: ${{ steps.order_built.outputs.plan_url }}
           ACTOR: ${{ steps.event.outputs.actor }}
@@ -1664,22 +1752,28 @@ jobs:
             exit 0
           fi
 
-          git commit --quiet --allow-empty -m "$PLACEHOLDER_SUBJECT #$ISSUE [skip ci]"
+          git commit --quiet --allow-empty -m "$PLACEHOLDER_SUBJECT ${ISSUE:+#$ISSUE}${TASK_ID} [skip ci]"
           auth=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
           git -c http.extraheader="AUTHORIZATION: basic $auth" push --quiet origin "HEAD:refs/heads/$BRANCH"
 
-          # ClickUp tasks named in the issue body, so the pull request links them too
-          clickup=$(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '.body // ""' 2> /dev/null \
+          # The ClickUp tasks named in the issue body, so the pull request links them and
+          # `infra-api` comments the link on each. A task's own link is written below.
+          clickup=''
+          [[ -n "$ISSUE" ]] && clickup=$(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '.body // ""' 2> /dev/null \
             | grep -oE 'https://app\.clickup\.com/t/[A-Za-z0-9/_-]+' | awk '!seen[$0]++' || true)
 
           # Everything known before the work: where it came from, the empty QA pair the step
           # after the run fills in, and that it is in progress. The run rewrites it when it ends.
           {
-            printf 'Closes #%s' "$ISSUE"
-            [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
-            while IFS= read -r link; do
-              [[ -n "$link" ]] && printf ' · [ClickUp %s](%s)' "${link##*/}" "$link"
-            done <<< "$clickup"
+            if [[ -n "$ISSUE" ]]; then
+              printf 'Closes #%s' "$ISSUE"
+              [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
+              while IFS= read -r link; do
+                [[ -n "$link" ]] && printf ' · [ClickUp %s](%s)' "${link##*/}" "$link"
+              done <<< "$clickup"
+            else
+              printf '[ClickUp %s](%s)' "$TASK_ID" "$TASK_URL"
+            fi
             printf '\n\n'
             printf '> [!NOTE]\n> **Work in progress.** The coding agent is on its first run ([Run](%s)). This pull request turns ready for review when it is done.\n\n' "$RUN_URL"
             printf '%s\n%s\n\n' "$QA_MARKER" "$QA_END_MARKER"
@@ -1703,9 +1797,26 @@ jobs:
           pull_request: ${{ steps.draft.outputs.number }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Point the task at the draft
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && steps.draft.outputs.reused == 'false'
+          && steps.event.outputs.trigger == 'clickup' }}
+        env:
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+          PR_URL: ${{ steps.draft.outputs.url }}
+        run: |
+          jq -n --arg url "$PR_URL" '{comment: [
+              {text: "The work is at "}, {text: ("pull request #" + ($url | split("/") | last)), attributes: {link: $url}},
+              {text: ", as a draft until the coding agent finishes its first run. Review it there. After /ai-plan revises the plan, comment /ai-do here to hand it over."}
+            ], notify_all: false}' \
+            | curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
+                --data @- "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null
+
       # Where the work went, said on the issue once. `ai-retro` reads who asked from this comment.
       - name: Point the issue at the draft
-        if: ${{ success() && env.PROCEED == 'true' && steps.draft.outputs.reused == 'false' }}
+        if: >-
+          ${{ success() && env.PROCEED == 'true' && steps.draft.outputs.reused == 'false'
+          && steps.event.outputs.trigger != 'clickup' }}
         env:
           GH_TOKEN: ${{ steps.ai_implement.outputs.token }}
           ISSUE: ${{ steps.event.outputs.issue }}
@@ -2334,6 +2445,7 @@ jobs:
           ISSUE: ${{ steps.event.outputs.issue || steps.pull_request.outputs.issue || steps.order.outputs.source_number }}
           ACTOR: ${{ steps.event.outputs.actor }}
           PLACEHOLDER: ${{ steps.draft.outputs.placeholder }}
+          TASK_URL: ${{ steps.stage_clickup.outputs.url }}
         run: |
           git add -A
 
@@ -2359,11 +2471,11 @@ jobs:
             {
               if [[ "$MODE" == 'initial' ]]; then
                 printf '%s\n\n' "$TITLE"
-                printf 'Implements #%s\n\n' "$ISSUE"
+                printf 'Implements %s\n\n' "${ISSUE:+#$ISSUE}${TASK_URL}"
                 printf 'Written by the AI implement workflow, requested by @%s.\n' "$ACTOR"
               else
                 printf 'Address review feedback (round %s)\n\n' "$ROUND"
-                printf 'Implements #%s\n\n' "$ISSUE"
+                [[ -n "$ISSUE" ]] && printf 'Implements #%s\n\n' "$ISSUE"
                 printf 'Written by the AI implement workflow, for review feedback from @%s.\n' "$ACTOR"
               fi
             } > "$RUNNER_TEMP/commit-message.txt"
@@ -2623,6 +2735,8 @@ jobs:
           # branch was gone and a new one was cut from somewhere else.
           OLD_BASE: ${{ steps.existing.outputs.base }}
           DRAFT: ${{ steps.draft.outputs.number }}
+          TASK_ID: ${{ steps.stage_clickup.outputs.display_id }}
+          TASK_URL: ${{ steps.stage_clickup.outputs.url }}
         run: |
           url=''
 
@@ -2660,7 +2774,8 @@ jobs:
             # ClickUp tasks named in the issue body, so the pull request links them too. Only the
             # body: comments mention tasks in passing. Missing links are fine, and so is failing
             # to read the issue.
-            clickup=$(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '.body // ""' 2> /dev/null \
+            clickup=''
+            [[ -n "$ISSUE" ]] && clickup=$(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '.body // ""' 2> /dev/null \
               | grep -oE 'https://app\.clickup\.com/t/[A-Za-z0-9/_-]+' | awk '!seen[$0]++' || true)
 
             # Written to RUNNER_TEMP rather than the checkout - this workflow commits its
@@ -2669,11 +2784,15 @@ jobs:
             # `Closes #N` is what closes the issue when this merges. Github only acts on it for a
             # pull request into the default branch; one into any other base leaves it open.
             {
-              printf 'Closes #%s' "$ISSUE"
-              [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
-              while IFS= read -r link; do
-                [[ -n "$link" ]] && printf ' · [ClickUp %s](%s)' "${link##*/}" "$link"
-              done <<< "$clickup"
+              if [[ -n "$ISSUE" ]]; then
+                printf 'Closes #%s' "$ISSUE"
+                [[ -n "$PLAN_URL" ]] && printf ' · [Plan](%s)' "$PLAN_URL"
+                while IFS= read -r link; do
+                  [[ -n "$link" ]] && printf ' · [ClickUp %s](%s)' "${link##*/}" "$link"
+                done <<< "$clickup"
+              else
+                printf '[ClickUp %s](%s)' "$TASK_ID" "$TASK_URL"
+              fi
               printf '\n\n'
               [[ -n "$STATUS_FILE" && -f "$STATUS_FILE" ]] && printf '%s\n\n' "$(cat "$STATUS_FILE")"
               if [[ -n "$SUMMARY_FILE" && -f "$SUMMARY_FILE" ]]; then
@@ -3183,6 +3302,8 @@ jobs:
           COST: ${{ steps.report.outputs.cost_line }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           AI_IMPLEMENT_TOKEN: ${{ steps.ai_implement.outputs.token }}
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+          ISSUE: ${{ steps.event.outputs.issue }}
         run: |
           # A round a check started was started by a bot, and mentioning it notifies nobody. Each
           # round asks the person who started it for a review, so that is who is waiting.
@@ -3209,7 +3330,14 @@ jobs:
               printf 'It stopped with: `%s`\n\n' "$REASON"
             fi
             printf 'The run log has the detail: %s\n\n' "$RUN_URL"
-            printf 'Comment `%s` here to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}"
+            # A first run is retried where the work was asked for, and continues on this draft
+            if [[ "$MODE" == 'initial' && -n "$CLICKUP_TASK" ]]; then
+              printf 'Comment `/ai-do` on the ClickUp task to try again.\n'
+            elif [[ "$MODE" == 'initial' && -n "$ISSUE" && "$TARGET" != "$ISSUE" ]]; then
+              printf 'Comment `%s` on #%s to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}" "$ISSUE"
+            else
+              printf 'Comment `%s` here to try again.\n' "$COMMAND${RETRY_BASE:+ base=$RETRY_BASE}"
+            fi
             if [[ -n "$USAGE" ]]; then
               printf '\n%s\n' "$USAGE"
             fi
@@ -3225,6 +3353,14 @@ jobs:
           # no checkout and fails. This step exists to explain a failure, so failing inside it
           # buries the thing it was reporting. The summary above has already been written either
           # way, which is the part somebody clicking through from the run will actually read.
+          if [[ -z "$TARGET" && -n "$CLICKUP_TASK" ]]; then
+            jq -n --arg text "The implementation did not finish, so there is no pull request yet. Run: $RUN_URL"$'\n\nComment /ai-do to try again.' \
+                '{comment_text: $text, notify_all: false}' \
+              | curl -sSf --max-time 30 -X POST -H "Authorization: $CLICKUP_TOKEN" -H 'Content-Type: application/json' \
+                  --data @- "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/comment" > /dev/null \
+              || echo "::warning title=Could not report the failure::Nothing was posted on the task - the run summary has the detail"
+            exit 0
+          fi
           if [[ -z "$TARGET" ]]; then
             echo "::warning title=Nowhere to report the failure::This run has no issue or pull request to comment on - the run summary has the detail"
             exit 0

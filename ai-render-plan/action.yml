@@ -30,6 +30,12 @@ outputs:
   clickup_file:
     description: 'The plan as ClickUp comment blocks, which ClickUp formats where it shows Markdown as typed: a JSON object with `overview`, `risks`, `steps` and `qa`, the risks and QA null when there are none, one list of blocks per comment. Empty when the JSON plan was not usable'
     value: ${{ steps.render.outputs.clickup_file }}
+  json_file:
+    description: 'The plan as checked, as JSON. Empty when the JSON plan was not usable'
+    value: ${{ steps.render.outputs.json_file }}
+  visible_file:
+    description: 'The part of the rendered plan a person reads, without the folded JSON. Empty when the JSON plan was not usable'
+    value: ${{ steps.render.outputs.visible_file }}
   has_qa:
     description: 'Whether the plan has QA acceptance criteria - "true" or "false"'
     value: ${{ steps.render.outputs.has_qa }}
