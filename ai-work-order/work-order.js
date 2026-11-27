@@ -53,10 +53,12 @@ switch (env.INPUT_MODE) {
     case 'build': {
         // From what ai-stage-issue staged. The issue and its comments go into the order and are
         // taken out of the working tree, so the agent reads them in one place only.
-        const issue = readJson(path.join(dir, 'issue.json'), {});
+        // An issue from ai-stage-issue, or a task from ai-stage-clickup
+        const task = readJson(path.join(dir, 'task.json'), null);
+        const issue = readJson(path.join(dir, 'issue.json'), null) ?? { title: task?.name, body: task?.description };
         const order = buildWorkOrder({
             source: JSON.parse(env.INPUT_SOURCE),
-            task: { title: issue.title, body: issue.body },
+            task: { title: issue.title, body: issue.body, parent: task?.parent ?? null, linked: task?.linked ?? [] },
             plan: readJson(path.join(dir, 'plan.json'), null),
             planMarkdown: readText(path.join(dir, 'plan.md')),
             planUrl: env.INPUT_PLAN_URL,
@@ -66,6 +68,7 @@ switch (env.INPUT_MODE) {
         });
         fs.writeFileSync(orderFile, JSON.stringify(order, null, 2) + '\n');
         fs.rmSync(path.join(dir, 'issue.json'), { force: true });
+        fs.rmSync(path.join(dir, 'task.json'), { force: true });
         fs.rmSync(path.join(dir, 'comments.json'), { force: true });
         result = outputs(order, true);
         break;

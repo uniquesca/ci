@@ -497,92 +497,13 @@ jobs:
           directory: .ai-plan/from
           comments: since-plan
 
-      # The ClickUp counterpart of the issue staging above: the task with its parent and linked
-      # tasks, the comments since the last plan, and that plan. A plan is System Bot's comment
-      # starting with the `AI plan` line, the same way an issue's is the bot's `<!-- ai-plan -->`
-      # comment - anybody can type the line, so only the token's own user counts.
+      # The ClickUp counterpart of the issue staging above
       - name: Stage the ClickUp task for the agent
         if: ${{ steps.task.outputs.has_task == 'true' && inputs.clickup_task != '' }}
-        env:
-          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
-        run: |
-          # Without it ClickUp answers 400, which says nothing about why
-          if [[ -z "$CLICKUP_TOKEN" ]]; then
-            echo "::error title=No ClickUp token::The CLICKUP_TOKEN secret is empty, so the task cannot be read or the plan posted. Add System Bot's token as a secret in the calling repository"
-            exit 1
-          fi
-
-          api() {
-            curl -sSf --max-time 30 -H "Authorization: $CLICKUP_TOKEN" "https://api.clickup.com/api/v2/$1"
-          }
-          brief() {
-            jq '{id, name, url, description: (.markdown_description // .text_content // .description // "")}'
-          }
-
-          mkdir -p .ai-plan
-          bot=$(api user | jq -r '.user.id')
-          api "task/$CLICKUP_TASK?include_markdown_description=true" > "$RUNNER_TEMP/task.json"
-
-          parent=$(jq -r '.parent // empty' "$RUNNER_TEMP/task.json")
-          if [[ -n "$parent" ]]; then
-            api "task/$parent?include_markdown_description=true" | brief > "$RUNNER_TEMP/parent.json"
-          else
-            echo 'null' > "$RUNNER_TEMP/parent.json"
-          fi
-
-          echo '[]' > "$RUNNER_TEMP/linked.json"
-          for id in $(jq -r --arg self "$CLICKUP_TASK" \
-              '[.linked_tasks[]? | if .task_id == $self then .link_id else .task_id end] | unique | .[:10][]' \
-              "$RUNNER_TEMP/task.json"); do
-            api "task/$id?include_markdown_description=true" | brief \
-              | jq -s --slurpfile all "$RUNNER_TEMP/linked.json" '$all[0] + .' > "$RUNNER_TEMP/linked.next.json"
-            mv "$RUNNER_TEMP/linked.next.json" "$RUNNER_TEMP/linked.json"
-          done
-
-          brief < "$RUNNER_TEMP/task.json" \
-            | jq --slurpfile parent "$RUNNER_TEMP/parent.json" --slurpfile linked "$RUNNER_TEMP/linked.json" \
-                '. + {parent: $parent[0], linked: $linked[0]}' > .ai-plan/task.json
-
-          # Newest first, 25 a page; the next page starts from the oldest comment of the last
-          echo '[]' > "$RUNNER_TEMP/comments.json"
-          query=''
-          for _ in 1 2 3 4 5 6 7 8; do
-            api "task/$CLICKUP_TASK/comment$query" | jq '.comments' > "$RUNNER_TEMP/page.json"
-            [[ "$(jq 'length' "$RUNNER_TEMP/page.json")" == '0' ]] && break
-            jq -s 'add' "$RUNNER_TEMP/comments.json" "$RUNNER_TEMP/page.json" > "$RUNNER_TEMP/comments.next.json"
-            mv "$RUNNER_TEMP/comments.next.json" "$RUNNER_TEMP/comments.json"
-            [[ "$(jq 'length' "$RUNNER_TEMP/page.json")" -lt 25 ]] && break
-            query=$(jq -r 'last | "?start=\(.date)&start_id=\(.id)"' "$RUNNER_TEMP/page.json")
-          done
-
-          # Answers to the risks are replies in that comment's thread, which the list leaves out
-          echo '[]' > "$RUNNER_TEMP/replies.json"
-          for id in $(jq -r '.[] | select((.reply_count // 0 | tonumber) > 0) | .id' "$RUNNER_TEMP/comments.json"); do
-            parent=$(jq -r --arg id "$id" '.[] | select(.id == $id) | .comment_text | split("\n")[0]' "$RUNNER_TEMP/comments.json")
-            api "comment/$id/reply" | jq --arg parent "$parent" '.comments | map(. + {in_reply_to: $parent})' \
-              | jq -s 'add' "$RUNNER_TEMP/replies.json" - > "$RUNNER_TEMP/replies.next.json"
-            mv "$RUNNER_TEMP/replies.next.json" "$RUNNER_TEMP/replies.json"
-          done
-
-          jq -s --arg bot "$bot" 'add
-            | map({author: .user.username, is_bot: ((.user.id | tostring) == $bot), date: (.date | tonumber),
-                   body: .comment_text} + (if .in_reply_to then {in_reply_to} else {} end))
-            | sort_by(.date)' "$RUNNER_TEMP/comments.json" "$RUNNER_TEMP/replies.json" > "$RUNNER_TEMP/sorted.json"
-
-          # A plan is its overview and the risks and steps comments posted after it, by System Bot.
-          # Replies are left out: a reply starting with a title is somebody quoting it.
-          jq '[.[] | select(.is_bot and (.in_reply_to | not))] as $bot
-              | ([$bot[] | select(.body | startswith("AI plan\n"))] | last) as $overview
-              | if $overview == null then []
-                else [$bot[] | select(.date >= $overview.date
-                        and (.body | test("^AI plan(: risks and unknowns|: steps|: QA acceptance criteria)?\n")))]
-                end' "$RUNNER_TEMP/sorted.json" > "$RUNNER_TEMP/plan.json"
-          jq -r 'map(.body) | join("\n\n")' "$RUNNER_TEMP/plan.json" > .ai-plan/plan.md
-          since=$(jq 'map(.date) | max // 0' "$RUNNER_TEMP/plan.json")
-          jq --argjson since "$since" 'map(select(.date > $since))' "$RUNNER_TEMP/sorted.json" > .ai-plan/comments.json
-          [[ -s .ai-plan/plan.md ]] || rm -f .ai-plan/plan.md
-
-          echo "Staged task $CLICKUP_TASK, $(jq length .ai-plan/comments.json) comment(s)$([[ -f .ai-plan/plan.md ]] && echo ', and the plan before')"
+        uses: uniquesca/ci/ai-stage-clickup@v11
+        with:
+          task: ${{ inputs.clickup_task }}
+          token: ${{ secrets.CLICKUP_TOKEN }}
 
       # The framework catalogue, staged the same way and for the same reason: the agent has no
       # network, and a plan that asks for a workflow is where the framework is either used or
@@ -1168,6 +1089,8 @@ jobs:
         env:
           PLAN_FILE: ${{ steps.render.outputs.plan_file }}
           CLICKUP_FILE: ${{ steps.render.outputs.clickup_file }}
+          JSON_FILE: ${{ steps.render.outputs.json_file }}
+          VISIBLE_FILE: ${{ steps.render.outputs.visible_file }}
           HAS_QA: ${{ steps.render.outputs.has_qa }}
           RENDERED: ${{ steps.render.outputs.rendered }}
           USAGE: ${{ steps.report.outputs.summary }}
@@ -1273,6 +1196,17 @@ jobs:
               if [[ "$(jq '.qa != null' "$CLICKUP_FILE")" == 'true' ]]; then
                 jq '.qa' "$CLICKUP_FILE" | post
               fi
+
+              # The whole plan for the handoff to build from, which the comments hold only the
+              # readable part of. ClickUp keeps every upload, and the newest one counts.
+              jq -n --slurpfile plan "$JSON_FILE" --rawfile visible "$VISIBLE_FILE" \
+                --arg base "$BASE" --arg repository "$TARGET" \
+                --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                '{plan: $plan[0], plan_markdown: $visible, base: $base, repository: $repository, created_at: $created_at}' \
+                > "$RUNNER_TEMP/ai-plan.json"
+              curl -sSf --max-time 60 -X POST -H "Authorization: $CLICKUP_TOKEN" \
+                -F "attachment=@$RUNNER_TEMP/ai-plan.json;filename=ai-plan.json;type=application/json" \
+                "https://api.clickup.com/api/v2/task/$CLICKUP_TASK/attachment" > /dev/null
 
               echo "Posted the plan on ClickUp task $CLICKUP_TASK"
               exit 0

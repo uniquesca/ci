@@ -156,6 +156,7 @@ out.
 | Action | What it does |
 |---|---|
 | [`ai-stage-issue`](actions/ai-stage-issue.md) | Writes an issue, its comments and its latest plan into the checkout |
+| [`ai-stage-clickup`](actions/ai-stage-clickup.md) | Writes a ClickUp task, its comments and its latest plan into the checkout |
 | [`ai-work-order`](actions/ai-work-order.md) | Builds the coding agent's work order, posts it on the pull request, or reads it back |
 | [`ai-stage-pull-request`](actions/ai-stage-pull-request.md) | Writes a pull request into the checkout: what is asking for changes on it, and what is already settled |
 | [`ai-post-review`](actions/ai-post-review.md) | Submits the review an agent wrote, with its inline comments validated against the diff |

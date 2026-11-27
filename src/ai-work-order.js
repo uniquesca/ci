@@ -18,7 +18,7 @@ export function buildWorkOrder({ source, task, plan, planMarkdown, planUrl, plan
     return {
         version: 1,
         source,
-        task: { title: task?.title ?? '', body: task?.body ?? '' },
+        task: { title: task?.title ?? '', body: task?.body ?? '', ...(task?.parent || task?.linked?.length ? { parent: task.parent ?? null, linked: task.linked ?? [] } : {}) },
         plan: plan ?? null,
         plan_markdown: planMarkdown ?? '',
         plan_url: planUrl ?? '',
@@ -69,6 +69,9 @@ function check(order) {
 function sourceText(source) {
     if (source.kind === 'issue') {
         return `#${source.number}`;
+    }
+    if (source.kind === 'clickup') {
+        return `[ClickUp ${source.display_id || source.id}](${source.url})`;
     }
     return source.url ? `[${source.kind} ${source.id ?? ''}](${source.url})`.replace(' ]', ']') : source.kind;
 }

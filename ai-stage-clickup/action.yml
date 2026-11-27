@@ -1,0 +1,159 @@
+name: AI stage ClickUp task
+
+description: Writes a ClickUp task, its parent and linked tasks, its comments since the last plan and that plan into the checkout, the ClickUp counterpart of ai-stage-issue
+
+inputs:
+  task:
+    description: 'ClickUp task ID'
+    required: true
+  token:
+    description: 'API token of the ClickUp user that posts the plans (System Bot). Its own comments are what count as plans'
+    required: true
+  directory:
+    description: 'Directory inside the checkout to write into'
+    required: false
+    default: '.ai-plan'
+  plan_json:
+    description: 'Also read the plan''s JSON from the newest `ai-plan.json` attachment the planner uploaded, into `plan.json` and `plan.md` - "true" or "false"'
+    required: false
+    default: 'false'
+
+outputs:
+  title:
+    description: 'Name of the task'
+    value: ${{ steps.stage.outputs.title }}
+  url:
+    description: 'Link to the task'
+    value: ${{ steps.stage.outputs.url }}
+  display_id:
+    description: 'The task''s custom ID, such as `DV-4686`, or its own ID when it has none'
+    value: ${{ steps.stage.outputs.display_id }}
+  has_plan:
+    description: 'Whether a plan was found - "true" or "false". With `plan_json`, whether the attachment was'
+    value: ${{ steps.stage.outputs.has_plan }}
+  plan_base:
+    description: 'Branch the plan was written against, from the attachment. Empty without `plan_json`'
+    value: ${{ steps.stage.outputs.plan_base }}
+  plan_created_at:
+    description: 'When the plan was written, as an ISO 8601 UTC timestamp, from the attachment. Empty without `plan_json`'
+    value: ${{ steps.stage.outputs.plan_created_at }}
+
+runs:
+  using: composite
+  steps:
+    # A plan is System Bot's comment starting with the `AI plan` line, and the risks, steps and QA
+    # comments posted after it. Anybody can type the line, so only the token's own user counts.
+    - id: stage
+      shell: bash
+      env:
+        TASK: ${{ inputs.task }}
+        CLICKUP_TOKEN: ${{ inputs.token }}
+        DIR: ${{ inputs.directory }}
+        PLAN_JSON: ${{ inputs.plan_json }}
+      run: |
+        # Without it ClickUp answers 400, which says nothing about why
+        if [[ -z "$CLICKUP_TOKEN" ]]; then
+          echo "::error title=No ClickUp token::The ClickUp token is empty, so the task cannot be read. Pass System Bot's token to the workflow as its CLICKUP_TOKEN secret, which the Uniques callers fill from CLICKUP_INFRA_TOKEN"
+          exit 1
+        fi
+
+        api() {
+          curl -sSf --max-time 30 -H "Authorization: $CLICKUP_TOKEN" "https://api.clickup.com/api/v2/$1"
+        }
+        brief() {
+          jq '{id, name, url, description: (.markdown_description // .text_content // .description // "")}'
+        }
+
+        mkdir -p "$DIR"
+        bot=$(api user | jq -r '.user.id')
+        api "task/$TASK?include_markdown_description=true" > "$RUNNER_TEMP/task.json"
+
+        parent=$(jq -r '.parent // empty' "$RUNNER_TEMP/task.json")
+        if [[ -n "$parent" ]]; then
+          api "task/$parent?include_markdown_description=true" | brief > "$RUNNER_TEMP/parent.json"
+        else
+          echo 'null' > "$RUNNER_TEMP/parent.json"
+        fi
+
+        echo '[]' > "$RUNNER_TEMP/linked.json"
+        for id in $(jq -r --arg self "$TASK" \
+            '[.linked_tasks[]? | if .task_id == $self then .link_id else .task_id end] | unique | .[:10][]' \
+            "$RUNNER_TEMP/task.json"); do
+          api "task/$id?include_markdown_description=true" | brief \
+            | jq -s --slurpfile all "$RUNNER_TEMP/linked.json" '$all[0] + .' > "$RUNNER_TEMP/linked.next.json"
+          mv "$RUNNER_TEMP/linked.next.json" "$RUNNER_TEMP/linked.json"
+        done
+
+        brief < "$RUNNER_TEMP/task.json" \
+          | jq --slurpfile parent "$RUNNER_TEMP/parent.json" --slurpfile linked "$RUNNER_TEMP/linked.json" \
+              '. + {parent: $parent[0], linked: $linked[0]}' > "$DIR"/task.json
+
+        # Newest first, 25 a page; the next page starts from the oldest comment of the last
+        echo '[]' > "$RUNNER_TEMP/comments.json"
+        query=''
+        for _ in 1 2 3 4 5 6 7 8; do
+          api "task/$TASK/comment$query" | jq '.comments' > "$RUNNER_TEMP/page.json"
+          [[ "$(jq 'length' "$RUNNER_TEMP/page.json")" == '0' ]] && break
+          jq -s 'add' "$RUNNER_TEMP/comments.json" "$RUNNER_TEMP/page.json" > "$RUNNER_TEMP/comments.next.json"
+          mv "$RUNNER_TEMP/comments.next.json" "$RUNNER_TEMP/comments.json"
+          [[ "$(jq 'length' "$RUNNER_TEMP/page.json")" -lt 25 ]] && break
+          query=$(jq -r 'last | "?start=\(.date)&start_id=\(.id)"' "$RUNNER_TEMP/page.json")
+        done
+
+        # Answers to the risks are replies in that comment's thread, which the list leaves out
+        echo '[]' > "$RUNNER_TEMP/replies.json"
+        for id in $(jq -r '.[] | select((.reply_count // 0 | tonumber) > 0) | .id' "$RUNNER_TEMP/comments.json"); do
+          parent=$(jq -r --arg id "$id" '.[] | select(.id == $id) | .comment_text | split("\n")[0]' "$RUNNER_TEMP/comments.json")
+          api "comment/$id/reply" | jq --arg parent "$parent" '.comments | map(. + {in_reply_to: $parent})' \
+            | jq -s 'add' "$RUNNER_TEMP/replies.json" - > "$RUNNER_TEMP/replies.next.json"
+          mv "$RUNNER_TEMP/replies.next.json" "$RUNNER_TEMP/replies.json"
+        done
+
+        jq -s --arg bot "$bot" 'add
+          | map({author: .user.username, is_bot: ((.user.id | tostring) == $bot), date: (.date | tonumber),
+                 body: .comment_text} + (if .in_reply_to then {in_reply_to} else {} end))
+          | sort_by(.date)' "$RUNNER_TEMP/comments.json" "$RUNNER_TEMP/replies.json" > "$RUNNER_TEMP/sorted.json"
+
+        # A plan is its overview and the risks and steps comments posted after it, by System Bot.
+        # Replies are left out: a reply starting with a title is somebody quoting it.
+        jq '[.[] | select(.is_bot and (.in_reply_to | not))] as $bot
+            | ([$bot[] | select(.body | startswith("AI plan\n"))] | last) as $overview
+            | if $overview == null then []
+              else [$bot[] | select(.date >= $overview.date
+                      and (.body | test("^AI plan(: risks and unknowns|: steps|: QA acceptance criteria)?\n")))]
+              end' "$RUNNER_TEMP/sorted.json" > "$RUNNER_TEMP/plan.json"
+        jq -r 'map(.body) | join("\n\n")' "$RUNNER_TEMP/plan.json" > "$DIR"/plan.md
+        since=$(jq 'map(.date) | max // 0' "$RUNNER_TEMP/plan.json")
+        jq --argjson since "$since" 'map(select(.date > $since))' "$RUNNER_TEMP/sorted.json" > "$DIR"/comments.json
+        [[ -s "$DIR"/plan.md ]] || rm -f "$DIR"/plan.md
+
+
+        has_plan=$([[ -f "$DIR/plan.md" ]] && echo true || echo false)
+        plan_base=''
+        plan_created_at=''
+
+        # The plan as the planner wrote it, which the comments hold only the readable part of. The
+        # newest upload wins: ClickUp keeps every one.
+        if [[ "$PLAN_JSON" == 'true' ]]; then
+          has_plan='false'
+          url=$(jq -r '[.attachments[]? | select(.title == "ai-plan.json")] | sort_by(.date | tonumber) | last | .url // empty' "$RUNNER_TEMP/task.json")
+          if [[ -n "$url" ]] && curl -sSfL --max-time 30 -H "Authorization: $CLICKUP_TOKEN" "$url" -o "$RUNNER_TEMP/ai-plan.json" \
+             && jq -e '.plan' "$RUNNER_TEMP/ai-plan.json" > /dev/null 2>&1; then
+            jq '.plan' "$RUNNER_TEMP/ai-plan.json" > "$DIR/plan.json"
+            jq -r '.plan_markdown // ""' "$RUNNER_TEMP/ai-plan.json" > "$DIR/plan.md"
+            plan_base=$(jq -r '.base // ""' "$RUNNER_TEMP/ai-plan.json")
+            plan_created_at=$(jq -r '.created_at // ""' "$RUNNER_TEMP/ai-plan.json")
+            has_plan='true'
+          fi
+        fi
+
+        {
+          printf 'title=%s\n' "$(jq -r '.name // ""' "$RUNNER_TEMP/task.json" | tr -d '\r\n')"
+          printf 'url=%s\n' "$(jq -r '.url // ""' "$RUNNER_TEMP/task.json")"
+          printf 'display_id=%s\n' "$(jq -r '.custom_id // .id' "$RUNNER_TEMP/task.json")"
+          printf 'has_plan=%s\n' "$has_plan"
+          printf 'plan_base=%s\n' "$plan_base"
+          printf 'plan_created_at=%s\n' "$plan_created_at"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "Staged task $TASK, $(jq length "$DIR/comments.json") comment(s), plan: $has_plan"

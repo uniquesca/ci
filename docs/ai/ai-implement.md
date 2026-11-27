@@ -89,6 +89,10 @@ talking back to it - "S5 is missing", "C1 still fails" lands exactly where you m
 `C` checks are the agent's to run; its `QA` criteria are for a person to test after this merges, so
 they are copied into the pull request body and the agent never reports one as met.
 
+**From ClickUp**, comment `/ai-do` on a task planned there. `infra-api` checks who asked and
+which repository the task belongs to, and starts this workflow in that repository with the task. The
+draft pull request links the task, and the task gets a link to the draft.
+
 ### Basing the work on another branch
 
 **Usually you do not tell this workflow anything.** The plan records the branch it was written
@@ -199,12 +203,15 @@ the run's own token - Github starts no workflow run from a push made with `GITHU
 | `AI_IMPLEMENT_PRIVATE_KEY` | yes | Private key for the AI Implement app. Used only to mint a short-lived installation token; never passed to the agent |
 | `ENV_VARIABLES` | no | JSON object of the configuration tokens this repository's config templates are rendered with. Read only when the application is brought up, which is what renders the templates. **The agent can read them**, so make them a test environment's |
 | `COMPOSER_ACCESS_TOKEN` | no | Token for cloning Uniques private Composer repositories, so the agent can [check its own work](#what-the-agent-is-given-to-check-with) against installed dependencies. A repository whose dependencies are all public installs without it; one with private dependencies falls back to the artifact reports |
+| `CLICKUP_TOKEN` | no | API token of the ClickUp user that posts the plans (System Bot). Needed when `clickup_task` is set |
 | `NPM_ACCESS_TOKEN` | no | Token for `npm.pkg.github.com`, where the `@uniquesca` NPM scope is served from. The Composer token's counterpart for a JavaScript repository, on the same terms - and it buys more there, because `node_modules` is where the type checker, the framework CLI and the test runner live |
 
 ## Inputs
 
 | Input | Type | Default | Description |
 |---|---|---|---|
+| `clickup_task` | string | *(none)* | ClickUp task to start the work for, instead of an issue a comment was made on. Set by the run `infra-api` starts. The plan is read from the task |
+| `requested_by` | string | *(none)* | GitHub login of whoever asked for the work in ClickUp |
 | `anthropic_federation_rule_id` | string | *required* | Identity federation rule the job authenticates against. The agent is called with a token minted from this run's own Github OIDC identity, and the rule is what decides which repositories and branches may mint one. An identifier rather than a secret |
 | `anthropic_organization_id` | string | *required* | Anthropic organization the rule belongs to. In the Claude Console under **Settings → Organization** |
 | `anthropic_service_account_id` | string | *required* | Service account the minted token acts as. Usage and rate limits are attributed to it |
